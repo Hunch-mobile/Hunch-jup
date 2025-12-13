@@ -3,9 +3,11 @@ import { api } from "@/lib/api";
 import { User as BackendUser, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
     ActivityIndicator,
+    Animated,
     FlatList,
     StyleSheet,
     Text,
@@ -27,10 +29,34 @@ export default function SocialScreen() {
     const [isSearching, setIsSearching] = useState(false);
     const [isLoadingFeed, setIsLoadingFeed] = useState(true);
     const [showSearch, setShowSearch] = useState(false);
+    const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+    const [followingInProgress, setFollowingInProgress] = useState<Set<string>>(new Set());
+    const [searchAnimation] = useState(new Animated.Value(0));
 
     useEffect(() => {
         loadFeed();
+        loadFollowingList();
     }, [backendUser]);
+
+    useEffect(() => {
+        Animated.timing(searchAnimation, {
+            toValue: showSearch ? 1 : 0,
+            duration: 200,
+            useNativeDriver: false,
+        }).start();
+    }, [showSearch]);
+
+    const loadFollowingList = async () => {
+        if (!backendUser) return;
+
+        try {
+            const following = await api.getFollowing(backendUser.id);
+            const ids = new Set(following.map(f => f.followingId));
+            setFollowingIds(ids);
+        } catch (error) {
+            console.error("Failed to load following list:", error);
+        }
+    };
 
     const loadFeed = async () => {
         if (!backendUser) {
@@ -72,116 +98,284 @@ export default function SocialScreen() {
     };
 
     const handleFollowUser = async (userId: string) => {
-        if (!backendUser) return;
+        if (!backendUser || followingInProgress.has(userId)) return;
+
+        setFollowingInProgress(prev => new Set([...prev, userId]));
 
         try {
-            await api.followUser(backendUser.id, userId);
-            // Refresh search results
-            if (searchQuery) {
-                handleSearch(searchQuery);
+            const isFollowing = followingIds.has(userId);
+
+            if (isFollowing) {
+                await api.unfollowUser(backendUser.id, userId);
+                setFollowingIds(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(userId);
+                    return newSet;
+                });
+            } else {
+                await api.followUser(backendUser.id, userId);
+                setFollowingIds(prev => new Set([...prev, userId]));
             }
+
+            loadFeed();
         } catch (error) {
-            console.error("Failed to follow user:", error);
+            console.error("Failed to follow/unfollow user:", error);
+        } finally {
+            setFollowingInProgress(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(userId);
+                return newSet;
+            });
         }
     };
 
-    const renderSearchResult = ({ item }: { item: BackendUser }) => (
-        <View style={styles.searchResultItem}>
-            <View style={styles.searchResultAvatar}>
-                <Text style={styles.searchResultAvatarText}>
-                    {(item.displayName || item.walletAddress).charAt(0).toUpperCase()}
-                </Text>
-            </View>
-            <View style={styles.searchResultInfo}>
-                <Text style={styles.searchResultName}>{item.displayName || "Anonymous"}</Text>
-                <Text style={styles.searchResultWallet}>
-                    {item.walletAddress.slice(0, 6)}...{item.walletAddress.slice(-4)}
-                </Text>
-            </View>
-            <TouchableOpacity
-                style={styles.followButton}
-                onPress={() => handleFollowUser(item.id)}
-            >
-                <Text style={styles.followButtonText}>Follow</Text>
-            </TouchableOpacity>
-        </View>
-    );
+    const isFollowingUser = (userId: string) => followingIds.has(userId);
+    const isFollowingInProgress = (userId: string) => followingInProgress.has(userId);
 
-    const renderFeedItem = ({ item }: { item: FeedItem }) => (
-        <View style={styles.feedItem}>
-            <View style={styles.feedAvatar}>
-                <Text style={styles.feedAvatarText}>
-                    {(item.user?.displayName || item.user?.walletAddress || "U").charAt(0).toUpperCase()}
-                </Text>
-            </View>
-            <View style={styles.feedContent}>
-                <View style={styles.feedHeader}>
-                    <Text style={styles.userName}>{item.user?.displayName || "Anonymous"}</Text>
-                    <Text style={styles.userHandle}>
-                        @{item.user?.walletAddress?.slice(0, 6)}
-                    </Text>
-                    <Text style={styles.timeDot}>•</Text>
-                    <Text style={styles.time}>
-                        {new Date(item.createdAt).toLocaleDateString()}
+    const getTimeAgo = (dateString: string) => {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins}m`;
+        if (diffHours < 24) return `${diffHours}h`;
+        if (diffDays < 7) return `${diffDays}d`;
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    const renderSearchResult = ({ item }: { item: BackendUser }) => {
+        const isFollowing = isFollowingUser(item.id);
+        const inProgress = isFollowingInProgress(item.id);
+        const isSelf = backendUser?.id === item.id;
+
+        return (
+            <TouchableOpacity
+                style={styles.searchResultCard}
+                onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: item.id } })}
+                activeOpacity={0.7}
+            >
+                <View style={styles.searchResultAvatar}>
+                    <LinearGradient
+                        colors={['rgba(74, 222, 128, 0.3)', 'rgba(34, 197, 94, 0.1)']}
+                        style={styles.avatarGradient}
+                    />
+                    <Text style={styles.searchResultAvatarText}>
+                        {(item.displayName || item.walletAddress).charAt(0).toUpperCase()}
                     </Text>
                 </View>
+                <View style={styles.searchResultInfo}>
+                    <Text style={styles.searchResultName}>{item.displayName || "Anonymous"}</Text>
+                    <Text style={styles.searchResultWallet}>
+                        {item.walletAddress.slice(0, 6)}...{item.walletAddress.slice(-4)}
+                    </Text>
+                    <View style={styles.userStatsRow}>
+                        <Text style={styles.userStatText}>
+                            <Text style={styles.userStatNumber}>{item.followerCount || 0}</Text> followers
+                        </Text>
+                        <Text style={styles.userStatDot}>•</Text>
+                        <Text style={styles.userStatText}>
+                            <Text style={styles.userStatNumber}>{item.followingCount || 0}</Text> following
+                        </Text>
+                    </View>
+                </View>
+                {!isSelf && (
+                    <TouchableOpacity
+                        style={[
+                            styles.followButton,
+                            isFollowing && styles.followingButton,
+                            inProgress && styles.followButtonDisabled
+                        ]}
+                        onPress={(e) => {
+                            e.stopPropagation();
+                            handleFollowUser(item.id);
+                        }}
+                        disabled={inProgress}
+                    >
+                        {inProgress ? (
+                            <ActivityIndicator size="small" color={isFollowing ? "#fff" : "#4ade80"} />
+                        ) : (
+                            <Text style={[
+                                styles.followButtonText,
+                                isFollowing && styles.followingButtonText
+                            ]}>
+                                {isFollowing ? "Following" : "Follow"}
+                            </Text>
+                        )}
+                    </TouchableOpacity>
+                )}
+            </TouchableOpacity>
+        );
+    };
 
-                <Text style={styles.actionText}>
-                    {item.side === 'yes' ? 'bought Yes' : 'bought No'} on{' '}
-                    <Text style={styles.highlight}>{item.marketTicker}</Text> for{' '}
-                    <Text style={styles.highlight}>${item.amount}</Text>
-                </Text>
+    const renderFeedItem = ({ item }: { item: FeedItem }) => {
+        const isYes = item.side === 'yes';
 
-                <View style={styles.interactions}>
+        return (
+            <TouchableOpacity
+                style={styles.feedCard}
+                onPress={() => {
+                    if (item.user?.id) {
+                        router.push({ pathname: '/user/[userId]', params: { userId: item.user.id } });
+                    }
+                }}
+                activeOpacity={0.8}
+            >
+                {/* Card Header */}
+                <View style={styles.feedCardHeader}>
+                    <TouchableOpacity
+                        style={styles.feedAvatarContainer}
+                        onPress={() => {
+                            if (item.user?.id) {
+                                router.push({ pathname: '/user/[userId]', params: { userId: item.user.id } });
+                            }
+                        }}
+                    >
+                        <View style={styles.feedAvatar}>
+                            <LinearGradient
+                                colors={['rgba(74, 222, 128, 0.4)', 'rgba(34, 197, 94, 0.1)']}
+                                style={styles.feedAvatarGradient}
+                            />
+                            <Text style={styles.feedAvatarText}>
+                                {(item.user?.displayName || item.user?.walletAddress || "U").charAt(0).toUpperCase()}
+                            </Text>
+                        </View>
+                    </TouchableOpacity>
+
+                    <View style={styles.feedHeaderInfo}>
+                        <View style={styles.feedHeaderTop}>
+                            <Text style={styles.feedUserName}>
+                                {item.user?.displayName || "Anonymous"}
+                            </Text>
+                            <Text style={styles.feedUserHandle}>
+                                @{item.user?.walletAddress?.slice(0, 6)}
+                            </Text>
+                        </View>
+                        <Text style={styles.feedTime}>
+                            {getTimeAgo(item.createdAt)}
+                        </Text>
+                    </View>
+                </View>
+
+                {/* Trade Action Card */}
+                <View style={styles.tradeActionCard}>
+                    <View style={styles.tradeActionLeft}>
+                        <View style={[
+                            styles.tradeSidePill,
+                            isYes ? styles.tradeSidePillYes : styles.tradeSidePillNo
+                        ]}>
+                            <Ionicons
+                                name={isYes ? "trending-up" : "trending-down"}
+                                size={14}
+                                color={isYes ? "#4ade80" : "#f87171"}
+                            />
+                            <Text style={[
+                                styles.tradeSideText,
+                                isYes ? styles.tradeSideTextYes : styles.tradeSideTextNo
+                            ]}>
+                                {isYes ? 'YES' : 'NO'}
+                            </Text>
+                        </View>
+                        <Text style={styles.tradeAmount}>${item.amount}</Text>
+                    </View>
+
+                    <TouchableOpacity
+                        style={styles.tradeMarketPill}
+                        onPress={() => router.push({
+                            pathname: '/market/[ticker]',
+                            params: { ticker: item.marketTicker }
+                        })}
+                    >
+                        <Text style={styles.tradeMarketText} numberOfLines={1}>
+                            {item.marketTicker}
+                        </Text>
+                        <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.4)" />
+                    </TouchableOpacity>
+                </View>
+
+                {/* Interaction Row */}
+                <View style={styles.interactionRow}>
                     <TouchableOpacity style={styles.interactionBtn}>
-                        <Ionicons name="heart-outline" size={16} color="rgba(255,255,255,0.5)" />
+                        <Ionicons name="heart-outline" size={18} color="rgba(255,255,255,0.4)" />
                         <Text style={styles.interactionText}>12</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.interactionBtn}>
-                        <Ionicons name="chatbubble-outline" size={16} color="rgba(255,255,255,0.5)" />
+                        <Ionicons name="chatbubble-outline" size={17} color="rgba(255,255,255,0.4)" />
                         <Text style={styles.interactionText}>4</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.interactionBtn}>
-                        <Ionicons name="share-outline" size={16} color="rgba(255,255,255,0.5)" />
+                        <Ionicons name="repeat-outline" size={18} color="rgba(255,255,255,0.4)" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.interactionBtn}>
+                        <Ionicons name="share-outline" size={17} color="rgba(255,255,255,0.4)" />
                     </TouchableOpacity>
                 </View>
-            </View>
-        </View>
-    );
+            </TouchableOpacity>
+        );
+    };
+
+    const searchHeight = searchAnimation.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 60],
+    });
 
     return (
         <View style={styles.container}>
             <LinearGradient
-                colors={["#0a0a0f", "#12121a", "#1a1a2e"]}
+                colors={["#0a0a0f", "#0d0d14", "#111118"]}
                 style={styles.gradient}
             />
             <SafeAreaView style={styles.safeArea}>
+                {/* Header */}
                 <View style={styles.header}>
-                    <Text style={styles.headerTitle}>Social</Text>
+                    <View style={styles.headerLeft}>
+                        <Text style={styles.headerTitle}>Feed</Text>
+                        <View style={styles.headerBadge}>
+                            <View style={styles.liveDot} />
+                            <Text style={styles.headerBadgeText}>Live</Text>
+                        </View>
+                    </View>
                     <TouchableOpacity
-                        style={styles.searchButton}
-                        onPress={() => setShowSearch(!showSearch)}
+                        style={[styles.searchButton, showSearch && styles.searchButtonActive]}
+                        onPress={() => {
+                            setShowSearch(!showSearch);
+                            if (showSearch) {
+                                setSearchQuery("");
+                                setSearchResults([]);
+                            }
+                        }}
                     >
-                        <Ionicons name="search" size={20} color="#fff" />
+                        <Ionicons
+                            name={showSearch ? "close" : "search"}
+                            size={20}
+                            color={showSearch ? "#4ade80" : "#fff"}
+                        />
                     </TouchableOpacity>
                 </View>
 
-                {showSearch && (
-                    <View style={styles.searchContainer}>
-                        <View style={styles.searchInputContainer}>
-                            <Ionicons name="search" size={16} color="rgba(255,255,255,0.5)" />
-                            <TextInput
-                                style={styles.searchInput}
-                                placeholder="Search by name or wallet address..."
-                                placeholderTextColor="rgba(255,255,255,0.3)"
-                                value={searchQuery}
-                                onChangeText={handleSearch}
-                                autoFocus
-                            />
-                            {isSearching && <ActivityIndicator size="small" color="#4ade80" />}
-                        </View>
+                {/* Animated Search Bar */}
+                <Animated.View style={[styles.searchContainer, { height: searchHeight, opacity: searchAnimation }]}>
+                    <View style={styles.searchInputWrapper}>
+                        <Ionicons name="search" size={16} color="rgba(255,255,255,0.4)" />
+                        <TextInput
+                            style={styles.searchInput}
+                            placeholder="Search users..."
+                            placeholderTextColor="rgba(255,255,255,0.3)"
+                            value={searchQuery}
+                            onChangeText={handleSearch}
+                            autoFocus={showSearch}
+                        />
+                        {isSearching && <ActivityIndicator size="small" color="#4ade80" />}
+                        {searchQuery.length > 0 && !isSearching && (
+                            <TouchableOpacity onPress={() => { setSearchQuery(""); setSearchResults([]); }}>
+                                <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.4)" />
+                            </TouchableOpacity>
+                        )}
                     </View>
-                )}
+                </Animated.View>
 
                 {showSearch && searchResults.length > 0 ? (
                     <FlatList
@@ -194,12 +388,24 @@ export default function SocialScreen() {
                 ) : isLoadingFeed ? (
                     <View style={styles.loadingContainer}>
                         <ActivityIndicator size="large" color="#4ade80" />
+                        <Text style={styles.loadingText}>Loading feed...</Text>
                     </View>
                 ) : feedItems.length === 0 ? (
                     <View style={styles.emptyContainer}>
-                        <Ionicons name="people-outline" size={48} color="rgba(255,255,255,0.3)" />
-                        <Text style={styles.emptyText}>No activity yet</Text>
-                        <Text style={styles.emptySubtext}>Follow users to see their trades</Text>
+                        <View style={styles.emptyIconContainer}>
+                            <Ionicons name="people-outline" size={48} color="rgba(74, 222, 128, 0.3)" />
+                        </View>
+                        <Text style={styles.emptyTitle}>Your feed is empty</Text>
+                        <Text style={styles.emptySubtext}>
+                            Follow traders to see their activity here
+                        </Text>
+                        <TouchableOpacity
+                            style={styles.discoverButton}
+                            onPress={() => setShowSearch(true)}
+                        >
+                            <Ionicons name="search" size={18} color="#0a0a0f" />
+                            <Text style={styles.discoverButtonText}>Discover Traders</Text>
+                        </TouchableOpacity>
                     </View>
                 ) : (
                     <FlatList
@@ -230,65 +436,103 @@ const styles = StyleSheet.create({
     },
     header: {
         paddingHorizontal: 20,
-        paddingVertical: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+        paddingVertical: 12,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+    },
+    headerLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
     },
     headerTitle: {
         fontSize: 28,
         fontWeight: '700',
         color: '#fff',
+        letterSpacing: -0.5,
+    },
+    headerBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 100,
+    },
+    liveDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#4ade80',
+    },
+    headerBadgeText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#4ade80',
     },
     searchButton: {
         width: 40,
         height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
         justifyContent: 'center',
         alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    searchButtonActive: {
+        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+        borderColor: 'rgba(74, 222, 128, 0.2)',
     },
     searchContainer: {
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+        paddingHorizontal: 20,
+        overflow: 'hidden',
     },
-    searchInputContainer: {
+    searchInputWrapper: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        gap: 8,
+        borderRadius: 14,
+        paddingHorizontal: 14,
+        height: 48,
+        gap: 10,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
     },
     searchInput: {
         flex: 1,
         color: '#fff',
         fontSize: 15,
-        paddingVertical: 12,
     },
-    searchResultItem: {
+    searchResultCard: {
         flexDirection: 'row',
         alignItems: 'center',
         padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+        marginHorizontal: 20,
+        marginBottom: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.06)',
     },
     searchResultAvatar: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+        width: 52,
+        height: 52,
+        borderRadius: 26,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12,
+        marginRight: 14,
+        backgroundColor: 'rgba(74, 222, 128, 0.08)',
+    },
+    avatarGradient: {
+        ...StyleSheet.absoluteFillObject,
+        borderRadius: 26,
     },
     searchResultAvatarText: {
-        fontSize: 18,
-        fontWeight: '600',
+        fontSize: 20,
+        fontWeight: '700',
         color: '#4ade80',
     },
     searchResultInfo: {
@@ -298,33 +542,69 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         color: '#fff',
-        marginBottom: 2,
+        marginBottom: 3,
     },
     searchResultWallet: {
         fontSize: 13,
-        color: 'rgba(255, 255, 255, 0.5)',
+        color: 'rgba(255, 255, 255, 0.4)',
         fontFamily: 'monospace',
+        marginBottom: 6,
+    },
+    userStatsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    userStatText: {
+        fontSize: 12,
+        color: 'rgba(255, 255, 255, 0.5)',
+    },
+    userStatNumber: {
+        fontWeight: '600',
+        color: 'rgba(255, 255, 255, 0.7)',
+    },
+    userStatDot: {
+        color: 'rgba(255, 255, 255, 0.3)',
+        marginHorizontal: 6,
     },
     followButton: {
-        backgroundColor: 'rgba(74, 222, 128, 0.1)',
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-        borderRadius: 8,
+        backgroundColor: 'rgba(74, 222, 128, 0.12)',
+        paddingVertical: 10,
+        paddingHorizontal: 18,
+        borderRadius: 10,
         borderWidth: 1,
         borderColor: 'rgba(74, 222, 128, 0.2)',
+        minWidth: 95,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    followingButton: {
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: 'rgba(255, 255, 255, 0.15)',
+    },
+    followButtonDisabled: {
+        opacity: 0.6,
     },
     followButtonText: {
         color: '#4ade80',
         fontSize: 14,
         fontWeight: '600',
     },
+    followingButtonText: {
+        color: '#fff',
+    },
     listContent: {
+        paddingTop: 12,
         paddingBottom: 100,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        gap: 12,
+    },
+    loadingText: {
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.5)',
     },
     emptyContainer: {
         flex: 1,
@@ -332,77 +612,157 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 40,
     },
-    emptyText: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: 'rgba(255, 255, 255, 0.7)',
-        marginTop: 16,
-    },
-    emptySubtext: {
-        fontSize: 14,
-        color: 'rgba(255, 255, 255, 0.4)',
-        marginTop: 8,
-        textAlign: 'center',
-    },
-    feedItem: {
-        flexDirection: 'row',
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
-    },
-    feedAvatar: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+    emptyIconContainer: {
+        width: 88,
+        height: 88,
+        borderRadius: 44,
+        backgroundColor: 'rgba(74, 222, 128, 0.05)',
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12,
+        marginBottom: 20,
     },
-    feedAvatarText: {
-        fontSize: 16,
+    emptyTitle: {
+        fontSize: 20,
         fontWeight: '600',
-        color: '#4ade80',
+        color: '#fff',
+        marginBottom: 8,
     },
-    feedContent: {
-        flex: 1,
+    emptySubtext: {
+        fontSize: 15,
+        color: 'rgba(255, 255, 255, 0.5)',
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: 24,
     },
-    feedHeader: {
+    discoverButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 4,
-        flexWrap: 'wrap',
+        gap: 8,
+        backgroundColor: '#4ade80',
+        paddingHorizontal: 24,
+        paddingVertical: 14,
+        borderRadius: 14,
     },
-    userName: {
+    discoverButtonText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#0a0a0f',
+    },
+    feedCard: {
+        marginHorizontal: 20,
+        marginBottom: 16,
+        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        borderRadius: 20,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.06)',
+    },
+    feedCardHeader: {
+        flexDirection: 'row',
+        marginBottom: 14,
+    },
+    feedAvatarContainer: {
+        marginRight: 12,
+    },
+    feedAvatar: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+    },
+    feedAvatarGradient: {
+        ...StyleSheet.absoluteFillObject,
+        borderRadius: 22,
+    },
+    feedAvatarText: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#4ade80',
+    },
+    feedHeaderInfo: {
+        flex: 1,
+        justifyContent: 'center',
+    },
+    feedHeaderTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 2,
+    },
+    feedUserName: {
         color: '#fff',
         fontWeight: '600',
         fontSize: 15,
-        marginRight: 6,
+        marginRight: 8,
     },
-    userHandle: {
-        color: 'rgba(255, 255, 255, 0.5)',
+    feedUserHandle: {
+        color: 'rgba(255, 255, 255, 0.4)',
         fontSize: 14,
     },
-    timeDot: {
-        color: 'rgba(255, 255, 255, 0.3)',
-        marginHorizontal: 6,
-    },
-    time: {
-        color: 'rgba(255, 255, 255, 0.5)',
+    feedTime: {
+        color: 'rgba(255, 255, 255, 0.4)',
         fontSize: 13,
     },
-    actionText: {
-        color: 'rgba(255, 255, 255, 0.8)',
-        fontSize: 15,
-        lineHeight: 22,
+    tradeActionCard: {
+        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        borderRadius: 14,
+        padding: 14,
+        marginBottom: 14,
     },
-    highlight: {
-        color: '#4ade80',
-        fontWeight: '500',
-    },
-    interactions: {
+    tradeActionLeft: {
         flexDirection: 'row',
-        marginTop: 12,
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    tradeSidePill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+        marginRight: 12,
+    },
+    tradeSidePillYes: {
+        backgroundColor: 'rgba(74, 222, 128, 0.15)',
+    },
+    tradeSidePillNo: {
+        backgroundColor: 'rgba(248, 113, 113, 0.15)',
+    },
+    tradeSideText: {
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    tradeSideTextYes: {
+        color: '#4ade80',
+    },
+    tradeSideTextNo: {
+        color: '#f87171',
+    },
+    tradeAmount: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#fff',
+    },
+    tradeMarketPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 10,
+    },
+    tradeMarketText: {
+        color: 'rgba(255, 255, 255, 0.7)',
+        fontSize: 14,
+        fontWeight: '500',
+        flex: 1,
+        marginRight: 8,
+    },
+    interactionRow: {
+        flexDirection: 'row',
         gap: 24,
     },
     interactionBtn: {
@@ -411,7 +771,8 @@ const styles = StyleSheet.create({
         gap: 6,
     },
     interactionText: {
-        color: 'rgba(255, 255, 255, 0.5)',
-        fontSize: 12,
+        color: 'rgba(255, 255, 255, 0.4)',
+        fontSize: 13,
+        fontWeight: '500',
     },
 });

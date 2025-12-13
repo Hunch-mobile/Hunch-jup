@@ -26,6 +26,34 @@ export default function RootLayout() {
           <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen 
+              name="event/[ticker]" 
+              options={{ 
+                headerShown: false,
+                presentation: 'card',
+              }} 
+            />
+            <Stack.Screen 
+              name="market/[ticker]" 
+              options={{ 
+                headerShown: false,
+                presentation: 'card',
+              }} 
+            />
+            <Stack.Screen 
+              name="user/[userId]" 
+              options={{ 
+                headerShown: false,
+                presentation: 'card',
+              }} 
+            />
+            <Stack.Screen 
+              name="user/followers/[userId]" 
+              options={{ 
+                headerShown: false,
+                presentation: 'card',
+              }} 
+            />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
           <StatusBar style="auto" />

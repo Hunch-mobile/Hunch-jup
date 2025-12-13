@@ -1,6 +1,6 @@
 import { CreateTradeRequest, Event, EventsResponse, Follow, Market, MarketsResponse, SyncUserRequest, Trade, User } from './types';
 
-const API_BASE_URL = 'https://hunchdotrun.vercel.app';
+const API_BASE_URL = 'https://hunchdotrun-roan.vercel.app';
 const METADATA_API_BASE_URL = 'https://prediction-markets-api.dflow.net';
 
 export const api = {
@@ -278,5 +278,22 @@ export const marketsApi = {
 
         const data = await response.json();
         return data.outcomeMints || [];
+    },
+
+    // Fetch market details by ticker
+    fetchMarketDetails: async (ticker: string): Promise<Market> => {
+        const response = await fetch(
+            `${METADATA_API_BASE_URL}/api/v1/market/${ticker}`,
+            {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch market details: ${response.statusText}`);
+        }
+
+        return await response.json();
     },
 };

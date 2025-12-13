@@ -1,65 +1,181 @@
-import { marketsApi } from "@/lib/api";
-import { Market } from "@/lib/types";
+import { useUser } from "@/contexts/UserContext";
+import { api, marketsApi } from "@/lib/api";
+import { Event, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const MarketCard = ({ item }: { item: Market }) => (
-  <TouchableOpacity style={styles.card} activeOpacity={0.7}>
-    <View style={styles.cardHeader}>
-      <View style={styles.volumeContainer}>
-        <Ionicons name="stats-chart" size={12} color="rgba(255, 255, 255, 0.5)" />
-        <Text style={styles.volumeText}>${(item.volume || 0).toLocaleString()} Vol</Text>
-      </View>
-      {item.status === 'active' && (
-        <View style={styles.hotBadge}>
-          <Text style={styles.hotText}>Active</Text>
-        </View>
-      )}
-    </View>
+const UserPositionsSection = () => {
+  const { backendUser } = useUser();
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [loading, setLoading] = useState(false);
 
-    <Text style={styles.marketTitle}>{item.title}</Text>
+  useEffect(() => {
+    if (backendUser) {
+      loadUserTrades();
+    }
+  }, [backendUser]);
 
-    <View style={styles.cardFooter}>
-      <View style={styles.chanceContainer}>
-        {/* Placeholder for chance since API might not return it directly without calculation */}
-        <Text style={styles.chanceLabel}>Volume</Text>
-        <Text style={styles.chanceValue}>${(item.volume || 0).toLocaleString()}</Text>
+  const loadUserTrades = async () => {
+    if (!backendUser) return;
+
+    try {
+      setLoading(true);
+      const userTrades = await api.getUserTrades(backendUser.id, 5);
+      setTrades(userTrades);
+    } catch (err) {
+      console.error("Failed to fetch user trades:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!backendUser) {
+    return null;
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.positionsSection}>
+        <Text style={styles.positionsSectionTitle}>Your Recent Positions</Text>
+        <ActivityIndicator size="small" color="#4ade80" />
       </View>
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionButton}>
-          <Text style={styles.actionButtonText}>Trade</Text>
+    );
+  }
+
+  if (trades.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.positionsSection}>
+      <View style={styles.positionsHeader}>
+        <Text style={styles.positionsSectionTitle}>Your Recent Positions</Text>
+        <TouchableOpacity onPress={() => router.push('/(tabs)/profile')}>
+          <Text style={styles.viewAllText}>View All</Text>
         </TouchableOpacity>
       </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.positionsScroll}>
+        {trades.map((trade) => (
+          <TouchableOpacity
+            key={trade.id}
+            style={styles.positionCard}
+            onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: trade.marketTicker } })}
+          >
+            <View style={styles.positionHeader}>
+              <View style={[
+                styles.sideBadge,
+                trade.side === 'yes' ? styles.sideBadgeYes : styles.sideBadgeNo
+              ]}>
+                <Text style={[
+                  styles.sideText,
+                  trade.side === 'yes' ? styles.sideTextYes : styles.sideTextNo
+                ]}>
+                  {trade.side.toUpperCase()}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.positionAmount}>${parseFloat(trade.amount).toFixed(2)}</Text>
+            <Text style={styles.positionTicker} numberOfLines={1}>{trade.marketTicker}</Text>
+            <Text style={styles.positionDate}>
+              {new Date(trade.createdAt).toLocaleDateString()}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
     </View>
-  </TouchableOpacity>
-);
+  );
+};
+
+const EventCard = ({ item }: { item: Event }) => {
+  const activeMarkets = item.markets?.filter(
+    market => market.status === 'active'
+  ) || [];
+
+  const handlePress = () => {
+    router.push({ pathname: '/event/[ticker]', params: { ticker: item.ticker } });
+  };
+
+  return (
+    <TouchableOpacity style={styles.eventCard} activeOpacity={0.7} onPress={handlePress}>
+      <View style={styles.eventCardLayout}>
+        {/* Event Image - Left Side */}
+        {item.imageUrl ? (
+          <Image
+            source={{ uri: item.imageUrl }}
+            style={styles.eventImage}
+            contentFit="cover"
+            transition={200}
+          />
+        ) : (
+          <View style={styles.eventImagePlaceholder}>
+            <Ionicons name="image-outline" size={32} color="rgba(255, 255, 255, 0.3)" />
+          </View>
+        )}
+
+        {/* Event Content - Right Side */}
+        <View style={styles.eventContent}>
+          {item.competition && (
+            <Text style={styles.competitionText}>{item.competition}</Text>
+          )}
+
+          <Text style={styles.eventTitle} numberOfLines={2}>{item.title}</Text>
+
+          {item.subtitle && (
+            <Text style={styles.eventSubtitle} numberOfLines={1}>{item.subtitle}</Text>
+          )}
+
+          {/* Event Stats */}
+          <View style={styles.eventStats}>
+            <View style={styles.statItem}>
+              <Ionicons name="pulse" size={12} color="#4ade80" />
+              <Text style={styles.statText}>{activeMarkets.length} markets</Text>
+            </View>
+            {item.volume && (
+              <View style={styles.statItem}>
+                <Ionicons name="trending-up" size={12} color="rgba(255, 255, 255, 0.4)" />
+                <Text style={styles.statText}>${(item.volume / 1000000).toFixed(1)}M</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
 
 export default function HomeScreen() {
-  const [markets, setMarkets] = useState<Market[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadMarkets();
+    loadEvents();
   }, []);
 
-  const loadMarkets = async () => {
+  const loadEvents = async () => {
     try {
       setLoading(true);
-      const data = await marketsApi.fetchMarkets(50);
-      // Filter out non-active markets for better UX
-      const activeMarkets = data.filter(
-        market => market.status !== 'finalized' &&
-          market.status !== 'resolved' &&
-          market.status !== 'closed'
-      );
-      setMarkets(activeMarkets);
+      setError(null);
+      const data = await marketsApi.fetchEvents(50, {
+        status: 'active',
+        withNestedMarkets: true
+      });
+      // Filter events that have active markets
+      const eventsWithActiveMarkets = data.filter(event => {
+        const activeMarkets = event.markets?.filter(
+          market => market.status === 'active'
+        ) || [];
+        return activeMarkets.length > 0;
+      });
+      setEvents(eventsWithActiveMarkets);
     } catch (err) {
-      console.error("Failed to fetch markets:", err);
-      setError("Failed to load markets");
+      console.error("Failed to fetch events:", err);
+      setError("Failed to load events");
     } finally {
       setLoading(false);
     }
@@ -74,11 +190,14 @@ export default function HomeScreen() {
 
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Markets</Text>
-          <TouchableOpacity style={styles.filterButton} onPress={loadMarkets}>
+          <Text style={styles.headerTitle}>Home</Text>
+          <TouchableOpacity style={styles.refreshButton} onPress={loadEvents}>
             <Ionicons name="refresh" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
+
+        {/* User Positions Section */}
+        <UserPositionsSection />
 
         {loading ? (
           <View style={styles.centerContainer}>
@@ -87,19 +206,19 @@ export default function HomeScreen() {
         ) : error ? (
           <View style={styles.centerContainer}>
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={loadMarkets}>
+            <TouchableOpacity style={styles.retryButton} onPress={loadEvents}>
               <Text style={styles.retryText}>Retry</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <FlatList
-            data={markets}
+            data={events}
             keyExtractor={(item) => item.ticker}
-            renderItem={({ item }) => <MarketCard item={item} />}
+            renderItem={({ item }) => <EventCard item={item} />}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             refreshing={loading}
-            onRefresh={loadMarkets}
+            onRefresh={loadEvents}
           />
         )}
       </SafeAreaView>
@@ -120,28 +239,28 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '700',
     color: '#fff',
-    letterSpacing: 0.5,
   },
-  filterButton: {
+  refreshButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   listContent: {
-    padding: 16,
-    paddingBottom: 100, // Space for tab bar
+    padding: 20,
+    paddingBottom: 100,
   },
   centerContainer: {
     flex: 1,
@@ -154,9 +273,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   retryButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
     borderRadius: 8,
   },
   retryText: {
@@ -164,78 +283,139 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+  eventCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 12,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    overflow: 'hidden',
   },
-  cardHeader: {
+  eventCardLayout: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    height: 120,
   },
-  volumeContainer: {
+  eventImage: {
+    width: 120,
+    height: 120,
+  },
+  eventImagePlaceholder: {
+    width: 120,
+    height: 120,
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  eventContent: {
+    flex: 1,
+    padding: 12,
+    justifyContent: 'space-between',
+  },
+  competitionText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4ade80',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  eventTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  eventSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginBottom: 8,
+  },
+  eventStats: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  statItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  volumeText: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: 12,
+  statText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 11,
+    fontWeight: '500',
   },
-  hotBadge: {
-    backgroundColor: 'rgba(74, 222, 128, 0.2)', // Green background for active
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 99,
-  },
-  hotText: {
-    color: '#4ade80', // Green text for active
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  marketTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
+  positionsSection: {
+    marginHorizontal: 20,
     marginBottom: 16,
-    lineHeight: 24,
   },
-  cardFooter: {
+  positionsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 12,
   },
-  chanceContainer: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
-  },
-  chanceLabel: {
-    color: '#4ade80',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  chanceValue: {
-    color: '#fff',
-    fontSize: 20,
+  positionsSectionTitle: {
+    fontSize: 18,
     fontWeight: '700',
+    color: '#fff',
   },
-  actions: {},
-  actionButton: {
-    backgroundColor: 'rgba(74, 222, 128, 0.1)',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(74, 222, 128, 0.2)',
-  },
-  actionButtonText: {
+  viewAllText: {
     color: '#4ade80',
     fontSize: 14,
     fontWeight: '600',
+  },
+  positionsScroll: {
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
+  },
+  positionCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    padding: 12,
+    marginRight: 12,
+    width: 140,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  positionHeader: {
+    marginBottom: 8,
+  },
+  sideBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  sideBadgeYes: {
+    backgroundColor: 'rgba(74, 222, 128, 0.2)',
+  },
+  sideBadgeNo: {
+    backgroundColor: 'rgba(248, 113, 113, 0.2)',
+  },
+  sideText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  sideTextYes: {
+    color: '#4ade80',
+  },
+  sideTextNo: {
+    color: '#f87171',
+  },
+  positionAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  positionTicker: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginBottom: 4,
+  },
+  positionDate: {
+    fontSize: 10,
+    color: 'rgba(255, 255, 255, 0.4)',
   },
 });

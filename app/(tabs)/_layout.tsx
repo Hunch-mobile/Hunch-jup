@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
-import { StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 
 export default function TabLayout() {
   return (
@@ -8,30 +8,36 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: "#4ade80", // Green accent
-        tabBarInactiveTintColor: "rgba(255, 255, 255, 0.4)",
+        tabBarActiveTintColor: "#4ade80",
+        tabBarInactiveTintColor: "rgba(255, 255, 255, 0.35)",
         tabBarShowLabel: true,
         tabBarLabelStyle: styles.tabLabel,
         tabBarBackground: () => (
-          <View style={styles.tabBackground} />
+          <View style={styles.tabBackground}>
+            <View style={styles.tabBackgroundInner} />
+          </View>
         ),
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "Markets",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bar-chart" size={24} color={color} />
+          title: "Home",
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
+              <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
+            </View>
           ),
         }}
       />
       <Tabs.Screen
         name="social"
         options={{
-          title: "Social",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people" size={24} color={color} />
+          title: "Feed",
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
+              <Ionicons name={focused ? "people" : "people-outline"} size={22} color={color} />
+            </View>
           ),
         }}
       />
@@ -39,8 +45,10 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person" size={24} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <View style={[styles.iconWrapper, focused && styles.iconWrapperActive]}>
+              <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color} />
+            </View>
           ),
         }}
       />
@@ -53,19 +61,31 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderTopWidth: 0,
     elevation: 0,
-    height: 60,
+    height: Platform.OS === 'ios' ? 85 : 65,
     backgroundColor: 'transparent',
-    paddingBottom: 8,
+    paddingBottom: Platform.OS === 'ios' ? 25 : 8,
+    paddingTop: 8,
   },
   tabBackground: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#0a0a0f',
+    overflow: 'hidden',
+  },
+  tabBackgroundInner: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10, 10, 15, 0.95)',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
   },
   tabLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-    marginBottom: 4,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  iconWrapper: {
+    padding: 4,
+    borderRadius: 10,
+  },
+  iconWrapperActive: {
+    backgroundColor: 'rgba(74, 222, 128, 0.08)',
   },
 });

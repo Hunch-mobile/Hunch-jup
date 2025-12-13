@@ -73,22 +73,59 @@ export interface ApiError {
 export interface Market {
     ticker: string;
     title: string;
+    subtitle?: string;
     status: string; // 'active', 'finalized', 'resolved', 'closed'
+    eventTicker?: string;
+    marketType?: string;
+    yesSubTitle?: string;
+    noSubTitle?: string;
+    openTime?: number;
+    closeTime?: number;
+    expirationTime?: number;
+    volume?: number;
+    openInterest?: number;
+    result?: string;
+    canCloseEarly?: boolean;
+    earlyCloseCondition?: string;
+    rulesPrimary?: string;
+    rulesSecondary?: string;
+    yesBid?: string | null;
+    yesAsk?: string | null;
+    noBid?: string | null;
+    noAsk?: string | null;
     yesMint?: string;
     noMint?: string;
-    volume?: number;
     accounts?: {
-        yesMint?: string;
-        noMint?: string;
-        [key: string]: any;
+        [key: string]: {
+            marketLedger?: string;
+            yesMint?: string;
+            noMint?: string;
+            isInitialized?: boolean;
+            redemptionStatus?: string | null;
+        };
     };
-    [key: string]: any;
+}
+
+export interface SettlementSource {
+    name: string;
+    url: string;
 }
 
 export interface Event {
     ticker: string;
+    seriesTicker?: string;
     title: string;
     subtitle?: string;
+    imageUrl?: string;
+    competition?: string;
+    competitionScope?: string;
+    strikeDate?: number | null;
+    strikePeriod?: string | null;
+    volume?: number;
+    volume24h?: number;
+    liquidity?: number;
+    openInterest?: number;
+    settlementSources?: SettlementSource[] | any;
     markets?: Market[];
 }
 
@@ -98,4 +135,5 @@ export interface MarketsResponse {
 
 export interface EventsResponse {
     events: Event[];
+    cursor?: number;
 }
