@@ -4,13 +4,13 @@ import { useLoginWithOAuth, usePrivy } from "@privy-io/expo";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
     ActivityIndicator,
     Animated,
     Dimensions,
     Modal,
     Pressable,
-    SafeAreaView,
     StyleSheet,
     Text,
     TouchableOpacity,
