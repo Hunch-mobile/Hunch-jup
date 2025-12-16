@@ -17,6 +17,18 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Theme constants
+const ACCENT = '#3FE3FF';
+const BG_MAIN = '#000000';
+const BG_CARD = '#111827';
+const BG_ELEVATED = '#161C24';
+const BORDER = '#1F2937';
+const TEXT_PRIMARY = '#E5E7EB';
+const TEXT_SECONDARY = '#9CA3AF';
+const TEXT_DISABLED = '#6B7280';
+const SUCCESS = '#4ade80';
+const ERROR = '#f87171';
+
 interface FeedItem extends Trade {
     type: 'trade';
 }
@@ -160,7 +172,7 @@ export default function SocialScreen() {
             >
                 <View style={styles.searchResultAvatar}>
                     <LinearGradient
-                        colors={['rgba(74, 222, 128, 0.3)', 'rgba(34, 197, 94, 0.1)']}
+                        colors={['rgba(63, 227, 255, 0.3)', 'rgba(63, 227, 255, 0.1)']}
                         style={styles.avatarGradient}
                     />
                     <Text style={styles.searchResultAvatarText}>
@@ -196,7 +208,7 @@ export default function SocialScreen() {
                         disabled={inProgress}
                     >
                         {inProgress ? (
-                            <ActivityIndicator size="small" color={isFollowing ? "#fff" : "#4ade80"} />
+                            <ActivityIndicator size="small" color={isFollowing ? TEXT_PRIMARY : ACCENT} />
                         ) : (
                             <Text style={[
                                 styles.followButtonText,
@@ -236,7 +248,7 @@ export default function SocialScreen() {
                     >
                         <View style={styles.feedAvatar}>
                             <LinearGradient
-                                colors={['rgba(74, 222, 128, 0.4)', 'rgba(34, 197, 94, 0.1)']}
+                                colors={['rgba(63, 227, 255, 0.4)', 'rgba(63, 227, 255, 0.1)']}
                                 style={styles.feedAvatarGradient}
                             />
                             <Text style={styles.feedAvatarText}>
@@ -270,7 +282,7 @@ export default function SocialScreen() {
                             <Ionicons
                                 name={isYes ? "trending-up" : "trending-down"}
                                 size={14}
-                                color={isYes ? "#4ade80" : "#f87171"}
+                                color={isYes ? SUCCESS : ERROR}
                             />
                             <Text style={[
                                 styles.tradeSideText,
@@ -292,25 +304,25 @@ export default function SocialScreen() {
                         <Text style={styles.tradeMarketText} numberOfLines={1}>
                             {item.marketTicker}
                         </Text>
-                        <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.4)" />
+                        <Ionicons name="chevron-forward" size={14} color={TEXT_DISABLED} />
                     </TouchableOpacity>
                 </View>
 
                 {/* Interaction Row */}
                 <View style={styles.interactionRow}>
                     <TouchableOpacity style={styles.interactionBtn}>
-                        <Ionicons name="heart-outline" size={18} color="rgba(255,255,255,0.4)" />
+                        <Ionicons name="heart-outline" size={18} color={TEXT_DISABLED} />
                         <Text style={styles.interactionText}>12</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.interactionBtn}>
-                        <Ionicons name="chatbubble-outline" size={17} color="rgba(255,255,255,0.4)" />
+                        <Ionicons name="chatbubble-outline" size={17} color={TEXT_DISABLED} />
                         <Text style={styles.interactionText}>4</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.interactionBtn}>
-                        <Ionicons name="repeat-outline" size={18} color="rgba(255,255,255,0.4)" />
+                        <Ionicons name="repeat-outline" size={18} color={TEXT_DISABLED} />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.interactionBtn}>
-                        <Ionicons name="share-outline" size={17} color="rgba(255,255,255,0.4)" />
+                        <Ionicons name="share-outline" size={17} color={TEXT_DISABLED} />
                     </TouchableOpacity>
                 </View>
             </TouchableOpacity>
@@ -325,10 +337,10 @@ export default function SocialScreen() {
     return (
         <View style={styles.container}>
             <LinearGradient
-                colors={["#0a0a0f", "#0d0d14", "#111118"]}
+                colors={[BG_MAIN, '#0D1117', BG_CARD]}
                 style={styles.gradient}
             />
-            <SafeAreaView style={styles.safeArea}>
+            <SafeAreaView style={styles.safeArea} edges={['top']}>
                 {/* Header */}
                 <View style={styles.header}>
                     <View style={styles.headerLeft}>
@@ -351,7 +363,7 @@ export default function SocialScreen() {
                         <Ionicons
                             name={showSearch ? "close" : "search"}
                             size={20}
-                            color={showSearch ? "#4ade80" : "#fff"}
+                            color={showSearch ? ACCENT : TEXT_PRIMARY}
                         />
                     </TouchableOpacity>
                 </View>
@@ -359,19 +371,19 @@ export default function SocialScreen() {
                 {/* Animated Search Bar */}
                 <Animated.View style={[styles.searchContainer, { height: searchHeight, opacity: searchAnimation }]}>
                     <View style={styles.searchInputWrapper}>
-                        <Ionicons name="search" size={16} color="rgba(255,255,255,0.4)" />
+                        <Ionicons name="search" size={16} color={TEXT_DISABLED} />
                         <TextInput
                             style={styles.searchInput}
                             placeholder="Search users..."
-                            placeholderTextColor="rgba(255,255,255,0.3)"
+                            placeholderTextColor={TEXT_DISABLED}
                             value={searchQuery}
                             onChangeText={handleSearch}
                             autoFocus={showSearch}
                         />
-                        {isSearching && <ActivityIndicator size="small" color="#4ade80" />}
+                        {isSearching && <ActivityIndicator size="small" color={ACCENT} />}
                         {searchQuery.length > 0 && !isSearching && (
                             <TouchableOpacity onPress={() => { setSearchQuery(""); setSearchResults([]); }}>
-                                <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.4)" />
+                                <Ionicons name="close-circle" size={18} color={TEXT_DISABLED} />
                             </TouchableOpacity>
                         )}
                     </View>
@@ -387,13 +399,13 @@ export default function SocialScreen() {
                     />
                 ) : isLoadingFeed ? (
                     <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="large" color="#4ade80" />
+                        <ActivityIndicator size="large" color={ACCENT} />
                         <Text style={styles.loadingText}>Loading feed...</Text>
                     </View>
                 ) : feedItems.length === 0 ? (
                     <View style={styles.emptyContainer}>
                         <View style={styles.emptyIconContainer}>
-                            <Ionicons name="people-outline" size={48} color="rgba(74, 222, 128, 0.3)" />
+                            <Ionicons name="people-outline" size={48} color={`${ACCENT}50`} />
                         </View>
                         <Text style={styles.emptyTitle}>Your feed is empty</Text>
                         <Text style={styles.emptySubtext}>
@@ -403,7 +415,7 @@ export default function SocialScreen() {
                             style={styles.discoverButton}
                             onPress={() => setShowSearch(true)}
                         >
-                            <Ionicons name="search" size={18} color="#0a0a0f" />
+                            <Ionicons name="search" size={18} color={BG_MAIN} />
                             <Text style={styles.discoverButtonText}>Discover Traders</Text>
                         </TouchableOpacity>
                     </View>
@@ -426,7 +438,7 @@ export default function SocialScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#0a0a0f",
+        backgroundColor: BG_MAIN,
     },
     gradient: {
         ...StyleSheet.absoluteFillObject,
@@ -449,14 +461,14 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 28,
         fontWeight: '700',
-        color: '#fff',
+        color: TEXT_PRIMARY,
         letterSpacing: -0.5,
     },
     headerBadge: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+        backgroundColor: 'rgba(63, 227, 255, 0.1)',
         paddingHorizontal: 10,
         paddingVertical: 4,
         borderRadius: 100,
@@ -465,26 +477,26 @@ const styles = StyleSheet.create({
         width: 6,
         height: 6,
         borderRadius: 3,
-        backgroundColor: '#4ade80',
+        backgroundColor: ACCENT,
     },
     headerBadgeText: {
         fontSize: 12,
         fontWeight: '600',
-        color: '#4ade80',
+        color: ACCENT,
     },
     searchButton: {
         width: 40,
         height: 40,
         borderRadius: 12,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: BG_CARD,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: BORDER,
     },
     searchButtonActive: {
-        backgroundColor: 'rgba(74, 222, 128, 0.1)',
-        borderColor: 'rgba(74, 222, 128, 0.2)',
+        backgroundColor: 'rgba(63, 227, 255, 0.1)',
+        borderColor: 'rgba(63, 227, 255, 0.2)',
     },
     searchContainer: {
         paddingHorizontal: 20,
@@ -493,17 +505,17 @@ const styles = StyleSheet.create({
     searchInputWrapper: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: BG_CARD,
         borderRadius: 14,
         paddingHorizontal: 14,
         height: 48,
         gap: 10,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: BORDER,
     },
     searchInput: {
         flex: 1,
-        color: '#fff',
+        color: TEXT_PRIMARY,
         fontSize: 15,
     },
     searchResultCard: {
@@ -512,10 +524,10 @@ const styles = StyleSheet.create({
         padding: 16,
         marginHorizontal: 20,
         marginBottom: 12,
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        backgroundColor: BG_CARD,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.06)',
+        borderColor: BORDER,
     },
     searchResultAvatar: {
         width: 52,
@@ -524,7 +536,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 14,
-        backgroundColor: 'rgba(74, 222, 128, 0.08)',
+        backgroundColor: 'rgba(63, 227, 255, 0.08)',
     },
     avatarGradient: {
         ...StyleSheet.absoluteFillObject,
@@ -533,7 +545,7 @@ const styles = StyleSheet.create({
     searchResultAvatarText: {
         fontSize: 20,
         fontWeight: '700',
-        color: '#4ade80',
+        color: ACCENT,
     },
     searchResultInfo: {
         flex: 1,
@@ -541,12 +553,12 @@ const styles = StyleSheet.create({
     searchResultName: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#fff',
+        color: TEXT_PRIMARY,
         marginBottom: 3,
     },
     searchResultWallet: {
         fontSize: 13,
-        color: 'rgba(255, 255, 255, 0.4)',
+        color: TEXT_DISABLED,
         fontFamily: 'monospace',
         marginBottom: 6,
     },
@@ -556,45 +568,45 @@ const styles = StyleSheet.create({
     },
     userStatText: {
         fontSize: 12,
-        color: 'rgba(255, 255, 255, 0.5)',
+        color: TEXT_SECONDARY,
     },
     userStatNumber: {
         fontWeight: '600',
-        color: 'rgba(255, 255, 255, 0.7)',
+        color: TEXT_PRIMARY,
     },
     userStatDot: {
-        color: 'rgba(255, 255, 255, 0.3)',
+        color: TEXT_DISABLED,
         marginHorizontal: 6,
     },
     followButton: {
-        backgroundColor: 'rgba(74, 222, 128, 0.12)',
+        backgroundColor: 'rgba(63, 227, 255, 0.12)',
         paddingVertical: 10,
         paddingHorizontal: 18,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: 'rgba(74, 222, 128, 0.2)',
+        borderColor: 'rgba(63, 227, 255, 0.2)',
         minWidth: 95,
         alignItems: 'center',
         justifyContent: 'center',
     },
     followingButton: {
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-        borderColor: 'rgba(255, 255, 255, 0.15)',
+        backgroundColor: BG_ELEVATED,
+        borderColor: BORDER,
     },
     followButtonDisabled: {
         opacity: 0.6,
     },
     followButtonText: {
-        color: '#4ade80',
+        color: ACCENT,
         fontSize: 14,
         fontWeight: '600',
     },
     followingButtonText: {
-        color: '#fff',
+        color: TEXT_PRIMARY,
     },
     listContent: {
         paddingTop: 12,
-        paddingBottom: 100,
+        paddingBottom: 80,
     },
     loadingContainer: {
         flex: 1,
@@ -604,7 +616,7 @@ const styles = StyleSheet.create({
     },
     loadingText: {
         fontSize: 14,
-        color: 'rgba(255, 255, 255, 0.5)',
+        color: TEXT_SECONDARY,
     },
     emptyContainer: {
         flex: 1,
@@ -616,7 +628,7 @@ const styles = StyleSheet.create({
         width: 88,
         height: 88,
         borderRadius: 44,
-        backgroundColor: 'rgba(74, 222, 128, 0.05)',
+        backgroundColor: 'rgba(63, 227, 255, 0.05)',
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 20,
@@ -624,12 +636,12 @@ const styles = StyleSheet.create({
     emptyTitle: {
         fontSize: 20,
         fontWeight: '600',
-        color: '#fff',
+        color: TEXT_PRIMARY,
         marginBottom: 8,
     },
     emptySubtext: {
         fontSize: 15,
-        color: 'rgba(255, 255, 255, 0.5)',
+        color: TEXT_SECONDARY,
         textAlign: 'center',
         lineHeight: 22,
         marginBottom: 24,
@@ -638,7 +650,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        backgroundColor: '#4ade80',
+        backgroundColor: ACCENT,
         paddingHorizontal: 24,
         paddingVertical: 14,
         borderRadius: 14,
@@ -646,16 +658,15 @@ const styles = StyleSheet.create({
     discoverButtonText: {
         fontSize: 15,
         fontWeight: '600',
-        color: '#0a0a0f',
+        color: BG_MAIN,
     },
     feedCard: {
         marginHorizontal: 20,
         marginBottom: 16,
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-        borderRadius: 20,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.06)',
+        // Minimal style as requested
+        backgroundColor: 'transparent',
+        paddingVertical: 12,
+        // padding: 16, // Reduced padding or handled by children
     },
     feedCardHeader: {
         flexDirection: 'row',
@@ -670,7 +681,7 @@ const styles = StyleSheet.create({
         borderRadius: 22,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+        backgroundColor: 'rgba(63, 227, 255, 0.1)',
     },
     feedAvatarGradient: {
         ...StyleSheet.absoluteFillObject,
@@ -679,7 +690,7 @@ const styles = StyleSheet.create({
     feedAvatarText: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#4ade80',
+        color: ACCENT,
     },
     feedHeaderInfo: {
         flex: 1,
@@ -691,21 +702,21 @@ const styles = StyleSheet.create({
         marginBottom: 2,
     },
     feedUserName: {
-        color: '#fff',
+        color: TEXT_PRIMARY,
         fontWeight: '600',
         fontSize: 15,
         marginRight: 8,
     },
     feedUserHandle: {
-        color: 'rgba(255, 255, 255, 0.4)',
+        color: TEXT_DISABLED,
         fontSize: 14,
     },
     feedTime: {
-        color: 'rgba(255, 255, 255, 0.4)',
+        color: TEXT_DISABLED,
         fontSize: 13,
     },
     tradeActionCard: {
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        backgroundColor: BG_MAIN,
         borderRadius: 14,
         padding: 14,
         marginBottom: 14,
@@ -735,27 +746,29 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     tradeSideTextYes: {
-        color: '#4ade80',
+        color: SUCCESS,
     },
     tradeSideTextNo: {
-        color: '#f87171',
+        color: ERROR,
     },
     tradeAmount: {
         fontSize: 20,
         fontWeight: '700',
-        color: '#fff',
+        color: TEXT_PRIMARY,
     },
     tradeMarketPill: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: BG_CARD,
         paddingHorizontal: 14,
         paddingVertical: 10,
         borderRadius: 10,
+        borderWidth: 1,
+        borderColor: BORDER,
     },
     tradeMarketText: {
-        color: 'rgba(255, 255, 255, 0.7)',
+        color: TEXT_SECONDARY,
         fontSize: 14,
         fontWeight: '500',
         flex: 1,
@@ -771,7 +784,7 @@ const styles = StyleSheet.create({
         gap: 6,
     },
     interactionText: {
-        color: 'rgba(255, 255, 255, 0.4)',
+        color: TEXT_DISABLED,
         fontSize: 13,
         fontWeight: '500',
     },

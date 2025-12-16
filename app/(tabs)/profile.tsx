@@ -2,61 +2,29 @@ import CreditCard from "@/components/CreditCard";
 import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
 import { Trade, User } from "@/lib/types";
-import { Ionicons } from "@expo/vector-icons";
+import { FontAwesome, Ionicons } from "@expo/vector-icons";
 import { usePrivy } from "@privy-io/expo";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Animated, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Trade Item Component
-const TradeItem = ({ trade, onPress }: { trade: Trade; onPress: () => void }) => {
-    const isYes = trade.side === 'yes';
+// Theme constants
+const ACCENT = '#3FE3FF';
+const BG_MAIN = '#000000';
+const BG_CARD = '#111827';
+const BG_ELEVATED = '#161C24';
+const BORDER = '#1F2937';
+const TEXT_PRIMARY = '#E5E7EB';
+const TEXT_SECONDARY = '#9CA3AF';
+const TEXT_DISABLED = '#6B7280';
+const SUCCESS = '#4ade80';
+const ERROR = '#f87171';
 
-    return (
-        <TouchableOpacity style={styles.tradeItem} onPress={onPress} activeOpacity={0.7}>
-            <View style={styles.tradeLeft}>
-                <View style={[
-                    styles.tradeSideBadge,
-                    isYes ? styles.tradeSideBadgeYes : styles.tradeSideBadgeNo
-                ]}>
-                    <Ionicons
-                        name={isYes ? "trending-up" : "trending-down"}
-                        size={12}
-                        color={isYes ? "#4ade80" : "#f87171"}
-                    />
-                    <Text style={[
-                        styles.tradeSideText,
-                        isYes ? styles.tradeSideTextYes : styles.tradeSideTextNo
-                    ]}>
-                        {trade.side.toUpperCase()}
-                    </Text>
-                </View>
-                <View style={styles.tradeInfo}>
-                    <Text style={styles.tradeTicker} numberOfLines={1}>
-                        {trade.marketTicker}
-                    </Text>
-                    <Text style={styles.tradeDate}>
-                        {new Date(trade.createdAt).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                        })}
-                    </Text>
-                </View>
-            </View>
-            <View style={styles.tradeRight}>
-                <Text style={styles.tradeAmount}>
-                    ${parseFloat(trade.amount).toFixed(2)}
-                </Text>
-                <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.3)" />
-            </View>
-        </TouchableOpacity>
-    );
-};
+type TradeTab = 'active' | 'previous';
 
 export default function ProfileScreen() {
     const { user, logout } = usePrivy();
@@ -65,7 +33,21 @@ export default function ProfileScreen() {
     const [profileData, setProfileData] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [trades, setTrades] = useState<Trade[]>([]);
-    const [showAllTrades, setShowAllTrades] = useState(false);
+    const [activeTab, setActiveTab] = useState<TradeTab>('active');
+
+    // Animation values
+    const slideAnim = useRef(new Animated.Value(0)).current;
+
+    const animateToTab = useCallback((tab: TradeTab) => {
+        const toValue = tab === 'active' ? 0 : -SCREEN_WIDTH + 40; // Adjust for padding
+        Animated.spring(slideAnim, {
+            toValue,
+            useNativeDriver: true,
+            tension: 50,
+            friction: 7,
+        }).start();
+        setActiveTab(tab);
+    }, [slideAnim]);
 
     useEffect(() => {
         loadProfile();
@@ -105,28 +87,45 @@ export default function ProfileScreen() {
         router.replace("/login");
     };
 
-    const walletAccount = user?.linked_accounts?.find((a: any) => a.type === 'wallet' || a.type === 'embedded_wallet');
-    const walletAddress = (walletAccount as any)?.address;
-    const formattedAddress = walletAddress
-        ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-        : "No wallet connected";
+    // Get Twitter/X data from linked accounts
+    const twitterAccount = user?.linked_accounts?.find((a: any) => a.type === 'twitter_oauth');
+    const twitterHandle = (twitterAccount as any)?.username;
+    const profileImageUrl = (twitterAccount as any)?.profile_picture_url;
 
     const displayName = profileData?.displayName || backendUser?.displayName || "User";
     const followerCount = profileData?.followerCount || 0;
     const followingCount = profileData?.followingCount || 0;
 
-    const displayedTrades = showAllTrades ? trades : trades.slice(0, 5);
+    // Format joined date
+    const joinedDate = profileData?.createdAt
+        ? new Date(profileData.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+        : 'Nov 2025';
+
+    // Separate active and previous trades
+    const now = new Date();
+    const activeTrades = trades.filter(trade => {
+        const tradeDate = new Date(trade.createdAt);
+        const hoursDiff = (now.getTime() - tradeDate.getTime()) / (1000 * 60 * 60);
+        return hoursDiff < 24;
+    });
+    const previousTrades = trades.filter(trade => {
+        const tradeDate = new Date(trade.createdAt);
+        const hoursDiff = (now.getTime() - tradeDate.getTime()) / (1000 * 60 * 60);
+        return hoursDiff >= 24;
+    });
+
+    const displayedTrades = activeTab === 'active' ? activeTrades : previousTrades;
 
     if (isLoading) {
         return (
             <View style={styles.container}>
                 <LinearGradient
-                    colors={["#0a0a0f", "#0d0d14", "#111118"]}
+                    colors={[BG_MAIN, '#0D1117', BG_CARD]}
                     style={styles.gradient}
                 />
-                <SafeAreaView style={styles.safeArea}>
-                    <View style={[styles.content, { justifyContent: 'center', alignItems: 'center' }]}>
-                        <ActivityIndicator size="large" color="#4ade80" />
+                <SafeAreaView style={styles.safeArea} edges={['top']}>
+                    <View style={[styles.content, { flex: 1, justifyContent: 'center', alignItems: 'center' }]}>
+                        <ActivityIndicator size="large" color={ACCENT} />
                     </View>
                 </SafeAreaView>
             </View>
@@ -136,57 +135,70 @@ export default function ProfileScreen() {
     return (
         <View style={styles.container}>
             <LinearGradient
-                colors={["#0a0a0f", "#0d0d14", "#111118"]}
+                colors={[BG_MAIN, '#0D1117', BG_CARD]}
                 style={styles.gradient}
             />
-            <SafeAreaView style={styles.safeArea}>
-                {/* Header */}
-                <View style={styles.header}>
-                    <Text style={styles.headerTitle}>Profile</Text>
-                    <View style={styles.headerActions}>
-                        <TouchableOpacity style={styles.headerBtn}>
-                            <Ionicons name="settings-outline" size={20} color="rgba(255,255,255,0.7)" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={handleLogout} style={styles.headerBtn}>
-                            <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.7)" />
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
+            <SafeAreaView style={styles.safeArea} edges={['top']}>
                 <ScrollView
                     contentContainerStyle={styles.content}
                     showsVerticalScrollIndicator={false}
                 >
-                    {/* Profile Header Card */}
-                    <View style={styles.profileCard}>
-                        {/* Avatar with Glow */}
-                        <View style={styles.avatarWrapper}>
-                            <LinearGradient
-                                colors={['#4ade80', '#22c55e', '#16a34a']}
-                                style={styles.avatarGlow}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                            />
-                            <View style={styles.avatarInner}>
-                                <Text style={styles.avatarText}>
-                                    {displayName.charAt(0).toUpperCase()}
-                                </Text>
+                    {/* Profile Header Section */}
+                    <View style={styles.profileHeader}>
+                        {/* Top Row: Avatar + Logout */}
+                        <View style={styles.topRow}>
+                            {/* Avatar with Edit Icon */}
+                            <View style={styles.avatarContainer}>
+                                <View style={styles.avatarWrapper}>
+                                    <LinearGradient
+                                        colors={[ACCENT, '#00B8D4', '#0091EA']}
+                                        style={styles.avatarGlow}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                    />
+                                    <View style={styles.avatarInner}>
+                                        {profileImageUrl ? (
+                                            <Image
+                                                source={{ uri: profileImageUrl }}
+                                                style={styles.avatarImage}
+                                            />
+                                        ) : (
+                                            <Text style={styles.avatarText}>
+                                                {displayName.charAt(0).toUpperCase()}
+                                            </Text>
+                                        )}
+                                    </View>
+                                </View>
+                                <TouchableOpacity style={styles.avatarEditBtn}>
+                                    <Ionicons name="pencil" size={12} color={TEXT_PRIMARY} />
+                                </TouchableOpacity>
                             </View>
+
+                            {/* Logout Icon */}
+                            <TouchableOpacity style={styles.headerBtn} onPress={handleLogout}>
+                                <Ionicons name="log-out-outline" size={20} color={TEXT_SECONDARY} />
+                            </TouchableOpacity>
                         </View>
 
-                        {/* Name & Wallet */}
+                        {/* Name */}
                         <Text style={styles.name}>{displayName}</Text>
 
-                        <TouchableOpacity style={styles.walletBadge} activeOpacity={0.7}>
-                            <Ionicons name="wallet-outline" size={14} color="#4ade80" />
-                            <Text style={styles.walletText}>{formattedAddress}</Text>
-                            <Ionicons name="copy-outline" size={12} color="rgba(255,255,255,0.4)" />
+                        {/* Username with X/Twitter */}
+                        <View style={styles.usernameRow}>
+                            <Text style={styles.username}>
+                                @{twitterHandle || displayName.toLowerCase().replace(/\s/g, '')}
+                            </Text>
+                            <FontAwesome name="twitter" size={14} color={TEXT_PRIMARY} style={styles.twitterIcon} />
+                        </View>
+
+                        {/* Add Bio */}
+                        <TouchableOpacity>
+                            <Text style={styles.addBio}>+ Add a bio</Text>
                         </TouchableOpacity>
 
-                        {/* Stats Row */}
-                        <View style={styles.statsRow}>
+                        {/* Following / Followers */}
+                        <View style={styles.followRow}>
                             <TouchableOpacity
-                                style={styles.statBox}
                                 onPress={() => {
                                     if (backendUser?.id) {
                                         router.push({
@@ -195,16 +207,12 @@ export default function ProfileScreen() {
                                         });
                                     }
                                 }}
-                                activeOpacity={0.7}
                             >
-                                <Text style={styles.statNumber}>{followingCount}</Text>
-                                <Text style={styles.statLabel}>Following</Text>
+                                <Text style={styles.followText}>
+                                    <Text style={styles.followCount}>{followingCount}</Text> Following
+                                </Text>
                             </TouchableOpacity>
-
-                            <View style={styles.statDivider} />
-
                             <TouchableOpacity
-                                style={styles.statBox}
                                 onPress={() => {
                                     if (backendUser?.id) {
                                         router.push({
@@ -213,81 +221,182 @@ export default function ProfileScreen() {
                                         });
                                     }
                                 }}
-                                activeOpacity={0.7}
                             >
-                                <Text style={styles.statNumber}>{followerCount}</Text>
-                                <Text style={styles.statLabel}>Followers</Text>
-                            </TouchableOpacity>
-
-                            <View style={styles.statDivider} />
-
-                            <View style={styles.statBox}>
-                                <Text style={styles.statNumber}>{trades.length}</Text>
-                                <Text style={styles.statLabel}>Trades</Text>
-                            </View>
-                        </View>
-
-                        {/* Action Buttons */}
-                        <View style={styles.actionRow}>
-                            <TouchableOpacity style={styles.editBtn} activeOpacity={0.8}>
-                                <Text style={styles.editBtnText}>Edit Profile</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.shareBtn} activeOpacity={0.7}>
-                                <Ionicons name="share-outline" size={20} color="#fff" />
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-
-                    {/* Balance Card */}
-                    <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>Balance</Text>
-                        </View>
-                        <CreditCard tradesCount={trades.length} />
-                    </View>
-
-                    {/* Trades Section */}
-                    <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>Your Trades</Text>
-                            {trades.length > 5 && (
-                                <TouchableOpacity
-                                    onPress={() => setShowAllTrades(!showAllTrades)}
-                                    activeOpacity={0.7}
-                                >
-                                    <Text style={styles.showAllText}>
-                                        {showAllTrades ? 'Show Less' : `Show All (${trades.length})`}
-                                    </Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-
-                        {trades.length === 0 ? (
-                            <View style={styles.emptyTrades}>
-                                <Ionicons name="bar-chart-outline" size={40} color="rgba(255,255,255,0.2)" />
-                                <Text style={styles.emptyTradesText}>No trades yet</Text>
-                                <Text style={styles.emptyTradesSubtext}>
-                                    Start trading to see your positions here
+                                <Text style={styles.followText}>
+                                    <Text style={styles.followCount}>{followerCount}</Text> Followers
                                 </Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Stats Row */}
+                        <View style={styles.statsRow}>
+                            <View style={styles.statItem}>
+                                <Ionicons name="swap-horizontal-outline" size={14} color={TEXT_DISABLED} />
+                                <Text style={styles.statText}>{trades.length} trades</Text>
                             </View>
-                        ) : (
-                            <View style={styles.tradesList}>
-                                {displayedTrades.map((trade) => (
-                                    <TradeItem
-                                        key={trade.id}
-                                        trade={trade}
-                                        onPress={() => router.push({
-                                            pathname: '/market/[ticker]',
-                                            params: { ticker: trade.marketTicker }
-                                        })}
-                                    />
-                                ))}
+                            <View style={styles.statItem}>
+                                <Ionicons name="calendar-outline" size={14} color={TEXT_DISABLED} />
+                                <Text style={styles.statText}>Joined {joinedDate}</Text>
                             </View>
-                        )}
+                        </View>
+                    </View>
+
+                    {/* Credit Card with Balance */}
+                    <View style={styles.cardContainer}>
+                        <CreditCard
+                            tradesCount={trades.length}
+                            balance={0.00}
+                            walletAddress={profileData?.walletAddress || backendUser?.walletAddress || ""}
+                        />
+                    </View>
+
+                    {/* Trades Section with Tabs */}
+                    <View style={styles.tradesSection}>
+                        {/* New Tab Header */}
+                        <View style={styles.tabHeader}>
+                            <TouchableOpacity
+                                style={styles.tabHeaderItem}
+                                onPress={() => animateToTab('active')}
+                            >
+                                <Text style={[
+                                    styles.tabHeaderLabel,
+                                    activeTab === 'active' && styles.tabHeaderLabelActive
+                                ]}>
+                                    Active ({activeTrades.length})
+                                </Text>
+                                {activeTab === 'active' && <View style={styles.tabHeaderIndicator} />}
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.tabHeaderItem}
+                                onPress={() => animateToTab('previous')}
+                            >
+                                <Text style={[
+                                    styles.tabHeaderLabel,
+                                    activeTab === 'previous' && styles.tabHeaderLabelActive
+                                ]}>
+                                    Previous ({previousTrades.length})
+                                </Text>
+                                {activeTab === 'previous' && <View style={styles.tabHeaderIndicator} />}
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Animated Sliding List Container */}
+                        <View style={styles.listContainer}>
+                            <Animated.View
+                                style={[
+                                    styles.slidingContainer,
+                                    { transform: [{ translateX: slideAnim }] }
+                                ]}
+                            >
+                                {/* Active Trades List */}
+                                <View style={styles.listPane}>
+                                    {activeTrades.length === 0 ? (
+                                        <View style={styles.emptyTrades}>
+                                            <Ionicons name="bar-chart-outline" size={32} color={TEXT_DISABLED} />
+                                            <Text style={styles.emptyText}>No active trades</Text>
+                                        </View>
+                                    ) : (
+                                        <View style={styles.tradesList}>
+                                            {activeTrades.map((trade) => (
+                                                <TouchableOpacity
+                                                    key={trade.id}
+                                                    style={styles.tradeItem}
+                                                    onPress={() => router.push({
+                                                        pathname: '/market/[ticker]',
+                                                        params: { ticker: trade.marketTicker }
+                                                    })}
+                                                    activeOpacity={0.7}
+                                                >
+                                                    <View style={styles.tradeLeft}>
+                                                        <View style={[
+                                                            styles.tradeSideBadge,
+                                                            trade.side === 'yes' ? styles.tradeSideBadgeYes : styles.tradeSideBadgeNo
+                                                        ]}>
+                                                            <Text style={[
+                                                                styles.tradeSideText,
+                                                                trade.side === 'yes' ? styles.tradeSideTextYes : styles.tradeSideTextNo
+                                                            ]}>
+                                                                {trade.side.toUpperCase()}
+                                                            </Text>
+                                                        </View>
+                                                        <View style={styles.tradeInfo}>
+                                                            <Text style={styles.tradeTicker} numberOfLines={1}>
+                                                                {trade.marketTicker}
+                                                            </Text>
+                                                            <Text style={styles.tradeDate}>
+                                                                {new Date(trade.createdAt).toLocaleDateString('en-US', {
+                                                                    month: 'short',
+                                                                    day: 'numeric'
+                                                                })}
+                                                            </Text>
+                                                        </View>
+                                                    </View>
+                                                    <Text style={styles.tradeAmount}>
+                                                        ${parseFloat(trade.amount).toFixed(2)}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    )}
+                                </View>
+
+                                {/* Previous Trades List */}
+                                <View style={styles.listPane}>
+                                    {previousTrades.length === 0 ? (
+                                        <View style={styles.emptyTrades}>
+                                            <Ionicons name="time-outline" size={32} color={TEXT_DISABLED} />
+                                            <Text style={styles.emptyText}>No previous trades</Text>
+                                        </View>
+                                    ) : (
+                                        <View style={styles.tradesList}>
+                                            {previousTrades.map((trade) => (
+                                                <TouchableOpacity
+                                                    key={trade.id}
+                                                    style={styles.tradeItem}
+                                                    onPress={() => router.push({
+                                                        pathname: '/market/[ticker]',
+                                                        params: { ticker: trade.marketTicker }
+                                                    })}
+                                                    activeOpacity={0.7}
+                                                >
+                                                    <View style={styles.tradeLeft}>
+                                                        <View style={[
+                                                            styles.tradeSideBadge,
+                                                            trade.side === 'yes' ? styles.tradeSideBadgeYes : styles.tradeSideBadgeNo
+                                                        ]}>
+                                                            <Text style={[
+                                                                styles.tradeSideText,
+                                                                trade.side === 'yes' ? styles.tradeSideTextYes : styles.tradeSideTextNo
+                                                            ]}>
+                                                                {trade.side.toUpperCase()}
+                                                            </Text>
+                                                        </View>
+                                                        <View style={styles.tradeInfo}>
+                                                            <Text style={styles.tradeTicker} numberOfLines={1}>
+                                                                {trade.marketTicker}
+                                                            </Text>
+                                                            <Text style={styles.tradeDate}>
+                                                                {new Date(trade.createdAt).toLocaleDateString('en-US', {
+                                                                    month: 'short',
+                                                                    day: 'numeric'
+                                                                })}
+                                                            </Text>
+                                                        </View>
+                                                    </View>
+                                                    <Text style={styles.tradeAmount}>
+                                                        ${parseFloat(trade.amount).toFixed(2)}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    )}
+                                </View>
+                            </Animated.View>
+                        </View>
                     </View>
 
                     {/* Spacer for bottom navigation */}
-                    <View style={{ height: 100 }} />
+                    <View style={{ height: 80 }} />
                 </ScrollView>
             </SafeAreaView>
         </View>
@@ -297,7 +406,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#0a0a0f",
+        backgroundColor: BG_MAIN,
     },
     gradient: {
         ...StyleSheet.absoluteFillObject,
@@ -305,195 +414,206 @@ const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
     },
-    header: {
-        paddingHorizontal: 20,
-        paddingVertical: 12,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    headerTitle: {
-        fontSize: 24,
-        fontWeight: '700',
-        color: '#fff',
-        letterSpacing: -0.5,
-    },
-    headerActions: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    headerBtn: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
-    },
     content: {
         paddingHorizontal: 20,
     },
-    profileCard: {
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-        borderRadius: 24,
-        padding: 24,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.06)',
-        marginBottom: 20,
+    // Profile Header Section
+    profileHeader: {
+        marginBottom: 24,
+        paddingTop: 16,
+    },
+    topRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 16,
+    },
+    avatarContainer: {
+        position: 'relative',
     },
     avatarWrapper: {
-        width: 96,
-        height: 96,
-        borderRadius: 48,
-        marginBottom: 16,
+        width: 72,
+        height: 72,
+        borderRadius: 36,
         position: 'relative',
     },
     avatarGlow: {
         position: 'absolute',
-        width: 96,
-        height: 96,
-        borderRadius: 48,
+        width: 72,
+        height: 72,
+        borderRadius: 36,
         opacity: 0.3,
     },
     avatarInner: {
         position: 'absolute',
-        top: 3,
-        left: 3,
-        right: 3,
-        bottom: 3,
-        borderRadius: 45,
-        backgroundColor: '#0d0d14',
+        top: 2,
+        left: 2,
+        right: 2,
+        bottom: 2,
+        borderRadius: 34,
+        backgroundColor: BG_CARD,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 2,
-        borderColor: 'rgba(74, 222, 128, 0.3)',
+        borderColor: BORDER,
+        overflow: 'hidden',
+    },
+    avatarImage: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 34,
     },
     avatarText: {
-        fontSize: 36,
+        fontSize: 28,
         fontWeight: '700',
-        color: '#4ade80',
+        color: TEXT_PRIMARY,
+    },
+    avatarEditBtn: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: BG_ELEVATED,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: BG_MAIN,
+    },
+    headerBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: BG_CARD,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: BORDER,
     },
     name: {
-        fontSize: 26,
+        fontSize: 24,
         fontWeight: '700',
-        color: '#fff',
-        marginBottom: 8,
-        letterSpacing: -0.5,
+        color: TEXT_PRIMARY,
+        marginBottom: 4,
     },
-    walletBadge: {
+    usernameRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(74, 222, 128, 0.08)',
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        borderRadius: 100,
-        gap: 8,
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: 'rgba(74, 222, 128, 0.15)',
+        gap: 6,
+        marginBottom: 8,
     },
-    walletText: {
-        color: 'rgba(255, 255, 255, 0.8)',
-        fontSize: 13,
-        fontFamily: 'monospace',
-        fontWeight: '500',
+    username: {
+        fontSize: 14,
+        color: TEXT_SECONDARY,
+    },
+    twitterIcon: {
+        opacity: 0.8,
+    },
+    addBio: {
+        fontSize: 14,
+        color: ACCENT,
+        marginBottom: 16,
+    },
+    followRow: {
+        flexDirection: 'row',
+        gap: 16,
+        marginBottom: 16,
+    },
+    followText: {
+        fontSize: 14,
+        color: TEXT_SECONDARY,
+    },
+    followCount: {
+        fontWeight: '700',
+        color: TEXT_PRIMARY,
     },
     statsRow: {
         flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 24,
-        width: '100%',
-    },
-    statBox: {
-        flex: 1,
-        alignItems: 'center',
-        paddingVertical: 8,
-    },
-    statNumber: {
-        fontSize: 22,
-        fontWeight: '700',
-        color: '#fff',
-        marginBottom: 2,
-    },
-    statLabel: {
-        fontSize: 12,
-        color: 'rgba(255, 255, 255, 0.5)',
-        fontWeight: '500',
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-    },
-    statDivider: {
-        width: 1,
-        height: 36,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    },
-    actionRow: {
-        flexDirection: 'row',
+        flexWrap: 'wrap',
         gap: 12,
-        width: '100%',
     },
-    editBtn: {
-        flex: 1,
-        backgroundColor: '#fff',
-        height: 48,
-        borderRadius: 14,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    editBtnText: {
-        color: '#0a0a0f',
-        fontWeight: '600',
-        fontSize: 15,
-    },
-    shareBtn: {
-        width: 48,
-        height: 48,
-        borderRadius: 14,
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-    },
-    section: {
-        marginBottom: 20,
-    },
-    sectionHeader: {
+    statItem: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 14,
+        gap: 6,
     },
-    sectionTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#fff',
-        letterSpacing: -0.3,
+    statText: {
+        fontSize: 12,
+        color: TEXT_DISABLED,
     },
-    showAllText: {
+    // Card Container
+    cardContainer: {
+        marginBottom: 24,
+    },
+    // Trades Section
+    tradesSection: {
+        flex: 1,
+    },
+    tabHeader: {
+        flexDirection: 'row',
+        marginBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: BORDER,
+    },
+    tabHeaderItem: {
+        flex: 1,
+        alignItems: 'center',
+        paddingVertical: 12,
+        position: 'relative',
+    },
+    tabHeaderLabel: {
         fontSize: 14,
-        color: '#4ade80',
         fontWeight: '500',
+        color: TEXT_SECONDARY,
+    },
+    tabHeaderLabelActive: {
+        color: TEXT_PRIMARY,
+        fontWeight: '600',
+    },
+    tabHeaderIndicator: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 2,
+        backgroundColor: ACCENT,
+    },
+    listContainer: {
+        width: SCREEN_WIDTH - 40, // Match content padding
+        overflow: 'hidden',
+    },
+    slidingContainer: {
+        flexDirection: 'row',
+        width: (SCREEN_WIDTH - 40) * 2,
+    },
+    listPane: {
+        width: SCREEN_WIDTH - 40,
+    },
+    emptyTrades: {
+        padding: 40,
+        alignItems: 'center',
+        gap: 12,
+    },
+    emptyText: {
+        fontSize: 14,
+        color: TEXT_DISABLED,
     },
     tradesList: {
-        backgroundColor: 'rgba(255, 255, 255, 0.02)',
-        borderRadius: 16,
+        backgroundColor: BG_CARD,
+        borderRadius: 12,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.05)',
+        borderColor: BORDER,
     },
     tradeItem: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 14,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+        borderBottomColor: BORDER,
     },
     tradeLeft: {
         flexDirection: 'row',
@@ -501,72 +621,43 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     tradeSideBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 8,
-        marginRight: 12,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        marginRight: 10,
     },
     tradeSideBadgeYes: {
-        backgroundColor: 'rgba(74, 222, 128, 0.12)',
+        backgroundColor: 'rgba(74, 222, 128, 0.15)',
     },
     tradeSideBadgeNo: {
-        backgroundColor: 'rgba(248, 113, 113, 0.12)',
+        backgroundColor: 'rgba(248, 113, 113, 0.15)',
     },
     tradeSideText: {
         fontSize: 11,
         fontWeight: '700',
-        letterSpacing: 0.3,
     },
     tradeSideTextYes: {
-        color: '#4ade80',
+        color: SUCCESS,
     },
     tradeSideTextNo: {
-        color: '#f87171',
+        color: ERROR,
     },
     tradeInfo: {
         flex: 1,
     },
     tradeTicker: {
         fontSize: 14,
-        fontWeight: '600',
-        color: '#fff',
+        fontWeight: '500',
+        color: TEXT_PRIMARY,
         marginBottom: 2,
     },
     tradeDate: {
         fontSize: 12,
-        color: 'rgba(255, 255, 255, 0.4)',
-    },
-    tradeRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
+        color: TEXT_DISABLED,
     },
     tradeAmount: {
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '600',
-        color: '#fff',
-    },
-    emptyTrades: {
-        backgroundColor: 'rgba(255, 255, 255, 0.02)',
-        borderRadius: 16,
-        padding: 40,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.05)',
-    },
-    emptyTradesText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: 'rgba(255, 255, 255, 0.6)',
-        marginTop: 12,
-    },
-    emptyTradesSubtext: {
-        fontSize: 13,
-        color: 'rgba(255, 255, 255, 0.4)',
-        marginTop: 4,
-        textAlign: 'center',
+        color: TEXT_PRIMARY,
     },
 });

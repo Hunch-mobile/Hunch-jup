@@ -9,6 +9,17 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Theme constants
+const ACCENT = '#3FE3FF';
+const BG_MAIN = '#000000';
+const BG_CARD = '#111827';
+const BORDER = '#1F2937';
+const TEXT_PRIMARY = '#E5E7EB';
+const TEXT_SECONDARY = '#9CA3AF';
+const TEXT_DISABLED = '#6B7280';
+const SUCCESS = '#4ade80';
+const ERROR = '#f87171';
+
 const UserPositionsSection = () => {
   const { backendUser } = useUser();
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -42,7 +53,7 @@ const UserPositionsSection = () => {
     return (
       <View style={styles.positionsSection}>
         <Text style={styles.positionsSectionTitle}>Your Recent Positions</Text>
-        <ActivityIndicator size="small" color="#4ade80" />
+        <ActivityIndicator size="small" color={ACCENT} />
       </View>
     );
   }
@@ -113,7 +124,7 @@ const EventCard = ({ item }: { item: Event }) => {
           />
         ) : (
           <View style={styles.eventImagePlaceholder}>
-            <Ionicons name="image-outline" size={32} color="rgba(255, 255, 255, 0.3)" />
+            <Ionicons name="image-outline" size={32} color={TEXT_DISABLED} />
           </View>
         )}
 
@@ -132,12 +143,12 @@ const EventCard = ({ item }: { item: Event }) => {
           {/* Event Stats */}
           <View style={styles.eventStats}>
             <View style={styles.statItem}>
-              <Ionicons name="pulse" size={12} color="#4ade80" />
+              <Ionicons name="pulse" size={12} color={ACCENT} />
               <Text style={styles.statText}>{activeMarkets.length} markets</Text>
             </View>
             {item.volume && (
               <View style={styles.statItem}>
-                <Ionicons name="trending-up" size={12} color="rgba(255, 255, 255, 0.4)" />
+                <Ionicons name="trending-up" size={12} color={TEXT_DISABLED} />
                 <Text style={styles.statText}>${(item.volume / 1000000).toFixed(1)}M</Text>
               </View>
             )}
@@ -184,15 +195,20 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={["#0a0a0f", "#12121a", "#1a1a2e"]}
+        colors={[BG_MAIN, '#0D1117', '#111827']}
         style={styles.gradient}
       />
 
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Home</Text>
+          <Image
+            source={require('../../assets/images/logo.png')}
+            style={styles.headerLogo}
+            contentFit="contain"
+            contentPosition={{ left: 0 }}
+          />
           <TouchableOpacity style={styles.refreshButton} onPress={loadEvents}>
-            <Ionicons name="refresh" size={20} color="#fff" />
+            <Ionicons name="refresh" size={20} color={TEXT_PRIMARY} />
           </TouchableOpacity>
         </View>
 
@@ -201,7 +217,7 @@ export default function HomeScreen() {
 
         {loading ? (
           <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color="#4ade80" />
+            <ActivityIndicator size="large" color={ACCENT} />
           </View>
         ) : error ? (
           <View style={styles.centerContainer}>
@@ -219,6 +235,7 @@ export default function HomeScreen() {
             showsVerticalScrollIndicator={false}
             refreshing={loading}
             onRefresh={loadEvents}
+            ItemSeparatorComponent={() => <View style={styles.separator} />}
           />
         )}
       </SafeAreaView>
@@ -229,7 +246,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0a0f",
+    backgroundColor: BG_MAIN,
   },
   gradient: {
     ...StyleSheet.absoluteFillObject,
@@ -248,19 +265,29 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#fff',
+    color: TEXT_PRIMARY,
+  },
+  headerLogo: {
+    width: 120,
+    height: 40,
   },
   refreshButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: BG_CARD,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   listContent: {
-    padding: 20,
-    paddingBottom: 100,
+    paddingBottom: 80,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: BORDER,
+    opacity: 0.5,
   },
   centerContainer: {
     flex: 1,
@@ -268,53 +295,56 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    color: '#f87171',
+    color: ERROR,
     fontSize: 16,
     marginBottom: 12,
   },
   retryButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: ACCENT,
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: ACCENT,
   },
   retryText: {
-    color: '#fff',
+    color: BG_MAIN,
     fontSize: 14,
     fontWeight: '600',
   },
   eventCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    overflow: 'hidden',
+    // Minimal list style
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    backgroundColor: 'transparent',
   },
   eventCardLayout: {
     flexDirection: 'row',
     height: 120,
   },
   eventImage: {
-    width: 120,
-    height: 120,
+    width: 100,
+    height: 100,
+    borderRadius: 12,
   },
   eventImagePlaceholder: {
-    width: 120,
-    height: 120,
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    backgroundColor: BG_CARD,
     justifyContent: 'center',
     alignItems: 'center',
   },
   eventContent: {
     flex: 1,
-    padding: 12,
+    paddingLeft: 16,
     justifyContent: 'space-between',
+    paddingVertical: 4,
   },
   competitionText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#4ade80',
+    color: ACCENT,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 4,
@@ -322,13 +352,13 @@ const styles = StyleSheet.create({
   eventTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: TEXT_PRIMARY,
     lineHeight: 20,
     marginBottom: 4,
   },
   eventSubtitle: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: TEXT_SECONDARY,
     marginBottom: 8,
   },
   eventStats: {
@@ -341,7 +371,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   statText: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: TEXT_SECONDARY,
     fontSize: 11,
     fontWeight: '500',
   },
@@ -358,10 +388,10 @@ const styles = StyleSheet.create({
   positionsSectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#fff',
+    color: TEXT_PRIMARY,
   },
   viewAllText: {
-    color: '#4ade80',
+    color: ACCENT,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -370,13 +400,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   positionCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: BG_CARD,
     borderRadius: 12,
     padding: 12,
     marginRight: 12,
     width: 140,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: BORDER,
   },
   positionHeader: {
     marginBottom: 8,
@@ -388,34 +418,34 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   sideBadgeYes: {
-    backgroundColor: 'rgba(74, 222, 128, 0.2)',
+    backgroundColor: 'rgba(74, 222, 128, 0.15)',
   },
   sideBadgeNo: {
-    backgroundColor: 'rgba(248, 113, 113, 0.2)',
+    backgroundColor: 'rgba(248, 113, 113, 0.15)',
   },
   sideText: {
     fontSize: 10,
     fontWeight: '700',
   },
   sideTextYes: {
-    color: '#4ade80',
+    color: SUCCESS,
   },
   sideTextNo: {
-    color: '#f87171',
+    color: ERROR,
   },
   positionAmount: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#fff',
+    color: TEXT_PRIMARY,
     marginBottom: 4,
   },
   positionTicker: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: TEXT_SECONDARY,
     marginBottom: 4,
   },
   positionDate: {
     fontSize: 10,
-    color: 'rgba(255, 255, 255, 0.4)',
+    color: TEXT_DISABLED,
   },
 });

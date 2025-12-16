@@ -4,16 +4,32 @@ import { Follow } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator,
+    Animated,
+    Dimensions,
     FlatList,
+    Image,
+    PanResponder,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Theme constants
+const ACCENT = '#3FE3FF';
+const BG_MAIN = '#000000';
+const BG_CARD = '#111827';
+const BG_ELEVATED = '#161C24';
+const BORDER = '#1F2937';
+const TEXT_PRIMARY = '#E5E7EB';
+const TEXT_SECONDARY = '#9CA3AF';
+const TEXT_DISABLED = '#6B7280';
 
 type TabType = 'followers' | 'following';
 
@@ -29,7 +45,7 @@ interface UserItem {
 export default function FollowersFollowingScreen() {
     const { userId, tab } = useLocalSearchParams<{ userId: string; tab?: string }>();
     const { backendUser } = useUser();
-    
+
     const [activeTab, setActiveTab] = useState<TabType>((tab as TabType) || 'followers');
     const [followers, setFollowers] = useState<UserItem[]>([]);
     const [following, setFollowing] = useState<UserItem[]>([]);
@@ -37,6 +53,63 @@ export default function FollowersFollowingScreen() {
     const [loadingFollowing, setLoadingFollowing] = useState(true);
     const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
     const [followingInProgress, setFollowingInProgress] = useState<Set<string>>(new Set());
+
+    // Animation values - initialize based on tab parameter
+    const initialTab = (tab as TabType) || 'followers';
+    const slideAnim = useRef(new Animated.Value(initialTab === 'following' ? -SCREEN_WIDTH : 0)).current;
+    const activeTabRef = useRef<TabType>(initialTab);
+
+    // Animate slide when tab changes
+    const animateToTab = useCallback((toTab: TabType) => {
+        const toValue = toTab === 'followers' ? 0 : -SCREEN_WIDTH;
+        Animated.spring(slideAnim, {
+            toValue,
+            useNativeDriver: true,
+            tension: 80,
+            friction: 12,
+        }).start();
+        activeTabRef.current = toTab;
+        setActiveTab(toTab);
+    }, [slideAnim]);
+
+    // Swipe gesture handling with proper ref access
+    const panResponder = useRef(
+        PanResponder.create({
+            onMoveShouldSetPanResponder: (_, gestureState) => {
+                // Only respond to horizontal swipes with enough movement
+                return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 15;
+            },
+            onPanResponderMove: (_, gestureState) => {
+                // Real-time dragging feedback
+                const currentOffset = activeTabRef.current === 'followers' ? 0 : -SCREEN_WIDTH;
+                const newValue = currentOffset + gestureState.dx;
+                // Clamp the value between -SCREEN_WIDTH and 0
+                const clampedValue = Math.max(-SCREEN_WIDTH, Math.min(0, newValue));
+                slideAnim.setValue(clampedValue);
+            },
+            onPanResponderRelease: (_, gestureState) => {
+                const threshold = SCREEN_WIDTH * 0.25; // 25% of screen width
+
+                if (activeTabRef.current === 'followers') {
+                    // On followers tab, check for left swipe
+                    if (gestureState.dx < -threshold || (gestureState.dx < 0 && gestureState.vx < -0.5)) {
+                        animateToTab('following');
+                    } else {
+                        // Snap back to followers
+                        animateToTab('followers');
+                    }
+                } else {
+                    // On following tab, check for right swipe
+                    if (gestureState.dx > threshold || (gestureState.dx > 0 && gestureState.vx > 0.5)) {
+                        animateToTab('followers');
+                    } else {
+                        // Snap back to following
+                        animateToTab('following');
+                    }
+                }
+            },
+        })
+    ).current;
 
     useEffect(() => {
         if (userId) {
@@ -86,7 +159,7 @@ export default function FollowersFollowingScreen() {
 
     const loadMyFollowingList = async () => {
         if (!backendUser) return;
-        
+
         try {
             const data = await api.getFollowing(backendUser.id);
             const ids = new Set(data.map(f => f.followingId));
@@ -103,7 +176,7 @@ export default function FollowersFollowingScreen() {
 
         try {
             const isFollowing = followingIds.has(targetUserId);
-            
+
             if (isFollowing) {
                 await api.unfollowUser(backendUser.id, targetUserId);
                 setFollowingIds(prev => {
@@ -132,6 +205,7 @@ export default function FollowersFollowingScreen() {
         const isSelf = backendUser?.id === item.id;
 
         const displayName = item.displayName || `${item.walletAddress.slice(0, 6)}...${item.walletAddress.slice(-4)}`;
+        const username = `@${displayName.toLowerCase().replace(/\s/g, '')}`;
 
         return (
             <TouchableOpacity
@@ -140,15 +214,17 @@ export default function FollowersFollowingScreen() {
                 activeOpacity={0.7}
             >
                 <View style={styles.userAvatar}>
-                    <Text style={styles.userAvatarText}>
-                        {displayName.charAt(0).toUpperCase()}
-                    </Text>
+                    {item.avatarUrl ? (
+                        <Image source={{ uri: item.avatarUrl }} style={styles.avatarImage} />
+                    ) : (
+                        <Text style={styles.userAvatarText}>
+                            {displayName.charAt(0).toUpperCase()}
+                        </Text>
+                    )}
                 </View>
                 <View style={styles.userInfo}>
                     <Text style={styles.userName}>{displayName}</Text>
-                    <Text style={styles.userWallet}>
-                        {item.walletAddress.slice(0, 6)}...{item.walletAddress.slice(-4)}
-                    </Text>
+                    <Text style={styles.userHandle}>{username}</Text>
                 </View>
                 {!isSelf && backendUser && (
                     <TouchableOpacity
@@ -164,12 +240,9 @@ export default function FollowersFollowingScreen() {
                         disabled={inProgress}
                     >
                         {inProgress ? (
-                            <ActivityIndicator size="small" color={isFollowing ? "#fff" : "#4ade80"} />
+                            <ActivityIndicator size="small" color={TEXT_PRIMARY} />
                         ) : (
-                            <Text style={[
-                                styles.followButtonText,
-                                isFollowing && styles.followingButtonText
-                            ]}>
+                            <Text style={styles.followButtonText}>
                                 {isFollowing ? "Following" : "Follow"}
                             </Text>
                         )}
@@ -179,76 +252,115 @@ export default function FollowersFollowingScreen() {
         );
     };
 
-    const currentData = activeTab === 'followers' ? followers : following;
-    const currentLoading = activeTab === 'followers' ? loadingFollowers : loadingFollowing;
-
     return (
         <View style={styles.container}>
-            <LinearGradient colors={["#0a0a0f", "#12121a", "#1a1a2e"]} style={styles.gradient} />
-            
+            <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
+
             <SafeAreaView style={styles.safeArea}>
                 {/* Header */}
                 <View style={styles.header}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color="#fff" />
+                        <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>
-                        {activeTab === 'followers' ? 'Followers' : 'Following'}
-                    </Text>
                     <View style={styles.headerSpacer} />
+                    <TouchableOpacity style={styles.shareButton}>
+                        <Ionicons name="share-outline" size={20} color={TEXT_SECONDARY} />
+                    </TouchableOpacity>
                 </View>
 
-                {/* Tabs */}
-                <View style={styles.tabContainer}>
+                {/* Tab Header */}
+                <View style={styles.tabHeader}>
                     <TouchableOpacity
-                        style={[styles.tab, activeTab === 'followers' && styles.activeTab]}
-                        onPress={() => setActiveTab('followers')}
+                        style={styles.tabHeaderItem}
+                        onPress={() => animateToTab('followers')}
                     >
-                        <Text style={[styles.tabText, activeTab === 'followers' && styles.activeTabText]}>
-                            Followers
-                        </Text>
-                        <Text style={[styles.tabCount, activeTab === 'followers' && styles.activeTabCount]}>
+                        <Text style={[
+                            styles.tabHeaderCount,
+                            activeTab === 'followers' && styles.tabHeaderCountActive
+                        ]}>
                             {followers.length}
                         </Text>
+                        <Text style={[
+                            styles.tabHeaderLabel,
+                            activeTab === 'followers' && styles.tabHeaderLabelActive
+                        ]}>
+                            Followers
+                        </Text>
+                        {activeTab === 'followers' && <View style={styles.tabHeaderIndicator} />}
                     </TouchableOpacity>
                     <TouchableOpacity
-                        style={[styles.tab, activeTab === 'following' && styles.activeTab]}
-                        onPress={() => setActiveTab('following')}
+                        style={styles.tabHeaderItem}
+                        onPress={() => animateToTab('following')}
                     >
-                        <Text style={[styles.tabText, activeTab === 'following' && styles.activeTabText]}>
-                            Following
-                        </Text>
-                        <Text style={[styles.tabCount, activeTab === 'following' && styles.activeTabCount]}>
+                        <Text style={[
+                            styles.tabHeaderCount,
+                            activeTab === 'following' && styles.tabHeaderCountActive
+                        ]}>
                             {following.length}
                         </Text>
+                        <Text style={[
+                            styles.tabHeaderLabel,
+                            activeTab === 'following' && styles.tabHeaderLabelActive
+                        ]}>
+                            Following
+                        </Text>
+                        {activeTab === 'following' && <View style={styles.tabHeaderIndicator} />}
                     </TouchableOpacity>
                 </View>
 
-                {/* List */}
-                {currentLoading ? (
-                    <View style={styles.centerContainer}>
-                        <ActivityIndicator size="large" color="#4ade80" />
-                    </View>
-                ) : currentData.length === 0 ? (
-                    <View style={styles.emptyContainer}>
-                        <Ionicons 
-                            name={activeTab === 'followers' ? "people-outline" : "person-add-outline"} 
-                            size={64} 
-                            color="rgba(255, 255, 255, 0.2)" 
-                        />
-                        <Text style={styles.emptyText}>
-                            {activeTab === 'followers' ? 'No followers yet' : 'Not following anyone yet'}
-                        </Text>
-                    </View>
-                ) : (
-                    <FlatList
-                        data={currentData}
-                        keyExtractor={(item) => item.id}
-                        renderItem={renderUserItem}
-                        showsVerticalScrollIndicator={false}
-                        contentContainerStyle={styles.listContent}
-                    />
-                )}
+                {/* Animated Sliding List Container */}
+                <View {...panResponder.panHandlers} style={styles.listContainer}>
+                    <Animated.View
+                        style={[
+                            styles.slidingContainer,
+                            { transform: [{ translateX: slideAnim }] }
+                        ]}
+                    >
+                        {/* Followers List */}
+                        <View style={styles.listPane}>
+                            {loadingFollowers ? (
+                                <View style={styles.centerContainer}>
+                                    <ActivityIndicator size="large" color={ACCENT} />
+                                </View>
+                            ) : followers.length === 0 ? (
+                                <View style={styles.emptyContainer}>
+                                    <Ionicons name="people-outline" size={48} color={TEXT_DISABLED} />
+                                    <Text style={styles.emptyText}>No followers yet</Text>
+                                </View>
+                            ) : (
+                                <FlatList
+                                    data={followers}
+                                    keyExtractor={(item) => item.id}
+                                    renderItem={renderUserItem}
+                                    showsVerticalScrollIndicator={false}
+                                    contentContainerStyle={styles.listContent}
+                                />
+                            )}
+                        </View>
+
+                        {/* Following List */}
+                        <View style={styles.listPane}>
+                            {loadingFollowing ? (
+                                <View style={styles.centerContainer}>
+                                    <ActivityIndicator size="large" color={ACCENT} />
+                                </View>
+                            ) : following.length === 0 ? (
+                                <View style={styles.emptyContainer}>
+                                    <Ionicons name="person-add-outline" size={48} color={TEXT_DISABLED} />
+                                    <Text style={styles.emptyText}>Not following anyone yet</Text>
+                                </View>
+                            ) : (
+                                <FlatList
+                                    data={following}
+                                    keyExtractor={(item) => item.id}
+                                    renderItem={renderUserItem}
+                                    showsVerticalScrollIndicator={false}
+                                    contentContainerStyle={styles.listContent}
+                                />
+                            )}
+                        </View>
+                    </Animated.View>
+                </View>
             </SafeAreaView>
         </View>
     );
@@ -257,7 +369,7 @@ export default function FollowersFollowingScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#0a0a0f",
+        backgroundColor: BG_MAIN,
     },
     gradient: {
         ...StyleSheet.absoluteFillObject,
@@ -269,62 +381,77 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
     },
     backButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
-    },
-    headerTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#fff',
     },
     headerSpacer: {
-        width: 40,
+        flex: 1,
     },
-    tabContainer: {
+    shareButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    tabHeader: {
         flexDirection: 'row',
         paddingHorizontal: 20,
-        paddingBottom: 16,
-        gap: 12,
+        paddingTop: 8,
+        paddingBottom: 0,
+        borderBottomWidth: 1,
+        borderBottomColor: BORDER,
     },
-    tab: {
+    tabHeaderItem: {
         flex: 1,
-        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        paddingVertical: 12,
-        borderRadius: 12,
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.06)',
+        paddingBottom: 12,
+        position: 'relative',
     },
-    activeTab: {
-        backgroundColor: 'rgba(74, 222, 128, 0.1)',
-        borderColor: 'rgba(74, 222, 128, 0.3)',
-    },
-    tabText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: 'rgba(255, 255, 255, 0.5)',
-    },
-    activeTabText: {
-        color: '#4ade80',
-    },
-    tabCount: {
-        fontSize: 13,
+    tabHeaderCount: {
+        fontSize: 16,
         fontWeight: '700',
-        color: 'rgba(255, 255, 255, 0.4)',
+        color: TEXT_DISABLED,
+        marginBottom: 2,
     },
-    activeTabCount: {
-        color: '#4ade80',
+    tabHeaderCountActive: {
+        color: TEXT_PRIMARY,
+    },
+    tabHeaderLabel: {
+        fontSize: 13,
+        fontWeight: '500',
+        color: TEXT_DISABLED,
+    },
+    tabHeaderLabelActive: {
+        color: TEXT_SECONDARY,
+    },
+    tabHeaderIndicator: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 2,
+        backgroundColor: ACCENT,
+    },
+    listContainer: {
+        flex: 1,
+        overflow: 'hidden',
+    },
+    slidingContainer: {
+        flexDirection: 'row',
+        width: SCREEN_WIDTH * 2,
+        flex: 1,
+    },
+    listPane: {
+        width: SCREEN_WIDTH,
+        flex: 1,
     },
     centerContainer: {
         flex: 1,
@@ -336,80 +463,78 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         paddingHorizontal: 40,
+        gap: 12,
     },
     emptyText: {
-        fontSize: 16,
-        color: 'rgba(255, 255, 255, 0.4)',
-        marginTop: 16,
+        fontSize: 14,
+        color: TEXT_DISABLED,
         textAlign: 'center',
     },
     listContent: {
-        paddingHorizontal: 20,
+        paddingHorizontal: 16,
+        paddingTop: 16,
         paddingBottom: 40,
     },
     userItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
-        marginBottom: 8,
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.06)',
+        paddingVertical: 12,
+        paddingHorizontal: 4,
+        marginBottom: 4,
     },
     userAvatar: {
         width: 48,
         height: 48,
         borderRadius: 24,
-        backgroundColor: 'rgba(74, 222, 128, 0.2)',
+        backgroundColor: BG_ELEVATED,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
+        overflow: 'hidden',
+    },
+    avatarImage: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 24,
     },
     userAvatarText: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#4ade80',
+        color: TEXT_PRIMARY,
     },
     userInfo: {
         flex: 1,
     },
     userName: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '600',
-        color: '#fff',
+        color: TEXT_PRIMARY,
         marginBottom: 2,
     },
-    userWallet: {
-        fontSize: 12,
-        color: 'rgba(255, 255, 255, 0.5)',
-        fontFamily: 'monospace',
+    userHandle: {
+        fontSize: 13,
+        color: TEXT_SECONDARY,
     },
     followButton: {
-        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+        backgroundColor: ACCENT,
         paddingVertical: 8,
-        paddingHorizontal: 16,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(74, 222, 128, 0.2)',
-        minWidth: 90,
+        paddingHorizontal: 20,
+        borderRadius: 20,
+        minWidth: 100,
         alignItems: 'center',
         justifyContent: 'center',
     },
     followingButton: {
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        borderWidth: 1.5,
         borderColor: 'rgba(255, 255, 255, 0.2)',
     },
     followButtonDisabled: {
         opacity: 0.6,
     },
     followButtonText: {
-        color: '#4ade80',
+        color: TEXT_PRIMARY,
         fontSize: 13,
         fontWeight: '600',
     },
-    followingButtonText: {
-        color: '#fff',
-    },
 });
-

@@ -1,33 +1,35 @@
 import { useUser } from "@/contexts/UserContext";
+import { api } from "@/lib/api";
 import { Ionicons } from "@expo/vector-icons";
 import { useLoginWithOAuth, usePrivy } from "@privy-io/expo";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
+import { ActivityIndicator, Animated, Dimensions, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-    ActivityIndicator,
-    Animated,
-    Dimensions,
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from "react-native";
 
-const { width, height } = Dimensions.get("window");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Orbit component for decorative elements
-const Orbit = ({ size, duration, delay, color, offsetX, offsetY }: {
+// Theme constants
+const ACCENT = '#3FE3FF';
+const BG_MAIN = '#000000';
+const BG_CARD = '#111827';
+const BG_ELEVATED = '#161C24';
+const BORDER = '#1F2937';
+const TEXT_PRIMARY = '#E5E7EB';
+const TEXT_SECONDARY = '#9CA3AF';
+const TEXT_DISABLED = '#6B7280';
+
+interface OrbitProps {
     size: number;
     duration: number;
     delay: number;
     color: string;
     offsetX: number;
     offsetY: number;
-}) => {
+}
+
+const Orbit = ({ size, duration, delay, color, offsetX, offsetY }: OrbitProps) => {
     const rotation = new Animated.Value(0);
 
     useEffect(() => {
@@ -54,8 +56,8 @@ const Orbit = ({ size, duration, delay, color, offsetX, offsetY }: {
                     width: size,
                     height: size,
                     borderColor: color,
-                    left: width / 2 - size / 2 + offsetX,
-                    top: height / 2 - size / 2 + offsetY,
+                    left: SCREEN_WIDTH / 2 - size / 2 + offsetX,
+                    top: SCREEN_HEIGHT / 2 - size / 2 + offsetY,
                     transform: [{ rotate: rotateInterpolate }],
                 },
             ]}
@@ -67,7 +69,7 @@ const Orbit = ({ size, duration, delay, color, offsetX, offsetY }: {
 
 export default function LoginScreen() {
     const { user, isReady } = usePrivy();
-    const { syncUserWithBackend, backendUser } = useUser();
+    const { setBackendUser, backendUser } = useUser();
     const router = useRouter();
     const [showModal, setShowModal] = useState(false);
     const [error, setError] = useState("");
@@ -94,21 +96,21 @@ export default function LoginScreen() {
             if (isReady && user && !backendUser && !isSyncing) {
                 setIsSyncing(true);
                 try {
-                    // Get wallet address from linked accounts
                     const walletAccount = user.linked_accounts?.find(
                         (a: any) => a.type === 'wallet' || a.type === 'embedded_wallet'
                     );
                     const walletAddress = (walletAccount as any)?.address;
 
-                    // Get display name from email or other accounts
                     const emailAccount = user.linked_accounts?.find(
-                        (a: any) => a.type === 'email' || a.type === 'google_oauth'
+                        (a: any) => a.type === 'email' || a.type === 'google_oauth' || a.type === 'twitter_oauth'
                     );
                     const displayName = (emailAccount as any)?.email?.split('@')[0] ||
-                        (emailAccount as any)?.address?.split('@')[0];
+                        (emailAccount as any)?.name ||
+                        (emailAccount as any)?.username;
 
                     if (walletAddress) {
-                        await syncUserWithBackend(user.id, walletAddress, displayName);
+                        const syncedUser = await api.syncUser({ privyId: user.id, walletAddress, displayName });
+                        setBackendUser(syncedUser);
                         router.replace("/(tabs)");
                     }
                 } catch (error) {
@@ -139,20 +141,20 @@ export default function LoginScreen() {
     return (
         <View style={styles.container}>
             <LinearGradient
-                colors={["#0a0a0f", "#12121a", "#1a1a2e", "#16213e", "#1a1a2e"]}
+                colors={[BG_MAIN, '#0D1117', BG_CARD, BG_ELEVATED, BG_CARD]}
                 style={styles.gradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
             />
 
-            {/* Decorative orbits */}
-            <Orbit size={300} duration={20000} delay={0} color="rgba(99, 102, 241, 0.12)" offsetX={-80} offsetY={-100} />
-            <Orbit size={400} duration={30000} delay={1000} color="rgba(139, 92, 246, 0.08)" offsetX={60} offsetY={50} />
-            <Orbit size={200} duration={15000} delay={500} color="rgba(59, 130, 246, 0.1)" offsetX={100} offsetY={-150} />
+            {/* Decorative orbits with cyan accent */}
+            <Orbit size={300} duration={20000} delay={0} color={`${ACCENT}20`} offsetX={-80} offsetY={-100} />
+            <Orbit size={400} duration={30000} delay={1000} color={`${ACCENT}15`} offsetX={60} offsetY={50} />
+            <Orbit size={200} duration={15000} delay={500} color={`${ACCENT}18`} offsetX={100} offsetY={-150} />
 
             {/* Soft glow effect at bottom */}
             <LinearGradient
-                colors={["transparent", "rgba(99, 102, 241, 0.05)", "rgba(139, 92, 246, 0.1)"]}
+                colors={['transparent', `${ACCENT}08`, `${ACCENT}12`]}
                 style={styles.bottomGlow}
                 start={{ x: 0.5, y: 0 }}
                 end={{ x: 0.5, y: 1 }}
@@ -173,7 +175,15 @@ export default function LoginScreen() {
                             onPress={() => setShowModal(true)}
                             activeOpacity={0.8}
                         >
-                            <Text style={styles.getStartedText}>Get Started</Text>
+                            <LinearGradient
+                                colors={[ACCENT, '#00B8D4']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.getStartedGradient}
+                            >
+                                <Text style={styles.getStartedText}>Get Started</Text>
+                                <Ionicons name="arrow-forward" size={18} color={BG_MAIN} />
+                            </LinearGradient>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -202,7 +212,7 @@ export default function LoginScreen() {
                             style={styles.closeButton}
                             onPress={() => setShowModal(false)}
                         >
-                            <Ionicons name="close" size={20} color="rgba(255, 255, 255, 0.7)" />
+                            <Ionicons name="close" size={20} color={TEXT_SECONDARY} />
                         </TouchableOpacity>
 
                         {/* Modal Header */}
@@ -223,10 +233,10 @@ export default function LoginScreen() {
                                 activeOpacity={0.7}
                             >
                                 {loadingProvider === "google" ? (
-                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                    <ActivityIndicator size="small" color={TEXT_PRIMARY} />
                                 ) : (
                                     <>
-                                        <Ionicons name="logo-google" size={20} color="#FFFFFF" />
+                                        <Ionicons name="logo-google" size={20} color={TEXT_PRIMARY} />
                                         <Text style={styles.authButtonText}>Continue with Google</Text>
                                     </>
                                 )}
@@ -240,10 +250,10 @@ export default function LoginScreen() {
                                 activeOpacity={0.7}
                             >
                                 {loadingProvider === "twitter" ? (
-                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                    <ActivityIndicator size="small" color={TEXT_PRIMARY} />
                                 ) : (
                                     <>
-                                        <Ionicons name="logo-twitter" size={20} color="#FFFFFF" />
+                                        <Ionicons name="logo-twitter" size={20} color={TEXT_PRIMARY} />
                                         <Text style={styles.authButtonText}>Continue with X</Text>
                                     </>
                                 )}
@@ -271,7 +281,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#0a0a0f",
+        backgroundColor: BG_MAIN,
     },
     gradient: {
         ...StyleSheet.absoluteFillObject,
@@ -281,7 +291,7 @@ const styles = StyleSheet.create({
         bottom: 0,
         left: 0,
         right: 0,
-        height: height * 0.4,
+        height: SCREEN_HEIGHT * 0.4,
     },
     safeArea: {
         flex: 1,
@@ -294,18 +304,18 @@ const styles = StyleSheet.create({
     },
     brandingContainer: {
         alignItems: "center",
-        marginBottom: height * 0.15,
+        marginBottom: SCREEN_HEIGHT * 0.15,
     },
     brandName: {
         fontSize: 56,
         fontWeight: "200",
-        color: "#FFFFFF",
+        color: TEXT_PRIMARY,
         letterSpacing: 12,
         textTransform: "lowercase",
     },
     tagline: {
         fontSize: 13,
-        color: "rgba(255, 255, 255, 0.5)",
+        color: TEXT_SECONDARY,
         letterSpacing: 3,
         marginTop: 16,
         textTransform: "lowercase",
@@ -317,19 +327,22 @@ const styles = StyleSheet.create({
         right: 32,
     },
     getStartedButton: {
-        backgroundColor: "transparent",
-        borderWidth: 1,
-        borderColor: "rgba(255, 255, 255, 0.2)",
+        borderRadius: 16,
+        overflow: 'hidden',
+    },
+    getStartedGradient: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
         paddingVertical: 16,
-        paddingHorizontal: 48,
-        borderRadius: 28,
-        alignItems: "center",
+        paddingHorizontal: 32,
+        gap: 8,
     },
     getStartedText: {
-        color: "#FFFFFF",
-        fontSize: 15,
-        fontWeight: "400",
-        letterSpacing: 1,
+        color: BG_MAIN,
+        fontSize: 16,
+        fontWeight: "600",
+        letterSpacing: 0.5,
     },
     // Orbit styles
     orbit: {
@@ -354,18 +367,22 @@ const styles = StyleSheet.create({
         justifyContent: "flex-end",
     },
     modalContent: {
-        backgroundColor: "#0f0f18",
+        backgroundColor: BG_ELEVATED,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         paddingHorizontal: 24,
         paddingTop: 12,
         paddingBottom: 48,
-        minHeight: height * 0.45,
+        minHeight: SCREEN_HEIGHT * 0.45,
+        borderTopWidth: 1,
+        borderLeftWidth: 1,
+        borderRightWidth: 1,
+        borderColor: BORDER,
     },
     modalHandle: {
         width: 36,
         height: 4,
-        backgroundColor: "rgba(255, 255, 255, 0.2)",
+        backgroundColor: BORDER,
         borderRadius: 2,
         alignSelf: "center",
         marginBottom: 20,
@@ -377,9 +394,9 @@ const styles = StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: "transparent",
+        backgroundColor: BG_CARD,
         borderWidth: 1,
-        borderColor: "rgba(255, 255, 255, 0.15)",
+        borderColor: BORDER,
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1,
@@ -391,23 +408,23 @@ const styles = StyleSheet.create({
     },
     modalTitle: {
         fontSize: 24,
-        fontWeight: "500",
-        color: "#FFFFFF",
+        fontWeight: "600",
+        color: TEXT_PRIMARY,
         marginBottom: 8,
         letterSpacing: 0.5,
     },
     modalSubtitle: {
         fontSize: 14,
-        color: "rgba(255, 255, 255, 0.5)",
+        color: TEXT_SECONDARY,
         textAlign: "center",
     },
     authButtonsContainer: {
         gap: 12,
     },
     authButton: {
-        backgroundColor: "transparent",
+        backgroundColor: BG_CARD,
         borderWidth: 1,
-        borderColor: "rgba(255, 255, 255, 0.15)",
+        borderColor: BORDER,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
@@ -417,26 +434,26 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     authButtonText: {
-        color: "#FFFFFF",
+        color: TEXT_PRIMARY,
         fontSize: 15,
-        fontWeight: "400",
+        fontWeight: "500",
     },
     errorContainer: {
-        backgroundColor: "rgba(239, 68, 68, 0.15)",
+        backgroundColor: "rgba(248, 113, 113, 0.15)",
         padding: 12,
         borderRadius: 12,
         marginTop: 16,
         borderWidth: 1,
-        borderColor: "rgba(239, 68, 68, 0.2)",
+        borderColor: "rgba(248, 113, 113, 0.2)",
     },
     errorText: {
-        color: "#fca5a5",
+        color: "#f87171",
         fontSize: 14,
         textAlign: "center",
     },
     termsText: {
         fontSize: 11,
-        color: "rgba(255, 255, 255, 0.3)",
+        color: TEXT_DISABLED,
         textAlign: "center",
         marginTop: 24,
         lineHeight: 16,

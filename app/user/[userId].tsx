@@ -17,12 +17,24 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Theme constants
+const ACCENT = '#3FE3FF';
+const BG_MAIN = '#000000';
+const BG_CARD = '#111827';
+const BG_ELEVATED = '#161C24';
+const BORDER = '#1F2937';
+const TEXT_PRIMARY = '#E5E7EB';
+const TEXT_SECONDARY = '#9CA3AF';
+const TEXT_DISABLED = '#6B7280';
+const SUCCESS = '#4ade80';
+const ERROR = '#f87171';
+
 type TabType = 'active' | 'history';
 
 export default function UserProfileScreen() {
     const { userId } = useLocalSearchParams<{ userId: string }>();
     const { backendUser: currentUser } = useUser();
-    
+
     const [profile, setProfile] = useState<User | null>(null);
     const [trades, setTrades] = useState<Trade[]>([]);
     const [loading, setLoading] = useState(true);
@@ -72,7 +84,7 @@ export default function UserProfileScreen() {
 
     const checkFollowStatus = async () => {
         if (!currentUser) return;
-        
+
         try {
             const following = await api.getFollowing(currentUser.id);
             setIsFollowing(following.some(f => f.followingId === userId));
@@ -91,15 +103,15 @@ export default function UserProfileScreen() {
         try {
             if (wasFollowing) {
                 await api.unfollowUser(currentUser.id, userId as string);
-                setProfile(prev => prev ? { 
-                    ...prev, 
-                    followerCount: Math.max(0, prev.followerCount - 1) 
+                setProfile(prev => prev ? {
+                    ...prev,
+                    followerCount: Math.max(0, prev.followerCount - 1)
                 } : prev);
             } else {
                 await api.followUser(currentUser.id, userId as string);
-                setProfile(prev => prev ? { 
-                    ...prev, 
-                    followerCount: prev.followerCount + 1 
+                setProfile(prev => prev ? {
+                    ...prev,
+                    followerCount: prev.followerCount + 1
                 } : prev);
             }
         } catch (error) {
@@ -128,17 +140,17 @@ export default function UserProfileScreen() {
                     {new Date(item.createdAt).toLocaleDateString()}
                 </Text>
             </View>
-            <TouchableOpacity 
-                onPress={() => router.push({ 
-                    pathname: '/market/[ticker]', 
-                    params: { ticker: item.marketTicker } 
+            <TouchableOpacity
+                onPress={() => router.push({
+                    pathname: '/market/[ticker]',
+                    params: { ticker: item.marketTicker }
                 })}
             >
                 <Text style={styles.tradeTicker}>{item.marketTicker}</Text>
             </TouchableOpacity>
             <View style={styles.tradeFooter}>
                 <Text style={styles.tradeAmount}>${parseFloat(item.amount).toFixed(2)}</Text>
-                <Ionicons name="chevron-forward" size={16} color="rgba(255, 255, 255, 0.4)" />
+                <Ionicons name="chevron-forward" size={16} color={TEXT_DISABLED} />
             </View>
         </View>
     );
@@ -146,10 +158,10 @@ export default function UserProfileScreen() {
     if (loading) {
         return (
             <View style={styles.container}>
-                <LinearGradient colors={["#0a0a0f", "#12121a", "#1a1a2e"]} style={styles.gradient} />
+                <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
                 <SafeAreaView style={styles.safeArea}>
                     <View style={styles.centerContainer}>
-                        <ActivityIndicator size="large" color="#4ade80" />
+                        <ActivityIndicator size="large" color={ACCENT} />
                         <Text style={styles.loadingText}>Loading profile...</Text>
                     </View>
                 </SafeAreaView>
@@ -160,14 +172,14 @@ export default function UserProfileScreen() {
     if (error || !profile) {
         return (
             <View style={styles.container}>
-                <LinearGradient colors={["#0a0a0f", "#12121a", "#1a1a2e"]} style={styles.gradient} />
+                <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
                 <SafeAreaView style={styles.safeArea}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color="#fff" />
+                        <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
                         <Text style={styles.backText}>Back</Text>
                     </TouchableOpacity>
                     <View style={styles.centerContainer}>
-                        <Ionicons name="alert-circle-outline" size={64} color="#f87171" />
+                        <Ionicons name="alert-circle-outline" size={64} color={ERROR} />
                         <Text style={styles.errorText}>{error || "User not found"}</Text>
                         <TouchableOpacity style={styles.retryButton} onPress={loadProfile}>
                             <Text style={styles.retryText}>Retry</Text>
@@ -182,13 +194,13 @@ export default function UserProfileScreen() {
 
     return (
         <View style={styles.container}>
-            <LinearGradient colors={["#0a0a0f", "#12121a", "#1a1a2e"]} style={styles.gradient} />
-            
+            <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
+
             <SafeAreaView style={styles.safeArea}>
                 {/* Header */}
                 <View style={styles.header}>
                     <TouchableOpacity style={styles.backButtonHeader} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color="#fff" />
+                        <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Profile</Text>
                     <View style={styles.headerSpacer} />
@@ -221,22 +233,22 @@ export default function UserProfileScreen() {
 
                                 {/* Stats */}
                                 <View style={styles.stats}>
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         style={styles.statItem}
-                                        onPress={() => router.push({ 
-                                            pathname: '/user/followers/[userId]', 
-                                            params: { userId: userId as string, tab: 'followers' } 
+                                        onPress={() => router.push({
+                                            pathname: '/user/followers/[userId]',
+                                            params: { userId: userId as string, tab: 'followers' }
                                         })}
                                     >
                                         <Text style={styles.statValue}>{profile.followerCount}</Text>
                                         <Text style={styles.statLabel}>Followers</Text>
                                     </TouchableOpacity>
                                     <View style={styles.statDivider} />
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         style={styles.statItem}
-                                        onPress={() => router.push({ 
-                                            pathname: '/user/followers/[userId]', 
-                                            params: { userId: userId as string, tab: 'following' } 
+                                        onPress={() => router.push({
+                                            pathname: '/user/followers/[userId]',
+                                            params: { userId: userId as string, tab: 'following' }
                                         })}
                                     >
                                         <Text style={styles.statValue}>{profile.followingCount}</Text>
@@ -277,7 +289,7 @@ export default function UserProfileScreen() {
                         {/* Stats Card */}
                         <View style={styles.statsCard}>
                             <LinearGradient
-                                colors={["rgba(74, 222, 128, 0.1)", "rgba(34, 197, 94, 0.05)"]}
+                                colors={['rgba(63, 227, 255, 0.1)', 'rgba(63, 227, 255, 0.05)']}
                                 style={styles.statsGradient}
                             >
                                 <View style={styles.statsRow}>
@@ -302,11 +314,11 @@ export default function UserProfileScreen() {
 
                         {tradesLoading ? (
                             <View style={styles.tradesLoading}>
-                                <ActivityIndicator size="small" color="#4ade80" />
+                                <ActivityIndicator size="small" color={ACCENT} />
                             </View>
                         ) : trades.length === 0 ? (
                             <View style={styles.emptyTrades}>
-                                <Ionicons name="swap-horizontal-outline" size={48} color="rgba(255, 255, 255, 0.2)" />
+                                <Ionicons name="swap-horizontal-outline" size={48} color={TEXT_DISABLED} />
                                 <Text style={styles.emptyText}>No trades yet</Text>
                             </View>
                         ) : (
@@ -328,7 +340,7 @@ export default function UserProfileScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#0a0a0f",
+        backgroundColor: BG_MAIN,
     },
     gradient: {
         ...StyleSheet.absoluteFillObject,
@@ -347,14 +359,14 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: BG_CARD,
         justifyContent: 'center',
         alignItems: 'center',
     },
     headerTitle: {
         fontSize: 18,
         fontWeight: '600',
-        color: '#fff',
+        color: TEXT_PRIMARY,
     },
     headerSpacer: {
         width: 40,
@@ -366,7 +378,7 @@ const styles = StyleSheet.create({
         padding: 20,
     },
     backText: {
-        color: '#fff',
+        color: TEXT_PRIMARY,
         fontSize: 16,
         fontWeight: '500',
     },
@@ -377,35 +389,35 @@ const styles = StyleSheet.create({
         paddingHorizontal: 40,
     },
     loadingText: {
-        color: 'rgba(255, 255, 255, 0.6)',
+        color: TEXT_SECONDARY,
         fontSize: 14,
         marginTop: 12,
     },
     errorText: {
-        color: '#f87171',
+        color: ERROR,
         fontSize: 16,
         marginTop: 16,
         marginBottom: 12,
         textAlign: 'center',
     },
     retryButton: {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: BG_CARD,
         paddingVertical: 10,
         paddingHorizontal: 20,
         borderRadius: 8,
     },
     retryText: {
-        color: '#fff',
+        color: TEXT_PRIMARY,
         fontSize: 14,
         fontWeight: '600',
     },
     profileCard: {
         margin: 20,
         padding: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        backgroundColor: BG_CARD,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.06)',
+        borderColor: BORDER,
     },
     profileHeader: {
         flexDirection: 'row',
@@ -417,22 +429,22 @@ const styles = StyleSheet.create({
         height: 80,
         borderRadius: 40,
         borderWidth: 2,
-        borderColor: '#4ade80',
+        borderColor: ACCENT,
     },
     avatarPlaceholder: {
         width: 80,
         height: 80,
         borderRadius: 40,
-        backgroundColor: 'rgba(74, 222, 128, 0.2)',
+        backgroundColor: 'rgba(63, 227, 255, 0.15)',
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 2,
-        borderColor: '#4ade80',
+        borderColor: ACCENT,
     },
     avatarText: {
         fontSize: 32,
         fontWeight: '700',
-        color: '#4ade80',
+        color: ACCENT,
     },
     profileInfo: {
         flex: 1,
@@ -441,12 +453,12 @@ const styles = StyleSheet.create({
     displayName: {
         fontSize: 20,
         fontWeight: '700',
-        color: '#fff',
+        color: TEXT_PRIMARY,
         marginBottom: 4,
     },
     walletAddress: {
         fontSize: 12,
-        color: 'rgba(255, 255, 255, 0.5)',
+        color: TEXT_SECONDARY,
         fontFamily: 'monospace',
         marginBottom: 12,
     },
@@ -461,43 +473,43 @@ const styles = StyleSheet.create({
     statValue: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#fff',
+        color: TEXT_PRIMARY,
     },
     statLabel: {
         fontSize: 11,
-        color: 'rgba(255, 255, 255, 0.5)',
+        color: TEXT_SECONDARY,
         marginTop: 2,
     },
     statDivider: {
         width: 1,
         height: 24,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        backgroundColor: BORDER,
     },
     followButton: {
-        backgroundColor: '#4ade80',
+        backgroundColor: ACCENT,
         paddingVertical: 12,
         borderRadius: 12,
         alignItems: 'center',
         marginBottom: 20,
     },
     followingButton: {
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        backgroundColor: BG_ELEVATED,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.2)',
+        borderColor: BORDER,
     },
     followButtonText: {
-        color: '#000',
+        color: BG_MAIN,
         fontSize: 15,
         fontWeight: '700',
     },
     followingButtonText: {
-        color: '#fff',
+        color: TEXT_PRIMARY,
     },
     statsCard: {
         borderRadius: 12,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: 'rgba(74, 222, 128, 0.2)',
+        borderColor: 'rgba(63, 227, 255, 0.2)',
     },
     statsGradient: {
         padding: 16,
@@ -511,7 +523,7 @@ const styles = StyleSheet.create({
     },
     statsLabel: {
         fontSize: 11,
-        color: 'rgba(255, 255, 255, 0.6)',
+        color: TEXT_SECONDARY,
         textTransform: 'uppercase',
         letterSpacing: 0.5,
         marginBottom: 6,
@@ -519,10 +531,10 @@ const styles = StyleSheet.create({
     statsValue: {
         fontSize: 24,
         fontWeight: '700',
-        color: '#fff',
+        color: TEXT_PRIMARY,
     },
     statsValueNegative: {
-        color: '#f87171',
+        color: ERROR,
     },
     tradesSection: {
         marginHorizontal: 20,
@@ -531,7 +543,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#fff',
+        color: TEXT_PRIMARY,
         marginBottom: 16,
     },
     tradesLoading: {
@@ -543,7 +555,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     emptyText: {
-        color: 'rgba(255, 255, 255, 0.4)',
+        color: TEXT_DISABLED,
         fontSize: 14,
         marginTop: 12,
     },
@@ -551,11 +563,11 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     tradeItem: {
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        backgroundColor: BG_ELEVATED,
         borderRadius: 12,
         padding: 14,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.06)',
+        borderColor: BORDER,
     },
     tradeHeader: {
         flexDirection: 'row',
@@ -569,29 +581,29 @@ const styles = StyleSheet.create({
         borderRadius: 6,
     },
     sideBadgeYes: {
-        backgroundColor: 'rgba(74, 222, 128, 0.2)',
+        backgroundColor: 'rgba(74, 222, 128, 0.15)',
     },
     sideBadgeNo: {
-        backgroundColor: 'rgba(248, 113, 113, 0.2)',
+        backgroundColor: 'rgba(248, 113, 113, 0.15)',
     },
     sideText: {
         fontSize: 10,
         fontWeight: '700',
     },
     sideTextYes: {
-        color: '#4ade80',
+        color: SUCCESS,
     },
     sideTextNo: {
-        color: '#f87171',
+        color: ERROR,
     },
     tradeDate: {
         fontSize: 11,
-        color: 'rgba(255, 255, 255, 0.4)',
+        color: TEXT_DISABLED,
     },
     tradeTicker: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#fff',
+        color: TEXT_PRIMARY,
         marginBottom: 8,
     },
     tradeFooter: {
@@ -602,7 +614,7 @@ const styles = StyleSheet.create({
     tradeAmount: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#4ade80',
+        color: ACCENT,
     },
 });
 

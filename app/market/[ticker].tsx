@@ -7,6 +7,18 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Theme constants
+const ACCENT = '#3FE3FF';
+const BG_MAIN = '#000000';
+const BG_CARD = '#111827';
+const BG_ELEVATED = '#161C24';
+const BORDER = '#1F2937';
+const TEXT_PRIMARY = '#E5E7EB';
+const TEXT_SECONDARY = '#9CA3AF';
+const TEXT_DISABLED = '#6B7280';
+const SUCCESS = '#4ade80';
+const ERROR = '#f87171';
+
 export default function MarketDetailScreen() {
   const { ticker } = useLocalSearchParams<{ ticker: string }>();
   const [market, setMarket] = useState<Market | null>(null);
@@ -58,10 +70,10 @@ export default function MarketDetailScreen() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={["#0a0a0f", "#12121a", "#1a1a2e"]} style={styles.gradient} />
+        <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color="#4ade80" />
+            <ActivityIndicator size="large" color={ACCENT} />
           </View>
         </SafeAreaView>
       </View>
@@ -71,11 +83,11 @@ export default function MarketDetailScreen() {
   if (error || !market) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={["#0a0a0f", "#12121a", "#1a1a2e"]} style={styles.gradient} />
+        <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <Ionicons name="arrow-back" size={24} color="#fff" />
+              <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
             </TouchableOpacity>
           </View>
           <View style={styles.centerContainer}>
@@ -93,15 +105,15 @@ export default function MarketDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={["#0a0a0f", "#12121a", "#1a1a2e"]} style={styles.gradient} />
+      <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
 
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
+            <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.refreshButton} onPress={loadMarketDetails}>
-            <Ionicons name="refresh" size={20} color="#fff" />
+            <Ionicons name="refresh" size={20} color={TEXT_PRIMARY} />
           </TouchableOpacity>
         </View>
 
@@ -116,7 +128,7 @@ export default function MarketDetailScreen() {
                 </View>
               )}
               <View style={styles.volumeContainer}>
-                <Ionicons name="stats-chart" size={14} color="rgba(255, 255, 255, 0.5)" />
+                <Ionicons name="stats-chart" size={14} color={TEXT_SECONDARY} />
                 <Text style={styles.volumeText}>${((market.volume || 0) / 1000).toFixed(1)}K Volume</Text>
               </View>
             </View>
@@ -134,9 +146,9 @@ export default function MarketDetailScreen() {
             </View>
             {market.closeTime && (
               <Text style={styles.closeTimeText}>
-                Closes: {new Date(market.closeTime * 1000).toLocaleDateString(undefined, { 
-                  month: 'short', 
-                  day: 'numeric', 
+                Closes: {new Date(market.closeTime * 1000).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
                   year: 'numeric',
                   hour: '2-digit',
                   minute: '2-digit'
@@ -256,7 +268,7 @@ export default function MarketDetailScreen() {
               <Text style={styles.tradeButtonText}>
                 Place Trade
               </Text>
-              <Ionicons name="arrow-forward" size={20} color="#000" />
+              <Ionicons name="arrow-forward" size={20} color={BG_MAIN} />
             </TouchableOpacity>
           </View>
 
@@ -317,7 +329,7 @@ export default function MarketDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0a0f",
+    backgroundColor: BG_MAIN,
   },
   gradient: {
     ...StyleSheet.absoluteFillObject,
@@ -336,7 +348,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: BG_CARD,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -344,7 +356,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: BG_CARD,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -354,18 +366,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    color: '#f87171',
+    color: ERROR,
     fontSize: 16,
     marginBottom: 12,
   },
   retryButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: BG_CARD,
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
   },
   retryText: {
-    color: '#fff',
+    color: TEXT_PRIMARY,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -386,7 +398,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(74, 222, 128, 0.2)',
+    backgroundColor: 'rgba(63, 227, 255, 0.15)',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 99,
@@ -395,10 +407,10 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#4ade80',
+    backgroundColor: ACCENT,
   },
   activeText: {
-    color: '#4ade80',
+    color: ACCENT,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -408,25 +420,25 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   volumeText: {
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: TEXT_SECONDARY,
     fontSize: 13,
     fontWeight: '500',
   },
   marketTitle: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#fff',
+    color: TEXT_PRIMARY,
     marginBottom: 8,
     lineHeight: 36,
   },
   marketTicker: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: TEXT_SECONDARY,
     fontWeight: '500',
   },
   marketSubtitle: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: TEXT_SECONDARY,
     marginBottom: 8,
     lineHeight: 20,
   },
@@ -436,74 +448,74 @@ const styles = StyleSheet.create({
   },
   outcomeText: {
     fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: TEXT_SECONDARY,
   },
   outcomeLabel: {
     fontWeight: '600',
-    color: '#4ade80',
+    color: SUCCESS,
   },
   closeTimeText: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: TEXT_DISABLED,
     fontStyle: 'italic',
     marginTop: 4,
   },
   probabilityCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: BG_CARD,
     borderRadius: 16,
     padding: 20,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: BORDER,
   },
   probabilityLabel: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: TEXT_SECONDARY,
     fontSize: 14,
     marginBottom: 8,
   },
   probabilityValue: {
     fontSize: 48,
     fontWeight: '700',
-    color: '#4ade80',
+    color: ACCENT,
     marginBottom: 16,
   },
   probabilityBar: {
     height: 8,
-    backgroundColor: 'rgba(248, 113, 113, 0.3)',
+    backgroundColor: 'rgba(248, 113, 113, 0.2)',
     borderRadius: 4,
     overflow: 'hidden',
     marginBottom: 8,
   },
   probabilityFill: {
     height: '100%',
-    backgroundColor: '#4ade80',
+    backgroundColor: SUCCESS,
   },
   probabilityLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   yesLabel: {
-    color: '#4ade80',
+    color: SUCCESS,
     fontSize: 12,
     fontWeight: '600',
   },
   noLabel: {
-    color: '#f87171',
+    color: ERROR,
     fontSize: 12,
     fontWeight: '600',
   },
   tradingCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: BG_CARD,
     borderRadius: 16,
     padding: 20,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: BORDER,
   },
   tradingTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#fff',
+    color: TEXT_PRIMARY,
     marginBottom: 16,
   },
   sideSelector: {
@@ -532,16 +544,16 @@ const styles = StyleSheet.create({
   sideButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: TEXT_SECONDARY,
   },
   sideButtonTextActive: {
-    color: '#fff',
+    color: TEXT_PRIMARY,
   },
   inputContainer: {
     marginBottom: 20,
   },
   inputLabel: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: TEXT_SECONDARY,
     fontSize: 14,
     fontWeight: '500',
     marginBottom: 8,
@@ -549,21 +561,21 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: BG_ELEVATED,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: BORDER,
     paddingHorizontal: 16,
   },
   inputPrefix: {
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: TEXT_SECONDARY,
     fontSize: 20,
     fontWeight: '600',
     marginRight: 8,
   },
   input: {
     flex: 1,
-    color: '#fff',
+    color: TEXT_PRIMARY,
     fontSize: 20,
     fontWeight: '600',
     paddingVertical: 16,
@@ -575,26 +587,26 @@ const styles = StyleSheet.create({
   },
   quickAmountButton: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: BG_ELEVATED,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: BORDER,
     alignItems: 'center',
   },
   quickAmountText: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: TEXT_SECONDARY,
     fontSize: 14,
     fontWeight: '600',
   },
   expectedReturn: {
-    backgroundColor: 'rgba(74, 222, 128, 0.1)',
+    backgroundColor: 'rgba(63, 227, 255, 0.1)',
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: 'rgba(74, 222, 128, 0.2)',
+    borderColor: 'rgba(63, 227, 255, 0.2)',
   },
   returnRow: {
     flexDirection: 'row',
@@ -602,19 +614,19 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   returnLabel: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: TEXT_SECONDARY,
     fontSize: 14,
   },
   returnValue: {
-    color: '#fff',
+    color: TEXT_PRIMARY,
     fontSize: 14,
     fontWeight: '600',
   },
   profitValue: {
-    color: '#4ade80',
+    color: SUCCESS,
   },
   tradeButton: {
-    backgroundColor: '#4ade80',
+    backgroundColor: ACCENT,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -623,25 +635,25 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   tradeButtonDisabled: {
-    backgroundColor: 'rgba(74, 222, 128, 0.3)',
+    backgroundColor: 'rgba(63, 227, 255, 0.3)',
     opacity: 0.5,
   },
   tradeButtonText: {
-    color: '#000',
+    color: BG_MAIN,
     fontSize: 16,
     fontWeight: '700',
   },
   infoCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: BG_CARD,
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: BORDER,
   },
   infoTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#fff',
+    color: TEXT_PRIMARY,
     marginBottom: 16,
   },
   infoRow: {
@@ -649,31 +661,31 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: BORDER,
   },
   infoLabel: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: TEXT_SECONDARY,
     fontSize: 14,
   },
   infoValue: {
-    color: '#fff',
+    color: TEXT_PRIMARY,
     fontSize: 14,
     fontWeight: '600',
   },
   rulesRow: {
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: BORDER,
     flexDirection: 'column',
   },
   rulesLabel: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: TEXT_SECONDARY,
     fontSize: 14,
     marginBottom: 6,
     fontWeight: '600',
   },
   rulesText: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: TEXT_PRIMARY,
     fontSize: 13,
     lineHeight: 20,
   },
