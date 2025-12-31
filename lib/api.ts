@@ -104,6 +104,19 @@ export const api = {
         return response.json();
     },
 
+    updateTradeQuote: async (tradeId: string, quote: string): Promise<Trade> => {
+        const response = await fetch(`${API_BASE_URL}/api/trades/${tradeId}/quote`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ quote }),
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to update trade quote');
+        }
+        return response.json();
+    },
+
     // Feed endpoint
     getFeed: async (userId: string, limit = 50, offset = 0): Promise<Trade[]> => {
         const response = await fetch(`${API_BASE_URL}/api/feed?userId=${userId}&limit=${limit}&offset=${offset}`);
@@ -296,4 +309,26 @@ export const marketsApi = {
 
         return await response.json();
     },
+};
+
+// Market details cache to avoid repeated API calls
+const marketCache = new Map<string, { data: Market; timestamp: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+export const getMarketDetails = async (ticker: string): Promise<Market | null> => {
+    try {
+        // Check cache first
+        const cached = marketCache.get(ticker);
+        if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+            return cached.data;
+        }
+
+        // Fetch fresh data
+        const market = await marketsApi.fetchMarketDetails(ticker);
+        marketCache.set(ticker, { data: market, timestamp: Date.now() });
+        return market;
+    } catch (error) {
+        console.error(`Failed to fetch market details for ${ticker}:`, error);
+        return null;
+    }
 };

@@ -1,10 +1,13 @@
-import { marketsApi } from "@/lib/api";
+import TradeQuoteSheet from "@/components/TradeQuoteSheet";
+import { useUser } from "@/contexts/UserContext";
+import { api, marketsApi } from "@/lib/api";
 import { Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // Theme constants
@@ -21,11 +24,16 @@ const ERROR = '#f87171';
 
 export default function MarketDetailScreen() {
   const { ticker } = useLocalSearchParams<{ ticker: string }>();
+  const { backendUser } = useUser();
   const [market, setMarket] = useState<Market | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSide, setSelectedSide] = useState<'yes' | 'no'>('yes');
   const [amount, setAmount] = useState('');
+  const [isTrading, setIsTrading] = useState(false);
+  const [tradeError, setTradeError] = useState<string | null>(null);
+  const [showQuoteSheet, setShowQuoteSheet] = useState(false);
+  const [lastTradeId, setLastTradeId] = useState<string | null>(null);
 
   useEffect(() => {
     if (ticker) {
@@ -47,24 +55,70 @@ export default function MarketDetailScreen() {
     }
   };
 
-  const handleTrade = () => {
-    // TODO: Implement actual trading logic with Privy/Solana
-    console.log(`Trading ${amount} on ${selectedSide} for ${market?.ticker}`);
-    alert('Trading functionality will be connected to Solana wallet');
+  const handleTrade = async () => {
+    if (!market || !backendUser || !amount || parseFloat(amount) <= 0) return;
+
+    Keyboard.dismiss();
+    setIsTrading(true);
+    setTradeError(null);
+
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      const trade = await api.createTrade({
+        userId: backendUser.id,
+        marketTicker: market.ticker,
+        eventTicker: market.eventTicker,
+        side: selectedSide,
+        amount: amount,
+        walletAddress: backendUser.walletAddress,
+        transactionSig: 'dummy_transaction_' + Date.now(),
+        isDummy: true,
+      });
+
+      setLastTradeId(trade.id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      // Show quote sheet after successful trade
+      setShowQuoteSheet(true);
+    } catch (err: any) {
+      console.error("Trade placement error:", err);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      
+      let errorMessage = "Failed to place trade";
+      if (err.message?.includes("insufficient")) {
+        errorMessage = "Insufficient balance";
+      } else if (err.message?.includes("market")) {
+        errorMessage = "Market not available";
+      }
+      setTradeError(errorMessage);
+    } finally {
+      setIsTrading(false);
+    }
+  };
+
+  const handleQuoteSubmit = async (quote: string) => {
+    // TODO: Update trade with quote via API if needed
+    console.log("Quote submitted:", quote, "for trade:", lastTradeId);
+    setShowQuoteSheet(false);
+    setAmount('');
+    router.back();
+  };
+
+  const handleQuoteSkip = () => {
+    setShowQuoteSheet(false);
+    setAmount('');
+    router.back();
   };
 
   // Calculate probability from bid/ask if available
   const calculateProbability = () => {
-    if (selectedSide === 'yes' && market?.yesBid && market?.yesAsk) {
+    if (market?.yesBid && market?.yesAsk) {
       const bid = parseFloat(market.yesBid);
       const ask = parseFloat(market.yesAsk);
-      return ((bid + ask) / 2 * 100).toFixed(1);
-    } else if (selectedSide === 'no' && market?.noBid && market?.noAsk) {
-      const bid = parseFloat(market.noBid);
-      const ask = parseFloat(market.noAsk);
-      return ((bid + ask) / 2 * 100).toFixed(1);
+      return ((bid + ask) / 2 * 100);
     }
-    return '50'; // Default placeholder
+    return 50; // Default placeholder
   };
 
   if (loading) {
@@ -101,7 +155,9 @@ export default function MarketDetailScreen() {
     );
   }
 
-  const estimatedProbability = parseFloat(calculateProbability());
+  const estimatedProbability = calculateProbability();
+  const betAmount = parseFloat(amount || '0');
+  const canTrade = betAmount > 0 && !isTrading && backendUser;
 
   return (
     <View style={styles.container}>
@@ -117,211 +173,258 @@ export default function MarketDetailScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <ScrollView 
+          showsVerticalScrollIndicator={false} 
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Market Header */}
           <View style={styles.marketHeader}>
             <View style={styles.statusRow}>
               {market.status === 'active' && (
                 <View style={styles.activeBadge}>
                   <View style={styles.activeDot} />
-                  <Text style={styles.activeText}>Active</Text>
+                  <Text style={styles.activeText}>Live</Text>
                 </View>
               )}
               <View style={styles.volumeContainer}>
                 <Ionicons name="stats-chart" size={14} color={TEXT_SECONDARY} />
-                <Text style={styles.volumeText}>${((market.volume || 0) / 1000).toFixed(1)}K Volume</Text>
+                <Text style={styles.volumeText}>${((market.volume || 0) / 1000).toFixed(1)}K</Text>
               </View>
             </View>
             <Text style={styles.marketTitle}>{market.title}</Text>
-            {market.subtitle && (
-              <Text style={styles.marketSubtitle}>{market.subtitle}</Text>
-            )}
-            <View style={styles.outcomeRow}>
-              {market.yesSubTitle && (
-                <Text style={styles.outcomeText}>
-                  <Text style={styles.outcomeLabel}>Yes: </Text>
-                  {market.yesSubTitle}
-                </Text>
-              )}
-            </View>
-            {market.closeTime && (
-              <Text style={styles.closeTimeText}>
-                Closes: {new Date(market.closeTime * 1000).toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
+            {market.yesSubTitle && (
+              <Text style={styles.outcomeText}>
+                <Text style={styles.yesHighlight}>Yes</Text> = {market.yesSubTitle}
               </Text>
+            )}
+            {market.closeTime && (
+              <View style={styles.closeTimeRow}>
+                <Ionicons name="time-outline" size={14} color={TEXT_DISABLED} />
+                <Text style={styles.closeTimeText}>
+                  Closes {new Date(market.closeTime * 1000).toLocaleDateString(undefined, {
+                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                  })}
+                </Text>
+              </View>
             )}
           </View>
 
           {/* Probability Display */}
           <View style={styles.probabilityCard}>
-            <Text style={styles.probabilityLabel}>Current Probability</Text>
-            <Text style={styles.probabilityValue}>{estimatedProbability}%</Text>
-            <View style={styles.probabilityBar}>
-              <View style={[styles.probabilityFill, { width: `${estimatedProbability}%` }]} />
+            <View style={styles.probHeader}>
+              <Text style={styles.probLabel}>Current Probability</Text>
+              <Text style={styles.probValue}>{estimatedProbability.toFixed(1)}%</Text>
             </View>
-            <View style={styles.probabilityLabels}>
-              <Text style={styles.yesLabel}>Yes</Text>
-              <Text style={styles.noLabel}>No</Text>
+            <View style={styles.probBarContainer}>
+              <View style={styles.probBar}>
+                <View style={[styles.probFill, { width: `${estimatedProbability}%` }]} />
+              </View>
+              <View style={styles.probLabels}>
+                <Text style={styles.yesLabel}>Yes</Text>
+                <Text style={styles.noLabel}>No</Text>
+              </View>
             </View>
           </View>
 
-          {/* Trading Interface */}
+          {/* Trading Card */}
           <View style={styles.tradingCard}>
-            <Text style={styles.tradingTitle}>Place Your Trade</Text>
-
             {/* Side Selector */}
             <View style={styles.sideSelector}>
               <TouchableOpacity
                 style={[
                   styles.sideButton,
-                  styles.yesButton,
-                  selectedSide === 'yes' && styles.sideButtonActive,
+                  selectedSide === 'yes' && styles.yesSideActive,
                 ]}
-                onPress={() => setSelectedSide('yes')}
-                activeOpacity={0.7}
+                onPress={() => {
+                  setSelectedSide('yes');
+                  Haptics.selectionAsync();
+                }}
+                activeOpacity={0.8}
               >
-                <Text style={[
-                  styles.sideButtonText,
-                  selectedSide === 'yes' && styles.sideButtonTextActive,
-                ]}>
-                  Yes
-                </Text>
+                <View style={styles.sideContent}>
+                  <Ionicons 
+                    name="trending-up" 
+                    size={20} 
+                    color={selectedSide === 'yes' ? SUCCESS : TEXT_DISABLED} 
+                  />
+                  <Text style={[
+                    styles.sideText,
+                    selectedSide === 'yes' && styles.yesTextActive,
+                  ]}>Yes</Text>
+                </View>
+                {selectedSide === 'yes' && (
+                  <View style={styles.sideCheck}>
+                    <Ionicons name="checkmark" size={14} color={SUCCESS} />
+                  </View>
+                )}
               </TouchableOpacity>
+
               <TouchableOpacity
                 style={[
                   styles.sideButton,
-                  styles.noButton,
-                  selectedSide === 'no' && styles.sideButtonActive,
+                  selectedSide === 'no' && styles.noSideActive,
                 ]}
-                onPress={() => setSelectedSide('no')}
-                activeOpacity={0.7}
+                onPress={() => {
+                  setSelectedSide('no');
+                  Haptics.selectionAsync();
+                }}
+                activeOpacity={0.8}
               >
-                <Text style={[
-                  styles.sideButtonText,
-                  selectedSide === 'no' && styles.sideButtonTextActive,
-                ]}>
-                  No
-                </Text>
+                <View style={styles.sideContent}>
+                  <Ionicons 
+                    name="trending-down" 
+                    size={20} 
+                    color={selectedSide === 'no' ? ERROR : TEXT_DISABLED} 
+                  />
+                  <Text style={[
+                    styles.sideText,
+                    selectedSide === 'no' && styles.noTextActive,
+                  ]}>No</Text>
+                </View>
+                {selectedSide === 'no' && (
+                  <View style={styles.sideCheck}>
+                    <Ionicons name="checkmark" size={14} color={ERROR} />
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
 
             {/* Amount Input */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Amount (USDC)</Text>
-              <View style={styles.inputWrapper}>
-                <Text style={styles.inputPrefix}>$</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0.00"
-                  placeholderTextColor="rgba(255, 255, 255, 0.3)"
-                  keyboardType="decimal-pad"
-                  value={amount}
-                  onChangeText={setAmount}
-                />
+            <View style={styles.amountSection}>
+              <Text style={styles.amountLabel}>Amount</Text>
+              <View style={styles.amountInputRow}>
+                <View style={styles.inputWrapper}>
+                  <Text style={styles.inputPrefix}>$</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="0"
+                    placeholderTextColor={TEXT_DISABLED}
+                    keyboardType="decimal-pad"
+                    value={amount}
+                    onChangeText={(t) => {
+                      setAmount(t.replace(',', '.'));
+                      setTradeError(null);
+                    }}
+                  />
+                </View>
               </View>
               <View style={styles.quickAmounts}>
-                {['10', '25', '50', '100'].map((value) => (
+                {['5', '10', '25', '50', '100'].map((value) => (
                   <TouchableOpacity
                     key={value}
-                    style={styles.quickAmountButton}
-                    onPress={() => setAmount(value)}
+                    style={[
+                      styles.quickBtn,
+                      amount === value && styles.quickBtnActive,
+                    ]}
+                    onPress={() => {
+                      setAmount(value);
+                      Haptics.selectionAsync();
+                    }}
                   >
-                    <Text style={styles.quickAmountText}>${value}</Text>
+                    <Text style={[
+                      styles.quickBtnText,
+                      amount === value && styles.quickBtnTextActive,
+                    ]}>${value}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            {/* Expected Return */}
-            {amount && (
-              <View style={styles.expectedReturn}>
-                <View style={styles.returnRow}>
-                  <Text style={styles.returnLabel}>Expected Return</Text>
-                  <Text style={styles.returnValue}>
-                    ${(parseFloat(amount || '0') * 1.85).toFixed(2)}
+            {/* Payout Preview */}
+            {betAmount > 0 && (
+              <View style={styles.payoutPreview}>
+                <View style={styles.payoutRow}>
+                  <Text style={styles.payoutLabel}>If you win</Text>
+                  <Text style={styles.payoutValue}>
+                    ${(betAmount * (100 / estimatedProbability)).toFixed(2)}
                   </Text>
                 </View>
-                <View style={styles.returnRow}>
-                  <Text style={styles.returnLabel}>Potential Profit</Text>
-                  <Text style={[styles.returnValue, styles.profitValue]}>
-                    +${(parseFloat(amount || '0') * 0.85).toFixed(2)}
+                <View style={styles.payoutRow}>
+                  <Text style={styles.payoutLabel}>Profit</Text>
+                  <Text style={styles.profitValue}>
+                    +${((betAmount * (100 / estimatedProbability)) - betAmount).toFixed(2)}
                   </Text>
                 </View>
+              </View>
+            )}
+
+            {/* Error Message */}
+            {tradeError && (
+              <View style={styles.errorBanner}>
+                <Ionicons name="alert-circle" size={18} color={ERROR} />
+                <Text style={styles.errorBannerText}>{tradeError}</Text>
               </View>
             )}
 
             {/* Trade Button */}
             <TouchableOpacity
-              style={[
-                styles.tradeButton,
-                (!amount || parseFloat(amount) <= 0) && styles.tradeButtonDisabled,
-              ]}
+              style={[styles.tradeButton, !canTrade && styles.tradeButtonDisabled]}
               onPress={handleTrade}
-              disabled={!amount || parseFloat(amount) <= 0}
-              activeOpacity={0.8}
+              disabled={!canTrade}
+              activeOpacity={0.85}
             >
-              <Text style={styles.tradeButtonText}>
-                Place Trade
-              </Text>
-              <Ionicons name="arrow-forward" size={20} color={BG_MAIN} />
+              <LinearGradient
+                colors={canTrade ? [ACCENT, '#00B8D4'] : [BG_ELEVATED, BG_ELEVATED]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.tradeGradient}
+              >
+                {isTrading ? (
+                  <ActivityIndicator size="small" color={BG_MAIN} />
+                ) : (
+                  <>
+                    <Text style={[styles.tradeButtonText, !canTrade && styles.tradeButtonTextDisabled]}>
+                      {betAmount > 0 ? `Bet $${betAmount.toFixed(2)} on ${selectedSide.toUpperCase()}` : 'Enter Amount'}
+                    </Text>
+                    {canTrade && <Ionicons name="arrow-forward" size={18} color={BG_MAIN} />}
+                  </>
+                )}
+              </LinearGradient>
             </TouchableOpacity>
           </View>
 
           {/* Market Info */}
           <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Market Information</Text>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Status</Text>
-              <Text style={styles.infoValue}>{market.status}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Total Volume</Text>
-              <Text style={styles.infoValue}>${((market.volume || 0) / 1000).toFixed(1)}K</Text>
-            </View>
-            {market.openInterest && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Open Interest</Text>
-                <Text style={styles.infoValue}>${(market.openInterest / 1000).toFixed(1)}K</Text>
+            <Text style={styles.infoTitle}>Details</Text>
+            <View style={styles.infoGrid}>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>Status</Text>
+                <Text style={styles.infoValue}>{market.status}</Text>
               </View>
-            )}
-            {market.openTime && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Open Time</Text>
-                <Text style={styles.infoValue}>
-                  {new Date(market.openTime * 1000).toLocaleDateString()}
-                </Text>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>Volume</Text>
+                <Text style={styles.infoValue}>${((market.volume || 0) / 1000).toFixed(1)}K</Text>
               </View>
-            )}
+              {market.openInterest && (
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>Open Interest</Text>
+                  <Text style={styles.infoValue}>${(market.openInterest / 1000).toFixed(1)}K</Text>
+                </View>
+              )}
+            </View>
             {market.rulesPrimary && (
-              <View style={styles.rulesRow}>
+              <View style={styles.rulesSection}>
                 <Text style={styles.rulesLabel}>Rules</Text>
                 <Text style={styles.rulesText}>{market.rulesPrimary}</Text>
-              </View>
-            )}
-            {market.yesMint && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Yes Mint</Text>
-                <Text style={styles.infoValue} numberOfLines={1}>
-                  {market.yesMint.slice(0, 8)}...{market.yesMint.slice(-6)}
-                </Text>
-              </View>
-            )}
-            {market.noMint && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>No Mint</Text>
-                <Text style={styles.infoValue} numberOfLines={1}>
-                  {market.noMint.slice(0, 8)}...{market.noMint.slice(-6)}
-                </Text>
               </View>
             )}
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* Quote Sheet */}
+      <TradeQuoteSheet
+        visible={showQuoteSheet}
+        onClose={() => setShowQuoteSheet(false)}
+        onSubmit={handleQuoteSubmit}
+        onSkip={handleQuoteSkip}
+        tradeInfo={{
+          side: selectedSide,
+          amount: amount,
+          marketTitle: market.title,
+        }}
+      />
     </View>
   );
 }
@@ -339,7 +442,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -351,6 +454,8 @@ const styles = StyleSheet.create({
     backgroundColor: BG_CARD,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   refreshButton: {
     width: 40,
@@ -359,6 +464,8 @@ const styles = StyleSheet.create({
     backgroundColor: BG_CARD,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   centerContainer: {
     flex: 1,
@@ -372,9 +479,11 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     backgroundColor: BG_CARD,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   retryText: {
     color: TEXT_PRIMARY,
@@ -385,8 +494,9 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
+  // Market Header
   marketHeader: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   statusRow: {
     flexDirection: 'row',
@@ -398,10 +508,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(63, 227, 255, 0.15)',
+    backgroundColor: 'rgba(63, 227, 255, 0.12)',
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 99,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(63, 227, 255, 0.2)',
   },
   activeDot: {
     width: 6,
@@ -411,13 +523,15 @@ const styles = StyleSheet.create({
   },
   activeText: {
     color: ACCENT,
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   volumeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
   volumeText: {
     color: TEXT_SECONDARY,
@@ -425,264 +539,320 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   marketTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
     color: TEXT_PRIMARY,
-    marginBottom: 8,
-    lineHeight: 36,
-  },
-  marketTicker: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
-    fontWeight: '500',
-  },
-  marketSubtitle: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  outcomeRow: {
-    marginTop: 8,
-    marginBottom: 4,
+    marginBottom: 10,
+    lineHeight: 32,
   },
   outcomeText: {
-    fontSize: 13,
+    fontSize: 14,
     color: TEXT_SECONDARY,
+    marginBottom: 10,
   },
-  outcomeLabel: {
-    fontWeight: '600',
+  yesHighlight: {
+    fontWeight: '700',
     color: SUCCESS,
   },
-  closeTimeText: {
-    fontSize: 12,
-    color: TEXT_DISABLED,
-    fontStyle: 'italic',
-    marginTop: 4,
+  closeTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
+  closeTimeText: {
+    fontSize: 13,
+    color: TEXT_DISABLED,
+  },
+  // Probability Card
   probabilityCard: {
     backgroundColor: BG_CARD,
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
+    padding: 18,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: BORDER,
   },
-  probabilityLabel: {
-    color: TEXT_SECONDARY,
-    fontSize: 14,
-    marginBottom: 8,
+  probHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
   },
-  probabilityValue: {
-    fontSize: 48,
+  probLabel: {
+    color: TEXT_SECONDARY,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  probValue: {
+    fontSize: 28,
     fontWeight: '700',
     color: ACCENT,
-    marginBottom: 16,
   },
-  probabilityBar: {
-    height: 8,
-    backgroundColor: 'rgba(248, 113, 113, 0.2)',
-    borderRadius: 4,
+  probBarContainer: {},
+  probBar: {
+    height: 6,
+    backgroundColor: 'rgba(248, 113, 113, 0.25)',
+    borderRadius: 999,
     overflow: 'hidden',
     marginBottom: 8,
   },
-  probabilityFill: {
+  probFill: {
     height: '100%',
     backgroundColor: SUCCESS,
+    borderRadius: 999,
   },
-  probabilityLabels: {
+  probLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   yesLabel: {
     color: SUCCESS,
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
   },
   noLabel: {
     color: ERROR,
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
   },
+  // Trading Card
   tradingCard: {
     backgroundColor: BG_CARD,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
-    marginBottom: 24,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: BORDER,
   },
-  tradingTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-    marginBottom: 16,
-  },
   sideSelector: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
     marginBottom: 20,
   },
   sideButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: BG_ELEVATED,
     borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  sideContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  sideText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: TEXT_DISABLED,
+  },
+  yesSideActive: {
+    backgroundColor: 'rgba(74, 222, 128, 0.1)',
+    borderColor: 'rgba(74, 222, 128, 0.4)',
+  },
+  noSideActive: {
+    backgroundColor: 'rgba(248, 113, 113, 0.1)',
+    borderColor: 'rgba(248, 113, 113, 0.4)',
+  },
+  yesTextActive: {
+    color: SUCCESS,
+  },
+  noTextActive: {
+    color: ERROR,
+  },
+  sideCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  yesButton: {
-    backgroundColor: 'rgba(74, 222, 128, 0.1)',
-    borderColor: 'rgba(74, 222, 128, 0.3)',
+  // Amount Section
+  amountSection: {
+    marginBottom: 16,
   },
-  noButton: {
-    backgroundColor: 'rgba(248, 113, 113, 0.1)',
-    borderColor: 'rgba(248, 113, 113, 0.3)',
-  },
-  sideButtonActive: {
-    borderWidth: 2,
-  },
-  sideButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+  amountLabel: {
     color: TEXT_SECONDARY,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
   },
-  sideButtonTextActive: {
-    color: TEXT_PRIMARY,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  inputLabel: {
-    color: TEXT_SECONDARY,
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 8,
-  },
+  amountInputRow: {},
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: BG_ELEVATED,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: BORDER,
     paddingHorizontal: 16,
   },
   inputPrefix: {
     color: TEXT_SECONDARY,
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '600',
-    marginRight: 8,
   },
   input: {
     flex: 1,
     color: TEXT_PRIMARY,
-    fontSize: 20,
-    fontWeight: '600',
-    paddingVertical: 16,
+    fontSize: 28,
+    fontWeight: '700',
+    paddingVertical: 14,
+    paddingLeft: 6,
   },
   quickAmounts: {
     flexDirection: 'row',
     gap: 8,
     marginTop: 12,
   },
-  quickAmountButton: {
+  quickBtn: {
     flex: 1,
     backgroundColor: BG_ELEVATED,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: BORDER,
     alignItems: 'center',
   },
-  quickAmountText: {
+  quickBtnActive: {
+    backgroundColor: 'rgba(63, 227, 255, 0.1)',
+    borderColor: 'rgba(63, 227, 255, 0.3)',
+  },
+  quickBtnText: {
     color: TEXT_SECONDARY,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
-  expectedReturn: {
-    backgroundColor: 'rgba(63, 227, 255, 0.1)',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(63, 227, 255, 0.2)',
+  quickBtnTextActive: {
+    color: ACCENT,
   },
-  returnRow: {
+  // Payout Preview
+  payoutPreview: {
+    backgroundColor: 'rgba(63, 227, 255, 0.08)',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(63, 227, 255, 0.15)',
+  },
+  payoutRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 6,
   },
-  returnLabel: {
+  payoutLabel: {
     color: TEXT_SECONDARY,
-    fontSize: 14,
+    fontSize: 13,
   },
-  returnValue: {
+  payoutValue: {
     color: TEXT_PRIMARY,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   profitValue: {
     color: SUCCESS,
+    fontSize: 14,
+    fontWeight: '700',
   },
+  // Error Banner
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(248, 113, 113, 0.1)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.2)',
+  },
+  errorBannerText: {
+    color: ERROR,
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+  },
+  // Trade Button
   tradeButton: {
-    backgroundColor: ACCENT,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  tradeButtonDisabled: {
+    opacity: 0.7,
+  },
+  tradeGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     paddingVertical: 16,
-    borderRadius: 12,
-  },
-  tradeButtonDisabled: {
-    backgroundColor: 'rgba(63, 227, 255, 0.3)',
-    opacity: 0.5,
   },
   tradeButtonText: {
     color: BG_MAIN,
     fontSize: 16,
     fontWeight: '700',
   },
+  tradeButtonTextDisabled: {
+    color: TEXT_DISABLED,
+  },
+  // Info Card
   infoCard: {
     backgroundColor: BG_CARD,
     borderRadius: 16,
-    padding: 20,
+    padding: 18,
     borderWidth: 1,
     borderColor: BORDER,
   },
   infoTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: TEXT_PRIMARY,
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  infoRow: {
+  infoGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 14,
+  },
+  infoItem: {
+    backgroundColor: BG_ELEVATED,
+    borderRadius: 10,
+    padding: 12,
+    minWidth: '30%',
+    flex: 1,
   },
   infoLabel: {
-    color: TEXT_SECONDARY,
-    fontSize: 14,
+    color: TEXT_DISABLED,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
   },
   infoValue: {
     color: TEXT_PRIMARY,
     fontSize: 14,
     fontWeight: '600',
   },
-  rulesRow: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
-    flexDirection: 'column',
+  rulesSection: {
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
   },
   rulesLabel: {
     color: TEXT_SECONDARY,
-    fontSize: 14,
-    marginBottom: 6,
+    fontSize: 12,
     fontWeight: '600',
+    marginBottom: 8,
   },
   rulesText: {
     color: TEXT_PRIMARY,

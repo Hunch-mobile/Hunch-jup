@@ -5,8 +5,20 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+// Theme constants
+const ACCENT = '#3FE3FF';
+const BG_MAIN = '#000000';
+const BG_CARD = '#111827';
+const BG_ELEVATED = '#161C24';
+const BORDER = '#1F2937';
+const TEXT_PRIMARY = '#E5E7EB';
+const TEXT_SECONDARY = '#9CA3AF';
+const TEXT_DISABLED = '#6B7280';
+const SUCCESS = '#4ade80';
+const ERROR = '#f87171';
 
 const MarketCard = ({ item }: { item: Market }) => {
   const handlePress = () => {
@@ -16,50 +28,50 @@ const MarketCard = ({ item }: { item: Market }) => {
   // Calculate probability from bid/ask if available
   const yesBid = item.yesBid ? parseFloat(item.yesBid) * 100 : null;
   const yesAsk = item.yesAsk ? parseFloat(item.yesAsk) * 100 : null;
-  const probability = yesBid && yesAsk ? ((yesBid + yesAsk) / 2).toFixed(1) : null;
+  const probability = yesBid && yesAsk ? ((yesBid + yesAsk) / 2) : null;
 
   return (
     <TouchableOpacity style={styles.marketCard} activeOpacity={0.7} onPress={handlePress}>
-      <View style={styles.marketHeader}>
-        <View style={styles.volumeContainer}>
-          <Ionicons name="stats-chart" size={12} color="rgba(255, 255, 255, 0.5)" />
-          <Text style={styles.volumeText}>${((item.volume || 0) / 1000).toFixed(1)}K Vol</Text>
+      <View style={styles.marketCardContent}>
+        <View style={styles.marketTop}>
+          <View style={styles.marketTopLeft}>
+            {item.status === 'active' && (
+              <View style={styles.activeDot} />
+            )}
+            <Text style={styles.marketTitle} numberOfLines={2}>{item.title}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={TEXT_DISABLED} />
         </View>
-        {item.status === 'active' && (
-          <View style={styles.activeBadge}>
-            <Text style={styles.activeText}>Active</Text>
+
+        {item.yesSubTitle && (
+          <Text style={styles.outcomeLabel} numberOfLines={1}>
+            Yes: {item.yesSubTitle}
+          </Text>
+        )}
+
+        <View style={styles.marketStats}>
+          <View style={styles.statRow}>
+            <View style={styles.statCol}>
+              <Text style={styles.statLabel}>Probability</Text>
+              <Text style={styles.statValue}>
+                {probability ? `${probability.toFixed(1)}%` : '--'}
+              </Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statCol}>
+              <Text style={styles.statLabel}>Volume</Text>
+              <Text style={styles.statValue}>
+                ${((item.volume || 0) / 1000).toFixed(1)}K
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {probability && (
+          <View style={styles.probabilityBar}>
+            <View style={[styles.probabilityFill, { width: `${probability}%` }]} />
           </View>
         )}
-      </View>
-
-      <Text style={styles.marketTitle}>{item.title}</Text>
-
-      {item.yesSubTitle && item.noSubTitle && (
-        <View style={styles.outcomeLabels}>
-          <View style={styles.outcomeLabelItem}>
-            <Text style={styles.outcomeLabel}>Yes: {item.yesSubTitle}</Text>
-          </View>
-        </View>
-      )}
-
-      <View style={styles.marketFooter}>
-        <View style={styles.volumeInfoContainer}>
-          {probability ? (
-            <>
-              <Text style={styles.volumeLabel}>Probability</Text>
-              <Text style={styles.volumeValue}>{probability}%</Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.volumeLabel}>Volume</Text>
-              <Text style={styles.volumeValue}>${((item.volume || 0) / 1000).toFixed(1)}K</Text>
-            </>
-          )}
-        </View>
-        <TouchableOpacity style={styles.tradeButton}>
-          <Text style={styles.tradeButtonText}>Trade</Text>
-          <Ionicons name="arrow-forward" size={14} color="#4ade80" />
-        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
@@ -100,10 +112,10 @@ export default function EventDetailScreen() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={["#0a0a0f", "#12121a", "#1a1a2e"]} style={styles.gradient} />
+        <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color="#4ade80" />
+            <ActivityIndicator size="large" color={ACCENT} />
           </View>
         </SafeAreaView>
       </View>
@@ -113,14 +125,15 @@ export default function EventDetailScreen() {
   if (error || !event) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={["#0a0a0f", "#12121a", "#1a1a2e"]} style={styles.gradient} />
+        <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <Ionicons name="arrow-back" size={24} color="#fff" />
+              <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
             </TouchableOpacity>
           </View>
           <View style={styles.centerContainer}>
+            <Ionicons name="alert-circle-outline" size={64} color={ERROR} />
             <Text style={styles.errorText}>{error || "Event not found"}</Text>
             <TouchableOpacity style={styles.retryButton} onPress={loadEventDetails}>
               <Text style={styles.retryText}>Retry</Text>
@@ -133,77 +146,97 @@ export default function EventDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={["#0a0a0f", "#12121a", "#1a1a2e"]} style={styles.gradient} />
+      <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
 
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.refreshButton} onPress={loadEventDetails}>
-            <Ionicons name="refresh" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {/* Event Image */}
-          {event.imageUrl && (
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* Hero Image with Overlay */}
+        <View style={styles.heroContainer}>
+          {event.imageUrl ? (
             <Image
               source={{ uri: event.imageUrl }}
-              style={styles.eventImage}
+              style={styles.heroImage}
               contentFit="cover"
               transition={200}
             />
+          ) : (
+            <View style={styles.heroPlaceholder}>
+              <Ionicons name="image-outline" size={64} color={TEXT_DISABLED} />
+            </View>
           )}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.7)', BG_MAIN]}
+            style={styles.heroGradient}
+          />
+          
+          {/* Floating Header */}
+          <SafeAreaView style={styles.floatingHeader} edges={['top']}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+              <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.refreshButton} onPress={loadEventDetails}>
+              <Ionicons name="refresh" size={20} color={TEXT_PRIMARY} />
+            </TouchableOpacity>
+          </SafeAreaView>
+        </View>
 
-          <View style={styles.eventHeader}>
-            {event.competition && (
-              <View style={styles.competitionBadge}>
-                <Text style={styles.competitionText}>{event.competition}</Text>
-                {event.competitionScope && (
-                  <Text style={styles.competitionScope}> • {event.competitionScope}</Text>
-                )}
-              </View>
-            )}
-            <Text style={styles.eventTitle}>{event.title}</Text>
-            {event.subtitle && (
-              <Text style={styles.eventSubtitle}>{event.subtitle}</Text>
-            )}
-            <View style={styles.eventMeta}>
-              <View style={styles.metaItem}>
-                <Ionicons name="pulse" size={16} color="#4ade80" />
-                <Text style={styles.metaText}>{activeMarkets.length} Active Markets</Text>
-              </View>
-              {event.volume && (
-                <View style={styles.metaItem}>
-                  <Ionicons name="trending-up" size={16} color="rgba(255, 255, 255, 0.5)" />
-                  <Text style={styles.metaText}>${(event.volume / 1000000).toFixed(2)}M Volume</Text>
-                </View>
-              )}
-              {event.liquidity && (
-                <View style={styles.metaItem}>
-                  <Ionicons name="water" size={16} color="rgba(255, 255, 255, 0.5)" />
-                  <Text style={styles.metaText}>${(event.liquidity / 1000000).toFixed(2)}M Liquidity</Text>
-                </View>
+        {/* Event Info */}
+        <View style={styles.eventInfo}>
+          {event.competition && (
+            <View style={styles.competitionBadge}>
+              <Text style={styles.competitionText}>{event.competition}</Text>
+              {event.competitionScope && (
+                <Text style={styles.competitionScope}> • {event.competitionScope}</Text>
               )}
             </View>
-          </View>
+          )}
+          
+          <Text style={styles.eventTitle}>{event.title}</Text>
+          
+          {event.subtitle && (
+            <Text style={styles.eventSubtitle}>{event.subtitle}</Text>
+          )}
 
-          <View style={styles.marketsSection}>
-            <Text style={styles.sectionTitle}>Markets</Text>
-            {activeMarkets.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="information-circle-outline" size={48} color="rgba(255, 255, 255, 0.3)" />
-                <Text style={styles.emptyText}>No active markets available</Text>
+          {/* Stats Row */}
+          <View style={styles.statsRow}>
+            <View style={styles.statPill}>
+              <Ionicons name="pulse" size={14} color={ACCENT} />
+              <Text style={styles.statPillText}>{activeMarkets.length} Markets</Text>
+            </View>
+            {event.volume && (
+              <View style={styles.statPill}>
+                <Ionicons name="trending-up" size={14} color={TEXT_SECONDARY} />
+                <Text style={styles.statPillText}>${(event.volume / 1000000).toFixed(1)}M Vol</Text>
               </View>
-            ) : (
-              activeMarkets.map((market) => (
-                <MarketCard key={market.ticker} item={market} />
-              ))
+            )}
+            {event.liquidity && (
+              <View style={styles.statPill}>
+                <Ionicons name="water" size={14} color={TEXT_SECONDARY} />
+                <Text style={styles.statPillText}>${(event.liquidity / 1000000).toFixed(1)}M Liq</Text>
+              </View>
             )}
           </View>
-        </ScrollView>
-      </SafeAreaView>
+        </View>
+
+        {/* Markets Section */}
+        <View style={styles.marketsSection}>
+          <Text style={styles.sectionTitle}>Markets</Text>
+          {activeMarkets.length === 0 ? (
+            <View style={styles.emptyState}>
+              <View style={styles.emptyIcon}>
+                <Ionicons name="bar-chart-outline" size={48} color={TEXT_DISABLED} />
+              </View>
+              <Text style={styles.emptyText}>No active markets</Text>
+              <Text style={styles.emptySubtext}>Check back later for new markets</Text>
+            </View>
+          ) : (
+            activeMarkets.map((market) => (
+              <MarketCard key={market.ticker} item={market} />
+            ))
+          )}
+        </View>
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
     </View>
   );
 }
@@ -211,7 +244,7 @@ export default function EventDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0a0f",
+    backgroundColor: BG_MAIN,
   },
   gradient: {
     ...StyleSheet.absoluteFillObject,
@@ -219,216 +252,267 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+  scrollContent: {
+    flexGrow: 1,
+  },
+  // Hero Section
+  heroContainer: {
+    position: 'relative',
+    height: 320,
+  },
+  heroImage: {
+    width: '100%',
+    height: '100%',
+  },
+  heroPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: BG_CARD,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  floatingHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 12,
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    backdropFilter: 'blur(10px)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   refreshButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    backdropFilter: 'blur(10px)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorText: {
-    color: '#f87171',
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  retryButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  retryText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  eventImage: {
-    width: '100%',
-    height: 240,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  eventHeader: {
-    padding: 20,
-    marginBottom: 12,
+  // Event Info
+  eventInfo: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 24,
   },
   competitionBadge: {
     flexDirection: 'row',
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(74, 222, 128, 0.15)',
+    backgroundColor: `rgba(63, 227, 255, 0.12)`,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: `rgba(63, 227, 255, 0.2)`,
   },
   competitionText: {
-    color: '#4ade80',
-    fontSize: 12,
+    color: ACCENT,
+    fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   competitionScope: {
-    color: 'rgba(74, 222, 128, 0.7)',
-    fontSize: 12,
+    color: TEXT_SECONDARY,
+    fontSize: 11,
     fontWeight: '600',
   },
   eventTitle: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
-    color: '#fff',
+    color: TEXT_PRIMARY,
     marginBottom: 8,
-    lineHeight: 40,
+    lineHeight: 36,
   },
   eventSubtitle: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 15,
+    color: TEXT_SECONDARY,
     marginBottom: 16,
     lineHeight: 22,
   },
-  eventMeta: {
+  statsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
+    gap: 8,
   },
-  metaItem: {
+  statPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    backgroundColor: BG_CARD,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
-  metaText: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 14,
-    fontWeight: '500',
+  statPillText: {
+    color: TEXT_SECONDARY,
+    fontSize: 13,
+    fontWeight: '600',
   },
+  // Markets Section
   marketsSection: {
     paddingHorizontal: 20,
-    marginTop: 8,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#fff',
+    color: TEXT_PRIMARY,
     marginBottom: 16,
   },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 48,
-  },
-  emptyText: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: 16,
-    marginTop: 12,
-  },
+  // Market Card
   marketCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: BG_CARD,
     borderRadius: 16,
-    padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: BORDER,
+    overflow: 'hidden',
   },
-  marketHeader: {
+  marketCardContent: {
+    padding: 16,
+  },
+  marketTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    alignItems: 'flex-start',
+    marginBottom: 8,
   },
-  volumeContainer: {
+  marketTopLeft: {
+    flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    alignItems: 'flex-start',
+    gap: 8,
   },
-  volumeText: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: 12,
-  },
-  activeBadge: {
-    backgroundColor: 'rgba(74, 222, 128, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 99,
-  },
-  activeText: {
-    color: '#4ade80',
-    fontSize: 10,
-    fontWeight: '600',
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: ACCENT,
+    marginTop: 7,
   },
   marketTitle: {
-    fontSize: 16,
+    flex: 1,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#fff',
-    marginBottom: 16,
-    lineHeight: 22,
-  },
-  marketFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  volumeInfoContainer: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 6,
-  },
-  volumeLabel: {
-    color: '#4ade80',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  volumeValue: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  outcomeLabels: {
-    marginBottom: 12,
-    gap: 6,
-  },
-  outcomeLabelItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    color: TEXT_PRIMARY,
+    lineHeight: 21,
   },
   outcomeLabel: {
-    color: 'rgba(255, 255, 255, 0.6)',
     fontSize: 12,
+    color: TEXT_DISABLED,
     fontStyle: 'italic',
+    marginBottom: 12,
   },
-  tradeButton: {
-    backgroundColor: 'rgba(74, 222, 128, 0.1)',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(74, 222, 128, 0.2)',
+  marketStats: {
+    marginBottom: 12,
+  },
+  statRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
   },
-  tradeButtonText: {
-    color: '#4ade80',
+  statCol: {
+    flex: 1,
+    gap: 4,
+  },
+  statDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: BORDER,
+    marginHorizontal: 16,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: TEXT_SECONDARY,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontWeight: '600',
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+  },
+  probabilityBar: {
+    height: 4,
+    backgroundColor: BG_ELEVATED,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  probabilityFill: {
+    height: '100%',
+    backgroundColor: ACCENT,
+    borderRadius: 999,
+  },
+  // Empty State
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: BG_CARD,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  emptyText: {
+    color: TEXT_PRIMARY,
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  emptySubtext: {
+    color: TEXT_SECONDARY,
+    fontSize: 14,
+  },
+  // Error State
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  errorText: {
+    color: ERROR,
+    fontSize: 16,
+    marginTop: 16,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: BG_CARD,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  retryText: {
+    color: TEXT_PRIMARY,
     fontSize: 14,
     fontWeight: '600',
   },

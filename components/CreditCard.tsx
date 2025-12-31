@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useFundSolanaWallet } from '@privy-io/expo/ui';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from "expo-linear-gradient";
 import { useRef, useState } from "react";
 import { Animated, Dimensions, ImageBackground, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import WithdrawSheet from "./WithdrawSheet";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 40;
@@ -21,7 +23,10 @@ interface CreditCardProps {
 export default function CreditCard({ tradesCount, balance = 0, walletAddress }: CreditCardProps) {
     const [isFlipped, setIsFlipped] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [withdrawOpen, setWithdrawOpen] = useState(false);
+    const [withdrawSubmitting, setWithdrawSubmitting] = useState(false);
     const flipAnimation = useRef(new Animated.Value(0)).current;
+    const { fundWallet } = useFundSolanaWallet();
 
     const toggleFlip = () => {
         Animated.spring(flipAnimation, {
@@ -64,7 +69,11 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
             <TouchableOpacity onPress={toggleFlip} activeOpacity={0.9}>
                 <View style={styles.cardContainer}>
                     {/* Front of the card */}
-                    <Animated.View style={[styles.card, frontAnimatedStyle]}>
+                    <Animated.View
+                        style={[styles.card, frontAnimatedStyle]}
+                        // Ensure the "hidden" side never receives taps
+                        pointerEvents={isFlipped ? "none" : "auto"}
+                    >
                         <ImageBackground
                             source={require('@/assets/images/text.jpg')}
                             style={styles.textureBackground}
@@ -119,7 +128,11 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                     </Animated.View>
 
                     {/* Back of the card */}
-                    <Animated.View style={[styles.card, styles.cardBack, backAnimatedStyle]}>
+                    <Animated.View
+                        style={[styles.card, styles.cardBack, backAnimatedStyle]}
+                        // Ensure the "hidden" side never receives taps
+                        pointerEvents={isFlipped ? "auto" : "none"}
+                    >
                         <ImageBackground
                             source={require('@/assets/images/text.jpg')}
                             style={styles.textureBackground}
@@ -147,22 +160,17 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                                 <View style={styles.contentContainer}>
                                     {/* Top Row - Copy Address */}
                                     <View style={styles.topRowBack}>
-                                        <TouchableOpacity
-                                            style={styles.copyButton}
-                                            onPress={(e) => {
-                                                e.stopPropagation(); // Prevent flip
-                                                copyAddress();
-                                            }}
-                                        >
+                                        {/* Disabled on the back: only Deposit/Withdraw are actionable */}
+                                        <View style={[styles.copyButton, styles.copyButtonDisabled]}>
                                             {copied ? (
                                                 <>
                                                     <Ionicons name="checkmark" size={16} color="#4ade80" />
                                                     <Text style={styles.copiedText}>Copied!</Text>
                                                 </>
                                             ) : (
-                                                <Ionicons name="copy-outline" size={16} color="rgba(255,255,255,0.7)" />
+                                                <Ionicons name="copy-outline" size={16} color="rgba(255,255,255,0.45)" />
                                             )}
-                                        </TouchableOpacity>
+                                        </View>
                                     </View>
 
                                     <View style={{ flex: 1 }} />
@@ -171,10 +179,15 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                                     <View style={styles.actionRow}>
                                         <TouchableOpacity
                                             style={styles.actionButton}
+                                            disabled={!isFlipped}
                                             onPress={(e) => {
                                                 e.stopPropagation();
-                                                // Handle deposit
-                                                console.log("Deposit clicked");
+                                                if (!isFlipped) return;
+                                                if (!walletAddress) return;
+                                                fundWallet({
+                                                    address: walletAddress,
+                                                    amount: "0.2", // SOL
+                                                });
                                             }}
                                         >
                                             <Ionicons name="arrow-down" size={18} color="#FFF" />
@@ -183,10 +196,11 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
 
                                         <TouchableOpacity
                                             style={[styles.actionButton, styles.withdrawButton]}
+                                            disabled={!isFlipped}
                                             onPress={(e) => {
                                                 e.stopPropagation();
-                                                // Handle withdraw
-                                                console.log("Withdraw clicked");
+                                                if (!isFlipped) return;
+                                                setWithdrawOpen(true);
                                             }}
                                         >
                                             <Ionicons name="arrow-up" size={18} color="#FFF" />
@@ -201,6 +215,22 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                     </Animated.View>
                 </View>
             </TouchableOpacity>
+
+            <WithdrawSheet
+                visible={withdrawOpen}
+                onClose={() => setWithdrawOpen(false)}
+                submitting={withdrawSubmitting}
+                onSubmit={async ({ toAddress, amount }) => {
+                    try {
+                        setWithdrawSubmitting(true);
+                        // TODO: wire to backend/wallet flow
+                        console.log("Withdraw submit", { toAddress, amount, from: walletAddress });
+                        setWithdrawOpen(false);
+                    } finally {
+                        setWithdrawSubmitting(false);
+                    }
+                }}
+            />
         </View>
     );
 }
@@ -343,6 +373,9 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
+    },
+    copyButtonDisabled: {
+        opacity: 0.6,
     },
     copiedText: {
         color: '#4ade80',

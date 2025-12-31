@@ -1,6 +1,6 @@
 import { useUser } from "@/contexts/UserContext";
-import { api } from "@/lib/api";
-import { User as BackendUser, Trade } from "@/lib/types";
+import { api, getMarketDetails } from "@/lib/api";
+import { User as BackendUser, Market, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -31,6 +31,8 @@ const ERROR = '#f87171';
 
 interface FeedItem extends Trade {
     type: 'trade';
+    marketDetails?: Market;
+    quote?: string | null;
 }
 
 export default function SocialScreen() {
@@ -83,6 +85,18 @@ export default function SocialScreen() {
                 type: 'trade' as const,
             }));
             setFeedItems(items);
+
+            // Fetch market details for each trade in the background
+            items.forEach(async (item, index) => {
+                const marketDetails = await getMarketDetails(item.marketTicker);
+                if (marketDetails) {
+                    setFeedItems(prev => {
+                        const updated = [...prev];
+                        updated[index] = { ...updated[index], marketDetails };
+                        return updated;
+                    });
+                }
+            });
         } catch (error) {
             console.error("Failed to load feed:", error);
         } finally {
@@ -166,7 +180,7 @@ export default function SocialScreen() {
 
         return (
             <TouchableOpacity
-                style={styles.searchResultCard}
+                style={styles.searchResultRow}
                 onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: item.id } })}
                 activeOpacity={0.7}
             >
@@ -225,22 +239,26 @@ export default function SocialScreen() {
 
     const renderFeedItem = ({ item }: { item: FeedItem }) => {
         const isYes = item.side === 'yes';
+        const market = item.marketDetails;
+        const subtitle = isYes ? market?.yesSubTitle : market?.noSubTitle;
+        const currentPrice = isYes ? market?.yesAsk : market?.noAsk;
+        const hasQuote = item.quote && item.quote.trim().length > 0;
 
         return (
             <TouchableOpacity
                 style={styles.feedCard}
-                onPress={() => {
-                    if (item.user?.id) {
-                        router.push({ pathname: '/user/[userId]', params: { userId: item.user.id } });
-                    }
-                }}
+                onPress={() => router.push({
+                    pathname: '/market/[ticker]',
+                    params: { ticker: item.marketTicker }
+                })}
                 activeOpacity={0.8}
             >
                 {/* Card Header */}
                 <View style={styles.feedCardHeader}>
                     <TouchableOpacity
                         style={styles.feedAvatarContainer}
-                        onPress={() => {
+                        onPress={(e) => {
+                            e.stopPropagation();
                             if (item.user?.id) {
                                 router.push({ pathname: '/user/[userId]', params: { userId: item.user.id } });
                             }
@@ -272,18 +290,23 @@ export default function SocialScreen() {
                     </View>
                 </View>
 
-                {/* Trade Action Card */}
-                <View style={styles.tradeActionCard}>
-                    <View style={styles.tradeActionLeft}>
+                {/* Quote Section - Show above market card if exists */}
+                {hasQuote && (
+                    <View style={styles.quoteContainer}>
+                        <View style={styles.quoteIconWrapper}>
+                            <Ionicons name="chatbubble" size={14} color={ACCENT} />
+                        </View>
+                        <Text style={styles.quoteText}>{item.quote}</Text>
+                    </View>
+                )}
+
+                {/* Market Card */}
+                <View style={styles.marketCard}>
+                    <View style={styles.marketHeader}>
                         <View style={[
                             styles.tradeSidePill,
                             isYes ? styles.tradeSidePillYes : styles.tradeSidePillNo
                         ]}>
-                            <Ionicons
-                                name={isYes ? "trending-up" : "trending-down"}
-                                size={14}
-                                color={isYes ? SUCCESS : ERROR}
-                            />
                             <Text style={[
                                 styles.tradeSideText,
                                 isYes ? styles.tradeSideTextYes : styles.tradeSideTextNo
@@ -292,34 +315,50 @@ export default function SocialScreen() {
                             </Text>
                         </View>
                         <Text style={styles.tradeAmount}>${item.amount}</Text>
+                        {currentPrice && (
+                            <View style={styles.priceTag}>
+                                <Text style={styles.priceText}>@{(parseFloat(currentPrice) * 100).toFixed(0)}¢</Text>
+                            </View>
+                        )}
                     </View>
 
-                    <TouchableOpacity
-                        style={styles.tradeMarketPill}
-                        onPress={() => router.push({
-                            pathname: '/market/[ticker]',
-                            params: { ticker: item.marketTicker }
-                        })}
-                    >
-                        <Text style={styles.tradeMarketText} numberOfLines={1}>
-                            {item.marketTicker}
+                    {subtitle && (
+                        <View style={styles.subtitleContainer}>
+                            <Text style={styles.subtitleText} numberOfLines={1}>{subtitle}</Text>
+                        </View>
+                    )}
+
+                    {market?.title && (
+                        <Text style={styles.marketTitle} numberOfLines={2}>
+                            {market.title}
                         </Text>
-                        <Ionicons name="chevron-forward" size={14} color={TEXT_DISABLED} />
-                    </TouchableOpacity>
+                    )}
+
+                    {market && (
+                        <View style={styles.marketMeta}>
+                            {market.volume && (
+                                <View style={styles.metaItem}>
+                                    <Ionicons name="bar-chart-outline" size={12} color={TEXT_DISABLED} />
+                                    <Text style={styles.metaText}>${(market.volume / 1000).toFixed(0)}K vol</Text>
+                                </View>
+                            )}
+                            {market.status && (
+                                <View style={[styles.statusBadge, market.status === 'active' && styles.statusBadgeActive]}>
+                                    <View style={styles.statusDot} />
+                                    <Text style={styles.statusText}>{market.status}</Text>
+                                </View>
+                            )}
+                        </View>
+                    )}
                 </View>
 
                 {/* Interaction Row */}
                 <View style={styles.interactionRow}>
                     <TouchableOpacity style={styles.interactionBtn}>
                         <Ionicons name="heart-outline" size={18} color={TEXT_DISABLED} />
-                        <Text style={styles.interactionText}>12</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.interactionBtn}>
                         <Ionicons name="chatbubble-outline" size={17} color={TEXT_DISABLED} />
-                        <Text style={styles.interactionText}>4</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.interactionBtn}>
-                        <Ionicons name="repeat-outline" size={18} color={TEXT_DISABLED} />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.interactionBtn}>
                         <Ionicons name="share-outline" size={17} color={TEXT_DISABLED} />
@@ -518,16 +557,12 @@ const styles = StyleSheet.create({
         color: TEXT_PRIMARY,
         fontSize: 15,
     },
-    searchResultCard: {
+    // Search results: plain list rows (no card bg/border)
+    searchResultRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
-        marginHorizontal: 20,
-        marginBottom: 12,
-        backgroundColor: BG_CARD,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: BORDER,
+        paddingVertical: 14,
+        paddingHorizontal: 20,
     },
     searchResultAvatar: {
         width: 52,
@@ -662,15 +697,56 @@ const styles = StyleSheet.create({
     },
     feedCard: {
         marginHorizontal: 20,
-        marginBottom: 16,
-        // Minimal style as requested
+        marginBottom: 20,
         backgroundColor: 'transparent',
         paddingVertical: 12,
-        // padding: 16, // Reduced padding or handled by children
     },
     feedCardHeader: {
         flexDirection: 'row',
         marginBottom: 14,
+    },
+    quoteContainer: {
+        backgroundColor: 'rgba(63, 227, 255, 0.05)',
+        borderLeftWidth: 3,
+        borderLeftColor: ACCENT,
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 12,
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 10,
+    },
+    quoteIconWrapper: {
+        marginTop: 2,
+    },
+    quoteText: {
+        flex: 1,
+        fontSize: 15,
+        lineHeight: 22,
+        color: TEXT_PRIMARY,
+        fontWeight: '400',
+        fontStyle: 'italic',
+    },
+    quoteContainer: {
+        backgroundColor: 'rgba(63, 227, 255, 0.05)',
+        borderLeftWidth: 3,
+        borderLeftColor: ACCENT,
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 12,
+        flexDirection: 'row',
+        gap: 10,
+    },
+    quoteIconWrapper: {
+        marginTop: 2,
+    },
+    quoteText: {
+        flex: 1,
+        fontSize: 15,
+        lineHeight: 22,
+        color: TEXT_PRIMARY,
+        fontWeight: '400',
+        fontStyle: 'italic',
     },
     feedAvatarContainer: {
         marginRight: 12,
@@ -714,6 +790,93 @@ const styles = StyleSheet.create({
     feedTime: {
         color: TEXT_DISABLED,
         fontSize: 13,
+    },
+    marketCard: {
+        backgroundColor: BG_CARD,
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: BORDER,
+    },
+    marketHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+        gap: 10,
+    },
+    subtitleContainer: {
+        backgroundColor: 'rgba(63, 227, 255, 0.08)',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        marginBottom: 10,
+        alignSelf: 'flex-start',
+    },
+    subtitleText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: ACCENT,
+    },
+    marketTitle: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: TEXT_PRIMARY,
+        lineHeight: 21,
+        marginBottom: 12,
+    },
+    marketMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    metaItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    metaText: {
+        fontSize: 11,
+        color: TEXT_DISABLED,
+        fontWeight: '500',
+    },
+    statusBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 6,
+        backgroundColor: 'rgba(107, 114, 128, 0.15)',
+    },
+    statusBadgeActive: {
+        backgroundColor: 'rgba(74, 222, 128, 0.15)',
+    },
+    statusDot: {
+        width: 4,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: TEXT_DISABLED,
+    },
+    statusText: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: TEXT_DISABLED,
+        textTransform: 'uppercase',
+    },
+    priceTag: {
+        marginLeft: 'auto',
+        backgroundColor: BG_ELEVATED,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: BORDER,
+    },
+    priceText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: TEXT_PRIMARY,
     },
     tradeActionCard: {
         backgroundColor: BG_MAIN,

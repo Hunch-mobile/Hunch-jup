@@ -19,9 +19,12 @@ export interface Trade {
     id: string;
     userId: string;
     marketTicker: string;
+    eventTicker?: string | null;
     side: 'yes' | 'no';
     amount: string;
     transactionSig: string;
+    quote?: string | null;
+    isDummy?: boolean;
     createdAt: string;
     user?: {
         id: string;
@@ -60,9 +63,13 @@ export interface SyncUserRequest {
 export interface CreateTradeRequest {
     userId: string;
     marketTicker: string;
+    eventTicker?: string;
     side: 'yes' | 'no';
     amount: string;
-    transactionSig: string;
+    quote?: string;
+    walletAddress?: string;
+    transactionSig?: string;
+    isDummy?: boolean;
 }
 
 export interface ApiError {

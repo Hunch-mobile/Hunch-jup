@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { Tabs } from "expo-router";
 import { useEffect } from "react";
-import { Dimensions, Pressable, StyleSheet, View } from "react-native";
+import { Dimensions, Platform, Pressable, StyleSheet, View } from "react-native";
 import Animated, {
   interpolate,
   useAnimatedStyle,
@@ -49,14 +50,14 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
   // Animated style for sliding indicator position
   const animatedIndicatorStyle = useAnimatedStyle(() => {
+    const inputRange = state.routes.map((_, i) => i);
+    const outputRange = inputRange.map(
+      (i) => i * TAB_WIDTH + (TAB_WIDTH - INDICATOR_WIDTH) / 2
+    );
     const translateX = interpolate(
       activeIndex.value,
-      [0, 1, 2],
-      [
-        (TAB_WIDTH - INDICATOR_WIDTH) / 2,
-        TAB_WIDTH + (TAB_WIDTH - INDICATOR_WIDTH) / 2,
-        TAB_WIDTH * 2 + (TAB_WIDTH - INDICATOR_WIDTH) / 2,
-      ]
+      inputRange,
+      outputRange
     );
 
     return {
@@ -71,13 +72,19 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
       {/* Dark frosted glass background like reference */}
       <View style={styles.liquidGlassContainer}>
-        {/* Base dark frosted gradient */}
-        <LinearGradient
-          colors={['rgba(45, 45, 50, 0.95)', 'rgba(50, 50, 55, 0.98)', 'rgba(45, 45, 50, 0.95)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.liquidGlassGradient}
-        />
+        {/* True iOS “liquid glass” blur (Android uses fallback) */}
+        {Platform.OS === "android" ? (
+          <View style={styles.androidGlassFallback} />
+        ) : (
+          <BlurView
+            intensity={32}
+            tint="dark"
+            style={StyleSheet.absoluteFill}
+          />
+        )}
+
+        {/* Subtle tint to deepen the blur */}
+        <View style={styles.glassTint} />
 
         {/* Subtle top highlight */}
         <LinearGradient
@@ -87,16 +94,32 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           style={styles.liquidHighlight}
         />
 
-        {/* Glass overlay */}
-        <View style={styles.glassOverlay} />
-
         {/* Outer border */}
         <View style={styles.borderOverlay} />
 
         {/* Sliding indicator - simple dark pill */}
         <Animated.View style={[styles.indicatorContainer, animatedIndicatorStyle]}>
-          {/* Dark background */}
-          <View style={styles.indicatorDarkBg} />
+          {/* Active “liquid” capsule */}
+          {Platform.OS === "android" ? (
+            <View style={styles.indicatorAndroidBg} />
+          ) : (
+            <BlurView
+              intensity={42}
+              tint="dark"
+              style={StyleSheet.absoluteFill}
+            />
+          )}
+          <LinearGradient
+            colors={[
+              "rgba(255, 255, 255, 0.10)",
+              "rgba(255, 255, 255, 0.04)",
+              "rgba(0, 0, 0, 0.18)",
+            ]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.indicatorBorder} />
         </Animated.View>
       </View>
 
@@ -157,29 +180,27 @@ function TabButton({
   onPress: () => void;
   onLongPress: () => void;
 }) {
-  const scale = useSharedValue(1);
+  const pressYOffset = useSharedValue(0);
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
-      transform: [{ scale: scale.value }],
+      transform: [{ translateY: pressYOffset.value }],
     };
   });
 
   const animatedIconStyle = useAnimatedStyle(() => {
     return {
       opacity: withSpring(focused ? 1 : 0.5, { damping: 15, stiffness: 200 }),
-      transform: [
-        { scale: withSpring(focused ? 1.05 : 1, { damping: 15, stiffness: 250 }) }
-      ],
     };
   }, [focused]);
 
   const handlePressIn = () => {
-    scale.value = withSpring(0.92, { damping: 15, stiffness: 400 });
+    // Avoid scaling font-icons (can look blurry mid-animation)
+    pressYOffset.value = withSpring(-1.5, { damping: 18, stiffness: 420 });
   };
 
   const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    pressYOffset.value = withSpring(0, { damping: 18, stiffness: 320 });
   };
 
   return (
@@ -230,15 +251,15 @@ const styles = StyleSheet.create({
   shadowLayer: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: NAVBAR_HEIGHT / 2,
-    backgroundColor: 'rgba(0, 0, 0, 0.15)',
+    backgroundColor: 'rgba(0, 0, 0, 0.12)',
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 10,
     },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 20,
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 18,
   },
   // Liquid glass container
   liquidGlassContainer: {
@@ -246,9 +267,13 @@ const styles = StyleSheet.create({
     borderRadius: NAVBAR_HEIGHT / 2,
     overflow: 'hidden',
   },
-  liquidGlassGradient: {
+  androidGlassFallback: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: NAVBAR_HEIGHT / 2,
+    backgroundColor: "rgba(24, 24, 28, 0.72)",
+  },
+  glassTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(12, 12, 14, 0.28)",
   },
   liquidHighlight: {
     position: 'absolute',
@@ -259,15 +284,11 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: NAVBAR_HEIGHT / 2,
     borderTopRightRadius: NAVBAR_HEIGHT / 2,
   },
-  glassOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-  },
   borderOverlay: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: NAVBAR_HEIGHT / 2,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: 'rgba(255, 255, 255, 0.18)',
   },
   // Indicator styles - simple dark pill
   indicatorContainer: {
@@ -280,10 +301,16 @@ const styles = StyleSheet.create({
     zIndex: 1,
     overflow: 'hidden',
   },
-  indicatorDarkBg: {
+  indicatorAndroidBg: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: INDICATOR_HEIGHT / 2,
-    backgroundColor: 'rgba(30, 30, 35, 0.95)',
+    backgroundColor: 'rgba(18, 18, 22, 0.92)',
+  },
+  indicatorBorder: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: INDICATOR_HEIGHT / 2,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.14)",
   },
   // Tab container rendered above indicator
   tabsContainer: {
