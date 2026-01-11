@@ -1,106 +1,25 @@
-import { useUser } from "@/contexts/UserContext";
-import { api, marketsApi } from "@/lib/api";
-import { Event, Trade } from "@/lib/types";
+import { marketsApi } from "@/lib/api";
+import { Event } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Import theme from central location
+import { Theme } from '@/constants/theme';
+
 // Theme constants
-const ACCENT = '#3FE3FF';
-const BG_MAIN = '#000000';
-const BG_CARD = '#111827';
-const BORDER = '#1F2937';
-const TEXT_PRIMARY = '#E5E7EB';
-const TEXT_SECONDARY = '#9CA3AF';
-const TEXT_DISABLED = '#6B7280';
-const SUCCESS = '#4ade80';
-const ERROR = '#f87171';
-
-const UserPositionsSection = () => {
-  const { backendUser } = useUser();
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (backendUser) {
-      loadUserTrades();
-    }
-  }, [backendUser]);
-
-  const loadUserTrades = async () => {
-    if (!backendUser) return;
-
-    try {
-      setLoading(true);
-      const userTrades = await api.getUserTrades(backendUser.id, 5);
-      setTrades(userTrades);
-    } catch (err) {
-      console.error("Failed to fetch user trades:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (!backendUser) {
-    return null;
-  }
-
-  if (loading) {
-    return (
-      <View style={styles.positionsSection}>
-        <Text style={styles.positionsSectionTitle}>Your Recent Positions</Text>
-        <ActivityIndicator size="small" color={ACCENT} />
-      </View>
-    );
-  }
-
-  if (trades.length === 0) {
-    return null;
-  }
-
-  return (
-    <View style={styles.positionsSection}>
-      <View style={styles.positionsHeader}>
-        <Text style={styles.positionsSectionTitle}>Your Recent Positions</Text>
-        <TouchableOpacity onPress={() => router.push('/(tabs)/profile')}>
-          <Text style={styles.viewAllText}>View All</Text>
-        </TouchableOpacity>
-      </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.positionsScroll}>
-        {trades.map((trade) => (
-          <TouchableOpacity
-            key={trade.id}
-            style={styles.positionCard}
-            onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: trade.marketTicker } })}
-          >
-            <View style={styles.positionHeader}>
-              <View style={[
-                styles.sideBadge,
-                trade.side === 'yes' ? styles.sideBadgeYes : styles.sideBadgeNo
-              ]}>
-                <Text style={[
-                  styles.sideText,
-                  trade.side === 'yes' ? styles.sideTextYes : styles.sideTextNo
-                ]}>
-                  {trade.side.toUpperCase()}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.positionAmount}>${parseFloat(trade.amount).toFixed(2)}</Text>
-            <Text style={styles.positionTicker} numberOfLines={1}>{trade.marketTicker}</Text>
-            <Text style={styles.positionDate}>
-              {new Date(trade.createdAt).toLocaleDateString()}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-};
+const ACCENT = Theme.accentSubtle;
+const BG_MAIN = Theme.bgMain;
+const BG_CARD = Theme.bgCard;
+const BORDER = Theme.border;
+const TEXT_PRIMARY = Theme.textPrimary;
+const TEXT_SECONDARY = Theme.textSecondary;
+const TEXT_DISABLED = Theme.textDisabled;
+const SUCCESS = Theme.success;
+const ERROR = Theme.error;
 
 const EventCard = ({ item }: { item: Event }) => {
   const activeMarkets = item.markets?.filter(
@@ -194,10 +113,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={[BG_MAIN, '#0D1117', '#111827']}
-        style={styles.gradient}
-      />
+      {/* Clean white background */}
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
@@ -211,9 +127,6 @@ export default function HomeScreen() {
             <Ionicons name="refresh" size={20} color={TEXT_PRIMARY} />
           </TouchableOpacity>
         </View>
-
-        {/* User Positions Section */}
-        <UserPositionsSection />
 
         {loading ? (
           <View style={styles.centerContainer}>
@@ -247,9 +160,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BG_MAIN,
-  },
-  gradient: {
-    ...StyleSheet.absoluteFillObject,
   },
   safeArea: {
     flex: 1,
@@ -300,15 +210,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   retryButton: {
-    backgroundColor: ACCENT,
+    backgroundColor: Theme.textPrimary,
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: ACCENT,
   },
   retryText: {
-    color: BG_MAIN,
+    color: Theme.textInverse,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -374,78 +282,5 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
     fontSize: 11,
     fontWeight: '500',
-  },
-  positionsSection: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-  },
-  positionsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  positionsSectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-  },
-  viewAllText: {
-    color: ACCENT,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  positionsScroll: {
-    marginHorizontal: -20,
-    paddingHorizontal: 20,
-  },
-  positionCard: {
-    backgroundColor: BG_CARD,
-    borderRadius: 12,
-    padding: 12,
-    marginRight: 12,
-    width: 140,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  positionHeader: {
-    marginBottom: 8,
-  },
-  sideBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  sideBadgeYes: {
-    backgroundColor: 'rgba(74, 222, 128, 0.15)',
-  },
-  sideBadgeNo: {
-    backgroundColor: 'rgba(248, 113, 113, 0.15)',
-  },
-  sideText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  sideTextYes: {
-    color: SUCCESS,
-  },
-  sideTextNo: {
-    color: ERROR,
-  },
-  positionAmount: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-    marginBottom: 4,
-  },
-  positionTicker: {
-    fontSize: 12,
-    color: TEXT_SECONDARY,
-    marginBottom: 4,
-  },
-  positionDate: {
-    fontSize: 10,
-    color: TEXT_DISABLED,
   },
 });

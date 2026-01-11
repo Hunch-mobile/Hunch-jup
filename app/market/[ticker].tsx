@@ -10,17 +10,20 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Import theme from central location
+import { Theme } from '@/constants/theme';
+
 // Theme constants
-const ACCENT = '#3FE3FF';
-const BG_MAIN = '#000000';
-const BG_CARD = '#111827';
-const BG_ELEVATED = '#161C24';
-const BORDER = '#1F2937';
-const TEXT_PRIMARY = '#E5E7EB';
-const TEXT_SECONDARY = '#9CA3AF';
-const TEXT_DISABLED = '#6B7280';
-const SUCCESS = '#4ade80';
-const ERROR = '#f87171';
+const ACCENT = Theme.accentSubtle;
+const BG_MAIN = Theme.bgMain;
+const BG_CARD = Theme.bgCard;
+const BG_ELEVATED = Theme.bgElevated;
+const BORDER = Theme.border;
+const TEXT_PRIMARY = Theme.textPrimary;
+const TEXT_SECONDARY = Theme.textSecondary;
+const TEXT_DISABLED = Theme.textDisabled;
+const SUCCESS = Theme.success;
+const ERROR = Theme.error;
 
 export default function MarketDetailScreen() {
   const { ticker } = useLocalSearchParams<{ ticker: string }>();

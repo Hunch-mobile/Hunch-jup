@@ -1,43 +1,54 @@
 /**
- * Dark Professional Theme with Electric Cyan Accent
- * Brand color: #3FE3FF (electric cyan) - Use sparingly for CTAs, active states, key indicators
+ * Minimal Black & White Theme with Clean Design
+ * Pure monochrome with subtle accent for critical interactions
  */
 
 import { Platform } from 'react-native';
 
-// Brand accent color
-const brandAccent = '#3FE3FF';
+// Minimal accent - used sparingly for critical actions only
+const minimalAccent = '#000000'; // Pure black for primary actions
 
-// Dark theme palette
+// Clean monochrome palette
 export const Theme = {
-  // Brand
-  accent: brandAccent,
-
-  // Backgrounds
-  bgMain: '#000000',
-  bgCard: '#111827',
-  bgElevated: '#161C24',
-
-  // Borders
-  border: '#1F2937',
-
-  // Text hierarchy
-  textPrimary: '#E5E7EB',
-  textSecondary: '#9CA3AF',
-  textDisabled: '#6B7280',
-
-  // State colors
-  success: '#4ade80',
-  error: '#f87171',
-
-  // Component-specific
-  accentMuted: 'rgba(63, 227, 255, 0.1)',
-  accentLight: 'rgba(63, 227, 255, 0.15)',
-  accentMedium: 'rgba(63, 227, 255, 0.2)',
-
-  // Legacy support
-  successMuted: 'rgba(74, 222, 128, 0.15)',
-  errorMuted: 'rgba(248, 113, 113, 0.15)',
+  // Primary Colors
+  accent: minimalAccent,
+  accentSubtle: '#333333', // Subtle dark gray for secondary actions
+  
+  // Backgrounds - Clean whites and light grays
+  bgMain: '#FFFFFF', // Pure white background
+  bgCard: '#FAFAFA', // Very light gray for cards
+  bgElevated: '#F5F5F5', // Light gray for elevated elements
+  bgDark: '#000000', // Pure black for dark elements
+  
+  // Borders - Subtle and clean
+  border: '#E5E5E5', // Light gray border
+  borderLight: '#F0F0F0', // Very light border
+  borderDark: '#D0D0D0', // Slightly darker border for emphasis
+  
+  // Text hierarchy - High contrast
+  textPrimary: '#000000', // Pure black for primary text
+  textSecondary: '#666666', // Medium gray for secondary text
+  textDisabled: '#999999', // Light gray for disabled text
+  textInverse: '#FFFFFF', // White text on dark backgrounds
+  
+  // State colors - Minimal and clean
+  success: '#000000', // Black for success (minimal approach)
+  error: '#DC2626', // Subtle red for errors only
+  warning: '#666666', // Gray for warnings
+  
+  // Component-specific - Subtle overlays
+  accentMuted: 'rgba(0, 0, 0, 0.04)', // Very subtle black overlay
+  accentLight: 'rgba(0, 0, 0, 0.08)', // Light black overlay
+  accentMedium: 'rgba(0, 0, 0, 0.12)', // Medium black overlay
+  
+  // Special overlays
+  overlay: 'rgba(0, 0, 0, 0.5)', // Modal overlay
+  shadowColor: 'rgba(0, 0, 0, 0.1)', // Shadow color
+  glassEffect: 'rgba(255, 255, 255, 0.9)', // Glass morphism effect
+  
+  // Legacy support - Monochrome versions
+  successMuted: 'rgba(0, 0, 0, 0.08)',
+  errorMuted: 'rgba(220, 38, 38, 0.08)',
 };
 
 export const Colors = {

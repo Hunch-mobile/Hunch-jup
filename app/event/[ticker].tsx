@@ -8,17 +8,20 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Import theme from central location
+import { Theme } from '@/constants/theme';
+
 // Theme constants
-const ACCENT = '#3FE3FF';
-const BG_MAIN = '#000000';
-const BG_CARD = '#111827';
-const BG_ELEVATED = '#161C24';
-const BORDER = '#1F2937';
-const TEXT_PRIMARY = '#E5E7EB';
-const TEXT_SECONDARY = '#9CA3AF';
-const TEXT_DISABLED = '#6B7280';
-const SUCCESS = '#4ade80';
-const ERROR = '#f87171';
+const ACCENT = Theme.accentSubtle;
+const BG_MAIN = Theme.bgMain;
+const BG_CARD = Theme.bgCard;
+const BG_ELEVATED = Theme.bgElevated;
+const BORDER = Theme.border;
+const TEXT_PRIMARY = Theme.textPrimary;
+const TEXT_SECONDARY = Theme.textSecondary;
+const TEXT_DISABLED = Theme.textDisabled;
+const SUCCESS = Theme.success;
+const ERROR = Theme.error;
 
 const MarketCard = ({ item }: { item: Market }) => {
   const handlePress = () => {
@@ -112,7 +115,7 @@ export default function EventDetailScreen() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
+        <LinearGradient colors={[BG_MAIN, BG_CARD]} style={styles.gradient} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color={ACCENT} />
@@ -125,7 +128,7 @@ export default function EventDetailScreen() {
   if (error || !event) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
+        <LinearGradient colors={[BG_MAIN, BG_CARD]} style={styles.gradient} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -146,38 +149,39 @@ export default function EventDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
+      <LinearGradient colors={[BG_MAIN, BG_CARD]} style={styles.gradient} />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Hero Image with Overlay */}
-        <View style={styles.heroContainer}>
-          {event.imageUrl ? (
-            <Image
-              source={{ uri: event.imageUrl }}
-              style={styles.heroImage}
-              contentFit="cover"
-              transition={200}
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          {/* Hero Image with Overlay */}
+          <View style={styles.heroContainer}>
+            {event.imageUrl ? (
+              <Image
+                source={{ uri: event.imageUrl }}
+                style={styles.heroImage}
+                contentFit="cover"
+                transition={200}
+              />
+            ) : (
+              <View style={styles.heroPlaceholder}>
+                <Ionicons name="image-outline" size={64} color={TEXT_DISABLED} />
+              </View>
+            )}
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.7)', BG_MAIN]}
+              style={styles.heroGradient}
             />
-          ) : (
-            <View style={styles.heroPlaceholder}>
-              <Ionicons name="image-outline" size={64} color={TEXT_DISABLED} />
+            
+            {/* Floating Header */}
+            <View style={styles.floatingHeader}>
+              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.refreshButton} onPress={loadEventDetails}>
+                <Ionicons name="refresh" size={20} color={TEXT_PRIMARY} />
+              </TouchableOpacity>
             </View>
-          )}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.7)', BG_MAIN]}
-            style={styles.heroGradient}
-          />
-          
-          {/* Floating Header */}
-          <SafeAreaView style={styles.floatingHeader} edges={['top']}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.refreshButton} onPress={loadEventDetails}>
-              <Ionicons name="refresh" size={20} color={TEXT_PRIMARY} />
-            </TouchableOpacity>
-          </SafeAreaView>
-        </View>
+          </View>
 
         {/* Event Info */}
         <View style={styles.eventInfo}>
@@ -235,8 +239,9 @@ export default function EventDetailScreen() {
           )}
         </View>
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </SafeAreaView>
     </View>
   );
 }
@@ -245,6 +250,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BG_MAIN,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 12,
   },
   gradient: {
     ...StyleSheet.absoluteFillObject,
@@ -283,6 +295,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 12,
+    zIndex: 10,
   },
   backButton: {
     width: 40,

@@ -10,15 +10,18 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+// Import theme from central location
+import { Theme } from '@/constants/theme';
+
 // Theme constants
-const ACCENT = '#3FE3FF';
-const BG_MAIN = '#000000';
-const BG_CARD = '#111827';
-const BG_ELEVATED = '#161C24';
-const BORDER = '#1F2937';
-const TEXT_PRIMARY = '#E5E7EB';
-const TEXT_SECONDARY = '#9CA3AF';
-const TEXT_DISABLED = '#6B7280';
+const ACCENT = Theme.accent;
+const BG_MAIN = Theme.bgMain;
+const BG_CARD = Theme.bgCard;
+const BG_ELEVATED = Theme.bgElevated;
+const BORDER = Theme.border;
+const TEXT_PRIMARY = Theme.textPrimary;
+const TEXT_SECONDARY = Theme.textSecondary;
+const TEXT_DISABLED = Theme.textDisabled;
 
 interface OrbitProps {
     size: number;
@@ -90,7 +93,7 @@ export default function LoginScreen() {
         },
     });
 
-    // Sync user with backend after Privy authentication
+    // Sync user with backend after Privy authentication and redirect only after successful sync
     useEffect(() => {
         const syncUser = async () => {
             if (isReady && user && !backendUser && !isSyncing) {
@@ -111,6 +114,7 @@ export default function LoginScreen() {
                     if (walletAddress) {
                         const syncedUser = await api.syncUser({ privyId: user.id, walletAddress, displayName });
                         setBackendUser(syncedUser);
+                        // Only redirect after successful backend sync
                         router.replace("/(tabs)");
                     }
                 } catch (error) {
@@ -119,18 +123,14 @@ export default function LoginScreen() {
                 } finally {
                     setIsSyncing(false);
                 }
+            } else if (isReady && user && backendUser) {
+                // User is already synced, redirect immediately
+                router.replace("/(tabs)");
             }
         };
 
         syncUser();
     }, [isReady, user, backendUser, isSyncing]);
-
-    // Redirect to home if already authenticated and synced
-    useEffect(() => {
-        if (isReady && user && backendUser) {
-            router.replace("/(tabs)");
-        }
-    }, [isReady, user, backendUser, router]);
 
     const handleLogin = (provider: "google" | "twitter") => {
         setError("");
@@ -140,25 +140,13 @@ export default function LoginScreen() {
 
     return (
         <View style={styles.container}>
-            <LinearGradient
-                colors={[BG_MAIN, '#0D1117', BG_CARD, BG_ELEVATED, BG_CARD]}
-                style={styles.gradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-            />
+            {/* Clean white background - no gradients for minimal look */}
+            <View style={styles.gradient} />
 
-            {/* Decorative orbits with cyan accent */}
-            <Orbit size={300} duration={20000} delay={0} color={`${ACCENT}20`} offsetX={-80} offsetY={-100} />
-            <Orbit size={400} duration={30000} delay={1000} color={`${ACCENT}15`} offsetX={60} offsetY={50} />
-            <Orbit size={200} duration={15000} delay={500} color={`${ACCENT}18`} offsetX={100} offsetY={-150} />
-
-            {/* Soft glow effect at bottom */}
-            <LinearGradient
-                colors={['transparent', `${ACCENT}08`, `${ACCENT}12`]}
-                style={styles.bottomGlow}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-            />
+            {/* Minimal geometric patterns - subtle gray circles */}
+            <Orbit size={300} duration={20000} delay={0} color={Theme.borderLight} offsetX={-80} offsetY={-100} />
+            <Orbit size={400} duration={30000} delay={1000} color={Theme.border} offsetX={60} offsetY={50} />
+            <Orbit size={200} duration={15000} delay={500} color={Theme.borderLight} offsetX={100} offsetY={-150} />
 
             <SafeAreaView style={styles.safeArea}>
                 <View style={styles.content}>
@@ -173,17 +161,12 @@ export default function LoginScreen() {
                         <TouchableOpacity
                             style={styles.getStartedButton}
                             onPress={() => setShowModal(true)}
-                            activeOpacity={0.8}
+                            activeOpacity={0.9}
                         >
-                            <LinearGradient
-                                colors={[ACCENT, '#00B8D4']}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.getStartedGradient}
-                            >
+                            <View style={styles.getStartedGradient}>
                                 <Text style={styles.getStartedText}>Get Started</Text>
-                                <Ionicons name="arrow-forward" size={18} color={BG_MAIN} />
-                            </LinearGradient>
+                                <Ionicons name="arrow-forward" size={18} color={Theme.textInverse} />
+                            </View>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -285,13 +268,7 @@ const styles = StyleSheet.create({
     },
     gradient: {
         ...StyleSheet.absoluteFillObject,
-    },
-    bottomGlow: {
-        position: "absolute",
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: SCREEN_HEIGHT * 0.4,
+        backgroundColor: BG_MAIN,
     },
     safeArea: {
         flex: 1,
@@ -308,17 +285,18 @@ const styles = StyleSheet.create({
     },
     brandName: {
         fontSize: 56,
-        fontWeight: "200",
+        fontWeight: "100",
         color: TEXT_PRIMARY,
-        letterSpacing: 12,
+        letterSpacing: 8,
         textTransform: "lowercase",
     },
     tagline: {
-        fontSize: 13,
+        fontSize: 12,
         color: TEXT_SECONDARY,
-        letterSpacing: 3,
+        letterSpacing: 2,
         marginTop: 16,
-        textTransform: "lowercase",
+        textTransform: "uppercase",
+        fontWeight: "500",
     },
     buttonContainer: {
         position: "absolute",
@@ -327,62 +305,70 @@ const styles = StyleSheet.create({
         right: 32,
     },
     getStartedButton: {
-        borderRadius: 16,
-        overflow: 'hidden',
+        borderRadius: 8,
+        backgroundColor: Theme.bgDark,
+        shadowColor: Theme.shadowColor,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 8,
     },
     getStartedGradient: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 16,
-        paddingHorizontal: 32,
-        gap: 8,
+        paddingVertical: 18,
+        paddingHorizontal: 36,
+        gap: 10,
     },
     getStartedText: {
-        color: BG_MAIN,
+        color: Theme.textInverse,
         fontSize: 16,
-        fontWeight: "600",
+        fontWeight: "500",
         letterSpacing: 0.5,
     },
-    // Orbit styles
+    // Orbit styles - minimal
     orbit: {
         position: "absolute",
-        borderWidth: 1,
+        borderWidth: 0.5,
         borderRadius: 9999,
-        borderStyle: "dashed",
+        borderStyle: "solid",
+        opacity: 0.3,
     },
     orbitDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
+        width: 4,
+        height: 4,
+        borderRadius: 2,
         position: "absolute",
-        top: -3,
+        top: -2,
         left: "50%",
-        marginLeft: -3,
+        marginLeft: -2,
+        opacity: 0.5,
     },
-    // Modal styles
+    // Modal styles - clean white design
     modalOverlay: {
         flex: 1,
-        backgroundColor: "rgba(0, 0, 0, 0.6)",
+        backgroundColor: Theme.overlay,
         justifyContent: "flex-end",
     },
     modalContent: {
-        backgroundColor: BG_ELEVATED,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
+        backgroundColor: Theme.bgMain,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
         paddingHorizontal: 24,
         paddingTop: 12,
         paddingBottom: 48,
         minHeight: SCREEN_HEIGHT * 0.45,
-        borderTopWidth: 1,
-        borderLeftWidth: 1,
-        borderRightWidth: 1,
-        borderColor: BORDER,
+        shadowColor: Theme.shadowColor,
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 16,
+        elevation: 16,
     },
     modalHandle: {
-        width: 36,
+        width: 40,
         height: 4,
-        backgroundColor: BORDER,
+        backgroundColor: Theme.border,
         borderRadius: 2,
         alignSelf: "center",
         marginBottom: 20,
@@ -394,9 +380,7 @@ const styles = StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: BG_CARD,
-        borderWidth: 1,
-        borderColor: BORDER,
+        backgroundColor: Theme.bgCard,
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1,
@@ -422,32 +406,32 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     authButton: {
-        backgroundColor: BG_CARD,
-        borderWidth: 1,
-        borderColor: BORDER,
+        backgroundColor: Theme.bgMain,
+        borderWidth: 1.5,
+        borderColor: Theme.textPrimary,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
-        paddingVertical: 14,
+        paddingVertical: 15,
         paddingHorizontal: 24,
-        borderRadius: 14,
+        borderRadius: 8,
         gap: 12,
     },
     authButtonText: {
         color: TEXT_PRIMARY,
         fontSize: 15,
-        fontWeight: "500",
+        fontWeight: "600",
     },
     errorContainer: {
-        backgroundColor: "rgba(248, 113, 113, 0.15)",
+        backgroundColor: Theme.errorMuted,
         padding: 12,
-        borderRadius: 12,
+        borderRadius: 8,
         marginTop: 16,
         borderWidth: 1,
-        borderColor: "rgba(248, 113, 113, 0.2)",
+        borderColor: Theme.error,
     },
     errorText: {
-        color: "#f87171",
+        color: Theme.error,
         fontSize: 14,
         textAlign: "center",
     },

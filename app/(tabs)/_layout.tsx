@@ -1,7 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
 import { Tabs } from "expo-router";
 import { useEffect } from "react";
 import { Dimensions, Platform, Pressable, StyleSheet, View } from "react-native";
@@ -13,8 +11,8 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// Theme colors
-const ACCENT = '#3FE3FF';
+// Import theme
+import { Theme } from "@/constants/theme";
 
 // Tab configuration
 const TAB_CONFIG = [
@@ -24,27 +22,27 @@ const TAB_CONFIG = [
 ] as const;
 
 const TAB_COUNT = TAB_CONFIG.length;
-const NAVBAR_HORIZONTAL_MARGIN = 60;
-const NAVBAR_HEIGHT = 56;
+const NAVBAR_HORIZONTAL_MARGIN = 20;
+const NAVBAR_HEIGHT = 64;
 const NAVBAR_WIDTH = Dimensions.get('window').width - (NAVBAR_HORIZONTAL_MARGIN * 2);
 const TAB_WIDTH = NAVBAR_WIDTH / TAB_COUNT;
-const INDICATOR_WIDTH = 70;
-const INDICATOR_HEIGHT = 44;
+const INDICATOR_WIDTH = 56;
+const INDICATOR_HEIGHT = 48;
 const INDICATOR_VERTICAL_PADDING = (NAVBAR_HEIGHT - INDICATOR_HEIGHT) / 2;
 
-// Custom floating tab bar with sliding indicator behind icons
+// Clean minimalist tab bar
 function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
 
   // Shared value for smooth indicator animation
   const activeIndex = useSharedValue(state.index);
 
-  // Update activeIndex when tab changes - moved to useEffect to avoid render warning
+  // Update activeIndex when tab changes
   useEffect(() => {
     activeIndex.value = withSpring(state.index, {
-      damping: 20,
-      stiffness: 180,
-      mass: 0.8,
+      damping: 18,
+      stiffness: 150,
+      mass: 1,
     });
   }, [state.index]);
 
@@ -67,63 +65,15 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
   return (
     <View style={[styles.floatingContainer, { bottom: Math.max(insets.bottom, 16) + 8 }]}>
-      {/* Shadow layer */}
-      <View style={styles.shadowLayer} />
-
-      {/* Dark frosted glass background like reference */}
-      <View style={styles.liquidGlassContainer}>
-        {/* True iOS “liquid glass” blur (Android uses fallback) */}
-        {Platform.OS === "android" ? (
-          <View style={styles.androidGlassFallback} />
-        ) : (
-          <BlurView
-            intensity={32}
-            tint="dark"
-            style={StyleSheet.absoluteFill}
-          />
-        )}
-
-        {/* Subtle tint to deepen the blur */}
-        <View style={styles.glassTint} />
-
-        {/* Subtle top highlight */}
-        <LinearGradient
-          colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)', 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.liquidHighlight}
-        />
-
-        {/* Outer border */}
-        <View style={styles.borderOverlay} />
-
-        {/* Sliding indicator - simple dark pill */}
+      {/* Clean white background with subtle shadow */}
+      <View style={styles.tabBarContainer}>
+        {/* Sliding indicator - minimalist black rounded rectangle */}
         <Animated.View style={[styles.indicatorContainer, animatedIndicatorStyle]}>
-          {/* Active “liquid” capsule */}
-          {Platform.OS === "android" ? (
-            <View style={styles.indicatorAndroidBg} />
-          ) : (
-            <BlurView
-              intensity={42}
-              tint="dark"
-              style={StyleSheet.absoluteFill}
-            />
-          )}
-          <LinearGradient
-            colors={[
-              "rgba(255, 255, 255, 0.10)",
-              "rgba(255, 255, 255, 0.04)",
-              "rgba(0, 0, 0, 0.18)",
-            ]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.indicatorBorder} />
+          <View style={styles.indicatorBackground} />
         </Animated.View>
       </View>
 
-      {/* Tab buttons - rendered OUTSIDE for crisp icons */}
+      {/* Tab buttons - clean icons */}
       <View style={styles.tabsContainer}>
         {state.routes.map((route, index) => {
           const isFocused = state.index === index;
@@ -166,7 +116,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   );
 }
 
-// Tab button - icons only, no background (indicator provides background)
+// Minimalist tab button
 function TabButton({
   focused,
   iconName,
@@ -180,27 +130,20 @@ function TabButton({
   onPress: () => void;
   onLongPress: () => void;
 }) {
-  const pressYOffset = useSharedValue(0);
+  const scaleValue = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
-      transform: [{ translateY: pressYOffset.value }],
+      transform: [{ scale: scaleValue.value }],
     };
   });
 
-  const animatedIconStyle = useAnimatedStyle(() => {
-    return {
-      opacity: withSpring(focused ? 1 : 0.5, { damping: 15, stiffness: 200 }),
-    };
-  }, [focused]);
-
   const handlePressIn = () => {
-    // Avoid scaling font-icons (can look blurry mid-animation)
-    pressYOffset.value = withSpring(-1.5, { damping: 18, stiffness: 420 });
+    scaleValue.value = withSpring(0.92, { damping: 15, stiffness: 300 });
   };
 
   const handlePressOut = () => {
-    pressYOffset.value = withSpring(0, { damping: 18, stiffness: 320 });
+    scaleValue.value = withSpring(1, { damping: 15, stiffness: 300 });
   };
 
   return (
@@ -213,13 +156,11 @@ function TabButton({
       android_ripple={null}
     >
       <Animated.View style={[styles.iconWrapper, animatedStyle]}>
-        <Animated.View style={animatedIconStyle}>
-          <Ionicons
-            name={focused ? iconName as any : iconOutline as any}
-            size={22}
-            color={focused ? "#FFFFFF" : "rgba(255, 255, 255, 0.6)"}
-          />
-        </Animated.View>
+        <Ionicons
+          name={focused ? iconName as any : iconOutline as any}
+          size={24}
+          color={focused ? Theme.textInverse : Theme.textSecondary}
+        />
       </Animated.View>
     </Pressable>
   );
@@ -248,49 +189,24 @@ const styles = StyleSheet.create({
     right: NAVBAR_HORIZONTAL_MARGIN,
     height: NAVBAR_HEIGHT,
   },
-  shadowLayer: {
+  tabBarContainer: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: NAVBAR_HEIGHT / 2,
-    backgroundColor: 'rgba(0, 0, 0, 0.12)',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 24,
-    elevation: 18,
-  },
-  // Liquid glass container
-  liquidGlassContainer: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: NAVBAR_HEIGHT / 2,
-    overflow: 'hidden',
-  },
-  androidGlassFallback: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(24, 24, 28, 0.72)",
-  },
-  glassTint: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(12, 12, 14, 0.28)",
-  },
-  liquidHighlight: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: NAVBAR_HEIGHT / 2,
-    borderTopLeftRadius: NAVBAR_HEIGHT / 2,
-    borderTopRightRadius: NAVBAR_HEIGHT / 2,
-  },
-  borderOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    backgroundColor: Theme.bgMain,
     borderRadius: NAVBAR_HEIGHT / 2,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
+    borderColor: Theme.border,
+    overflow: 'hidden',
+    // Clean shadow
+    shadowColor: Theme.shadowColor,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  // Indicator styles - simple dark pill
+  // Indicator styles - minimalist black pill
   indicatorContainer: {
     position: 'absolute',
     top: INDICATOR_VERTICAL_PADDING,
@@ -298,27 +214,20 @@ const styles = StyleSheet.create({
     width: INDICATOR_WIDTH,
     height: INDICATOR_HEIGHT,
     borderRadius: INDICATOR_HEIGHT / 2,
-    zIndex: 1,
-    overflow: 'hidden',
+    zIndex: 0,
   },
-  indicatorAndroidBg: {
+  indicatorBackground: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: Theme.textPrimary,
     borderRadius: INDICATOR_HEIGHT / 2,
-    backgroundColor: 'rgba(18, 18, 22, 0.92)',
   },
-  indicatorBorder: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: INDICATOR_HEIGHT / 2,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.14)",
-  },
-  // Tab container rendered above indicator
+  // Tab container
   tabsContainer: {
     ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    zIndex: 2,
+    zIndex: 1,
   },
   tabButton: {
     flex: 1,
@@ -334,5 +243,3 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
-
-

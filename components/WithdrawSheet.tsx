@@ -15,17 +15,20 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const ACCENT = "#3FE3FF";
-const BG_MAIN = "#000000";
-// Darker sheet palette (closer to pure black)
-const BG_SHEET = "#07080B";
-const BG_CARD = "#0B0D12";
-const BG_ELEVATED = "#10141C";
-const BORDER = "#1A2230";
-const TEXT_PRIMARY = "#E5E7EB";
-const TEXT_SECONDARY = "#9CA3AF";
-const TEXT_DISABLED = "#6B7280";
-const ERROR = "#f87171";
+// Import theme from central location
+import { Theme } from '@/constants/theme';
+
+// Use theme constants
+const ACCENT = Theme.accentSubtle;
+const BG_MAIN = Theme.bgMain;
+const BG_SHEET = Theme.bgMain;
+const BG_CARD = Theme.bgCard;
+const BG_ELEVATED = Theme.bgElevated;
+const BORDER = Theme.border;
+const TEXT_PRIMARY = Theme.textPrimary;
+const TEXT_SECONDARY = Theme.textSecondary;
+const TEXT_DISABLED = Theme.textDisabled;
+const ERROR = Theme.error;
 
 type WithdrawPayload = {
   toAddress: string;

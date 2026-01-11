@@ -15,15 +15,19 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const ACCENT = "#3FE3FF";
-const BG_MAIN = "#000000";
-const BG_SHEET = "#000000";
-const BG_ELEVATED = "#1A1A1A";
-const TEXT_PRIMARY = "#FFFFFF";
-const TEXT_SECONDARY = "#A0A0A0";
-const TEXT_DISABLED = "#666666";
-const SUCCESS = "#00FF88";
-const ERROR = "#FF3B5C";
+// Import theme from central location
+import { Theme } from '@/constants/theme';
+
+// Use theme constants
+const ACCENT = Theme.accentSubtle;
+const BG_MAIN = Theme.bgMain;
+const BG_SHEET = Theme.bgMain;
+const BG_ELEVATED = Theme.bgElevated;
+const TEXT_PRIMARY = Theme.textPrimary;
+const TEXT_SECONDARY = Theme.textSecondary;
+const TEXT_DISABLED = Theme.textDisabled;
+const SUCCESS = Theme.success;
+const ERROR = Theme.error;
 
 interface TradeQuoteSheetProps {
     visible: boolean;

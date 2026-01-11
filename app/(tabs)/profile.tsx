@@ -4,7 +4,6 @@ import { api } from "@/lib/api";
 import { Trade, User } from "@/lib/types";
 import { FontAwesome, Ionicons } from "@expo/vector-icons";
 import { usePrivy } from "@privy-io/expo";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -12,17 +11,20 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+// Import theme from central location
+import { Theme } from '@/constants/theme';
+
 // Theme constants
-const ACCENT = '#3FE3FF';
-const BG_MAIN = '#000000';
-const BG_CARD = '#111827';
-const BG_ELEVATED = '#161C24';
-const BORDER = '#1F2937';
-const TEXT_PRIMARY = '#E5E7EB';
-const TEXT_SECONDARY = '#9CA3AF';
-const TEXT_DISABLED = '#6B7280';
-const SUCCESS = '#4ade80';
-const ERROR = '#f87171';
+const ACCENT = Theme.accentSubtle;
+const BG_MAIN = Theme.bgMain;
+const BG_CARD = Theme.bgCard;
+const BG_ELEVATED = Theme.bgElevated;
+const BORDER = Theme.border;
+const TEXT_PRIMARY = Theme.textPrimary;
+const TEXT_SECONDARY = Theme.textSecondary;
+const TEXT_DISABLED = Theme.textDisabled;
+const SUCCESS = Theme.success;
+const ERROR = Theme.error;
 
 type TradeTab = 'active' | 'previous';
 
@@ -119,13 +121,9 @@ export default function ProfileScreen() {
     if (isLoading) {
         return (
             <View style={styles.container}>
-                <LinearGradient
-                    colors={[BG_MAIN, '#0D1117', BG_CARD]}
-                    style={styles.gradient}
-                />
                 <SafeAreaView style={styles.safeArea} edges={['top']}>
                     <View style={[styles.content, { flex: 1, justifyContent: 'center', alignItems: 'center' }]}>
-                        <ActivityIndicator size="large" color={ACCENT} />
+                        <ActivityIndicator size="large" color={TEXT_PRIMARY} />
                     </View>
                 </SafeAreaView>
             </View>
@@ -134,10 +132,6 @@ export default function ProfileScreen() {
 
     return (
         <View style={styles.container}>
-            <LinearGradient
-                colors={[BG_MAIN, '#0D1117', BG_CARD]}
-                style={styles.gradient}
-            />
             <SafeAreaView style={styles.safeArea} edges={['top']}>
                 <ScrollView
                     contentContainerStyle={styles.content}
@@ -150,12 +144,6 @@ export default function ProfileScreen() {
                             {/* Avatar with Edit Icon */}
                             <View style={styles.avatarContainer}>
                                 <View style={styles.avatarWrapper}>
-                                    <LinearGradient
-                                        colors={[ACCENT, '#00B8D4', '#0091EA']}
-                                        style={styles.avatarGlow}
-                                        start={{ x: 0, y: 0 }}
-                                        end={{ x: 1, y: 1 }}
-                                    />
                                     <View style={styles.avatarInner}>
                                         {profileImageUrl ? (
                                             <Image
@@ -170,7 +158,7 @@ export default function ProfileScreen() {
                                     </View>
                                 </View>
                                 <TouchableOpacity style={styles.avatarEditBtn}>
-                                    <Ionicons name="pencil" size={12} color={TEXT_PRIMARY} />
+                                    <Ionicons name="pencil" size={12} color={Theme.textInverse} />
                                 </TouchableOpacity>
                             </View>
 
@@ -408,9 +396,6 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: BG_MAIN,
     },
-    gradient: {
-        ...StyleSheet.absoluteFillObject,
-    },
     safeArea: {
         flex: 1,
     },
@@ -437,31 +422,21 @@ const styles = StyleSheet.create({
         borderRadius: 36,
         position: 'relative',
     },
-    avatarGlow: {
-        position: 'absolute',
+    avatarInner: {
         width: 72,
         height: 72,
         borderRadius: 36,
-        opacity: 0.3,
-    },
-    avatarInner: {
-        position: 'absolute',
-        top: 2,
-        left: 2,
-        right: 2,
-        bottom: 2,
-        borderRadius: 34,
         backgroundColor: BG_CARD,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 2,
-        borderColor: BORDER,
+        borderColor: Theme.textPrimary,
         overflow: 'hidden',
     },
     avatarImage: {
         width: '100%',
         height: '100%',
-        borderRadius: 34,
+        borderRadius: 36,
     },
     avatarText: {
         fontSize: 28,
@@ -475,7 +450,7 @@ const styles = StyleSheet.create({
         width: 24,
         height: 24,
         borderRadius: 12,
-        backgroundColor: BG_ELEVATED,
+        backgroundColor: Theme.textPrimary,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 2,
@@ -512,7 +487,7 @@ const styles = StyleSheet.create({
     },
     addBio: {
         fontSize: 14,
-        color: ACCENT,
+        color: TEXT_SECONDARY,
         marginBottom: 16,
     },
     followRow: {
@@ -577,7 +552,7 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         height: 2,
-        backgroundColor: ACCENT,
+        backgroundColor: Theme.textPrimary,
     },
     listContainer: {
         width: SCREEN_WIDTH - 40, // Match content padding
@@ -627,20 +602,22 @@ const styles = StyleSheet.create({
         marginRight: 10,
     },
     tradeSideBadgeYes: {
-        backgroundColor: 'rgba(74, 222, 128, 0.15)',
+        backgroundColor: Theme.textPrimary,
     },
     tradeSideBadgeNo: {
-        backgroundColor: 'rgba(248, 113, 113, 0.15)',
+        backgroundColor: Theme.bgMain,
+        borderWidth: 1.5,
+        borderColor: Theme.textPrimary,
     },
     tradeSideText: {
         fontSize: 11,
         fontWeight: '700',
     },
     tradeSideTextYes: {
-        color: SUCCESS,
+        color: Theme.textInverse,
     },
     tradeSideTextNo: {
-        color: ERROR,
+        color: Theme.textPrimary,
     },
     tradeInfo: {
         flex: 1,

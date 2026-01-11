@@ -18,17 +18,20 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Import theme from central location
+import { Theme } from '@/constants/theme';
+
 // Theme constants
-const ACCENT = '#3FE3FF';
-const BG_MAIN = '#000000';
-const BG_CARD = '#111827';
-const BG_ELEVATED = '#161C24';
-const BORDER = '#1F2937';
-const TEXT_PRIMARY = '#E5E7EB';
-const TEXT_SECONDARY = '#9CA3AF';
-const TEXT_DISABLED = '#6B7280';
-const SUCCESS = '#4ade80';
-const ERROR = '#f87171';
+const ACCENT = Theme.accentSubtle;
+const BG_MAIN = Theme.bgMain;
+const BG_CARD = Theme.bgCard;
+const BG_ELEVATED = Theme.bgElevated;
+const BORDER = Theme.border;
+const TEXT_PRIMARY = Theme.textPrimary;
+const TEXT_SECONDARY = Theme.textSecondary;
+const TEXT_DISABLED = Theme.textDisabled;
+const SUCCESS = Theme.success;
+const ERROR = Theme.error;
 
 type TabType = 'active' | 'history';
 
@@ -211,7 +214,6 @@ export default function UserProfileScreen() {
     if (loading) {
         return (
             <View style={styles.container}>
-                <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
                 <SafeAreaView style={styles.safeArea}>
                     <View style={styles.centerContainer}>
                         <ActivityIndicator size="large" color={ACCENT} />
@@ -225,7 +227,6 @@ export default function UserProfileScreen() {
     if (error || !profile) {
         return (
             <View style={styles.container}>
-                <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
                 <SafeAreaView style={styles.safeArea}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                         <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
@@ -288,14 +289,8 @@ export default function UserProfileScreen() {
                     {/* Header section: similar “profile” vibe, but simplified */}
                     <View style={styles.otherProfileHeader}>
                         <View style={styles.identityRow}>
-                            <View style={styles.avatarContainer}>
-                                <LinearGradient
-                                    colors={[ACCENT, '#00B8D4', '#0091EA']}
-                                    style={styles.avatarGlow}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 1, y: 1 }}
-                                />
-                                <View style={styles.avatarInner}>
+                        <View style={styles.avatarContainer}>
+                            <View style={styles.avatarInner}>
                                     {profile.avatarUrl ? (
                                         <Image source={{ uri: profile.avatarUrl }} style={styles.avatarImage} contentFit="cover" />
                                     ) : (
@@ -541,29 +536,19 @@ const styles = StyleSheet.create({
         gap: 14,
     },
     avatarContainer: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        position: 'relative',
-    },
-    avatarGlow: {
-        position: 'absolute',
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        opacity: 0.28,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: Theme.bgCard,
+        borderWidth: 2,
+        borderColor: Theme.textPrimary,
+        overflow: 'hidden',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     avatarInner: {
-        position: 'absolute',
-        top: 2,
-        left: 2,
-        right: 2,
-        bottom: 2,
-        borderRadius: 30,
-        backgroundColor: BG_CARD,
-        borderWidth: 1,
-        borderColor: BORDER,
-        overflow: 'hidden',
+        width: '100%',
+        height: '100%',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -587,26 +572,26 @@ const styles = StyleSheet.create({
         marginTop: 2,
     },
     followPill: {
-        backgroundColor: ACCENT,
+        backgroundColor: Theme.textPrimary,
         paddingVertical: 10,
-        paddingHorizontal: 14,
-        borderRadius: 12,
+        paddingHorizontal: 16,
+        borderRadius: 8,
         alignItems: 'center',
         justifyContent: 'center',
         minWidth: 96,
     },
     followingPill: {
-        backgroundColor: BG_ELEVATED,
-        borderWidth: 1,
-        borderColor: BORDER,
+        backgroundColor: Theme.bgMain,
+        borderWidth: 2,
+        borderColor: Theme.textPrimary,
     },
     followPillText: {
-        color: BG_MAIN,
+        color: Theme.textInverse,
         fontSize: 14,
-        fontWeight: '800',
+        fontWeight: '600',
     },
     followingPillText: {
-        color: TEXT_PRIMARY,
+        color: Theme.textPrimary,
     },
     followRow: {
         flexDirection: 'row',
@@ -833,24 +818,6 @@ const styles = StyleSheet.create({
         fontSize: 13,
         lineHeight: 18,
         color: TEXT_SECONDARY,
-        fontStyle: 'italic',
-    },
-    quoteBox: {
-        flexDirection: 'row',
-        gap: 8,
-        backgroundColor: 'rgba(63, 227, 255, 0.06)',
-        borderLeftWidth: 2,
-        borderLeftColor: ACCENT,
-        paddingVertical: 8,
-        paddingHorizontal: 10,
-        borderRadius: 8,
-        marginBottom: 10,
-    },
-    quoteTextProfile: {
-        flex: 1,
-        fontSize: 13,
-        lineHeight: 19,
-        color: TEXT_PRIMARY,
         fontStyle: 'italic',
     },
     tradeSubtitle: {

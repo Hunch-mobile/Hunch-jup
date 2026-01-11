@@ -10,9 +10,12 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 40;
 const CARD_HEIGHT = CARD_WIDTH * 0.63; // ~1.586 aspect ratio
 
-// Updated Theme constants for the new look
+// Import theme from central location
+import { Theme } from '@/constants/theme';
+
+// Theme constants for card overlay
 const TEXT_PRIMARY = '#FFFFFF';
-const TEXT_SECONDARY = 'rgba(255, 255, 255, 0.6)';
+const TEXT_SECONDARY = 'rgba(255, 255, 255, 0.7)';
 
 interface CreditCardProps {
     tradesCount: number;

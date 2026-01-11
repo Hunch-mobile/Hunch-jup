@@ -1,7 +1,7 @@
 import { CreateTradeRequest, Event, EventsResponse, Follow, Market, MarketsResponse, SyncUserRequest, Trade, User } from './types';
 
 const API_BASE_URL = 'https://hunchdotrun-roan.vercel.app';
-const METADATA_API_BASE_URL = 'https://prediction-markets-api.dflow.net';
+const METADATA_API_BASE_URL = 'https://dev-prediction-markets-api.dflow.net';
 
 export const api = {
     // User endpoints

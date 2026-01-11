@@ -2,7 +2,6 @@ import { useUser } from "@/contexts/UserContext";
 import { api, getMarketDetails } from "@/lib/api";
 import { User as BackendUser, Market, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -17,17 +16,20 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Import theme from central location
+import { Theme } from '@/constants/theme';
+
 // Theme constants
-const ACCENT = '#3FE3FF';
-const BG_MAIN = '#000000';
-const BG_CARD = '#111827';
-const BG_ELEVATED = '#161C24';
-const BORDER = '#1F2937';
-const TEXT_PRIMARY = '#E5E7EB';
-const TEXT_SECONDARY = '#9CA3AF';
-const TEXT_DISABLED = '#6B7280';
-const SUCCESS = '#4ade80';
-const ERROR = '#f87171';
+const ACCENT = Theme.accentSubtle;
+const BG_MAIN = Theme.bgMain;
+const BG_CARD = Theme.bgCard;
+const BG_ELEVATED = Theme.bgElevated;
+const BORDER = Theme.border;
+const TEXT_PRIMARY = Theme.textPrimary;
+const TEXT_SECONDARY = Theme.textSecondary;
+const TEXT_DISABLED = Theme.textDisabled;
+const SUCCESS = Theme.success;
+const ERROR = Theme.error;
 
 interface FeedItem extends Trade {
     type: 'trade';
@@ -185,10 +187,6 @@ export default function SocialScreen() {
                 activeOpacity={0.7}
             >
                 <View style={styles.searchResultAvatar}>
-                    <LinearGradient
-                        colors={['rgba(63, 227, 255, 0.3)', 'rgba(63, 227, 255, 0.1)']}
-                        style={styles.avatarGradient}
-                    />
                     <Text style={styles.searchResultAvatarText}>
                         {(item.displayName || item.walletAddress).charAt(0).toUpperCase()}
                     </Text>
@@ -265,10 +263,6 @@ export default function SocialScreen() {
                         }}
                     >
                         <View style={styles.feedAvatar}>
-                            <LinearGradient
-                                colors={['rgba(63, 227, 255, 0.4)', 'rgba(63, 227, 255, 0.1)']}
-                                style={styles.feedAvatarGradient}
-                            />
                             <Text style={styles.feedAvatarText}>
                                 {(item.user?.displayName || item.user?.walletAddress || "U").charAt(0).toUpperCase()}
                             </Text>
@@ -293,9 +287,9 @@ export default function SocialScreen() {
                 {/* Quote Section - Show above market card if exists */}
                 {hasQuote && (
                     <View style={styles.quoteContainer}>
-                        <View style={styles.quoteIconWrapper}>
-                            <Ionicons name="chatbubble" size={14} color={ACCENT} />
-                        </View>
+                    <View style={styles.quoteIconWrapper}>
+                        <Ionicons name="chatbubble-outline" size={14} color={Theme.textSecondary} />
+                    </View>
                         <Text style={styles.quoteText}>{item.quote}</Text>
                     </View>
                 )}
@@ -375,10 +369,7 @@ export default function SocialScreen() {
 
     return (
         <View style={styles.container}>
-            <LinearGradient
-                colors={[BG_MAIN, '#0D1117', BG_CARD]}
-                style={styles.gradient}
-            />
+            {/* Clean white background */}
             <SafeAreaView style={styles.safeArea} edges={['top']}>
                 {/* Header */}
                 <View style={styles.header}>
@@ -402,7 +393,7 @@ export default function SocialScreen() {
                         <Ionicons
                             name={showSearch ? "close" : "search"}
                             size={20}
-                            color={showSearch ? ACCENT : TEXT_PRIMARY}
+                            color={showSearch ? Theme.textInverse : TEXT_PRIMARY}
                         />
                     </TouchableOpacity>
                 </View>
@@ -479,9 +470,6 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: BG_MAIN,
     },
-    gradient: {
-        ...StyleSheet.absoluteFillObject,
-    },
     safeArea: {
         flex: 1,
     },
@@ -507,35 +495,37 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        backgroundColor: 'rgba(63, 227, 255, 0.1)',
+        backgroundColor: Theme.bgCard,
         paddingHorizontal: 10,
         paddingVertical: 4,
         borderRadius: 100,
+        borderWidth: 1,
+        borderColor: Theme.border,
     },
     liveDot: {
         width: 6,
         height: 6,
         borderRadius: 3,
-        backgroundColor: ACCENT,
+        backgroundColor: Theme.textPrimary,
     },
     headerBadgeText: {
         fontSize: 12,
         fontWeight: '600',
-        color: ACCENT,
+        color: Theme.textPrimary,
     },
     searchButton: {
         width: 40,
         height: 40,
-        borderRadius: 12,
-        backgroundColor: BG_CARD,
+        borderRadius: 20,
+        backgroundColor: Theme.bgCard,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: BORDER,
+        borderColor: Theme.border,
     },
     searchButtonActive: {
-        backgroundColor: 'rgba(63, 227, 255, 0.1)',
-        borderColor: 'rgba(63, 227, 255, 0.2)',
+        backgroundColor: Theme.textPrimary,
+        borderColor: Theme.textPrimary,
     },
     searchContainer: {
         paddingHorizontal: 20,
@@ -565,22 +555,20 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
     },
     searchResultAvatar: {
-        width: 52,
-        height: 52,
-        borderRadius: 26,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 14,
-        backgroundColor: 'rgba(63, 227, 255, 0.08)',
-    },
-    avatarGradient: {
-        ...StyleSheet.absoluteFillObject,
-        borderRadius: 26,
+        backgroundColor: Theme.bgCard,
+        borderWidth: 1,
+        borderColor: Theme.border,
     },
     searchResultAvatarText: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: ACCENT,
+        fontSize: 18,
+        fontWeight: '600',
+        color: Theme.textPrimary,
     },
     searchResultInfo: {
         flex: 1,
@@ -614,30 +602,29 @@ const styles = StyleSheet.create({
         marginHorizontal: 6,
     },
     followButton: {
-        backgroundColor: 'rgba(63, 227, 255, 0.12)',
-        paddingVertical: 10,
+        backgroundColor: Theme.textPrimary,
+        paddingVertical: 8,
         paddingHorizontal: 18,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: 'rgba(63, 227, 255, 0.2)',
-        minWidth: 95,
+        borderRadius: 6,
+        minWidth: 90,
         alignItems: 'center',
         justifyContent: 'center',
     },
     followingButton: {
-        backgroundColor: BG_ELEVATED,
-        borderColor: BORDER,
+        backgroundColor: Theme.bgMain,
+        borderWidth: 1.5,
+        borderColor: Theme.textPrimary,
     },
     followButtonDisabled: {
         opacity: 0.6,
     },
     followButtonText: {
-        color: ACCENT,
-        fontSize: 14,
+        color: Theme.textInverse,
+        fontSize: 13,
         fontWeight: '600',
     },
     followingButtonText: {
-        color: TEXT_PRIMARY,
+        color: Theme.textPrimary,
     },
     listContent: {
         paddingTop: 12,
@@ -685,15 +672,15 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        backgroundColor: ACCENT,
+        backgroundColor: Theme.textPrimary,
         paddingHorizontal: 24,
         paddingVertical: 14,
-        borderRadius: 14,
+        borderRadius: 8,
     },
     discoverButtonText: {
         fontSize: 15,
         fontWeight: '600',
-        color: BG_MAIN,
+        color: Theme.textInverse,
     },
     feedCard: {
         marginHorizontal: 20,
@@ -706,10 +693,10 @@ const styles = StyleSheet.create({
         marginBottom: 14,
     },
     quoteContainer: {
-        backgroundColor: 'rgba(63, 227, 255, 0.05)',
-        borderLeftWidth: 3,
-        borderLeftColor: ACCENT,
-        borderRadius: 12,
+        backgroundColor: Theme.bgCard,
+        borderLeftWidth: 2,
+        borderLeftColor: Theme.textPrimary,
+        borderRadius: 8,
         padding: 14,
         marginBottom: 12,
         flexDirection: 'row',
@@ -727,46 +714,23 @@ const styles = StyleSheet.create({
         fontWeight: '400',
         fontStyle: 'italic',
     },
-    quoteContainer: {
-        backgroundColor: 'rgba(63, 227, 255, 0.05)',
-        borderLeftWidth: 3,
-        borderLeftColor: ACCENT,
-        borderRadius: 12,
-        padding: 14,
-        marginBottom: 12,
-        flexDirection: 'row',
-        gap: 10,
-    },
-    quoteIconWrapper: {
-        marginTop: 2,
-    },
-    quoteText: {
-        flex: 1,
-        fontSize: 15,
-        lineHeight: 22,
-        color: TEXT_PRIMARY,
-        fontWeight: '400',
-        fontStyle: 'italic',
-    },
     feedAvatarContainer: {
         marginRight: 12,
     },
     feedAvatar: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 42,
+        height: 42,
+        borderRadius: 21,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(63, 227, 255, 0.1)',
-    },
-    feedAvatarGradient: {
-        ...StyleSheet.absoluteFillObject,
-        borderRadius: 22,
+        backgroundColor: Theme.bgCard,
+        borderWidth: 1,
+        borderColor: Theme.border,
     },
     feedAvatarText: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: ACCENT,
+        fontSize: 16,
+        fontWeight: '600',
+        color: Theme.textPrimary,
     },
     feedHeaderInfo: {
         flex: 1,
@@ -899,20 +863,22 @@ const styles = StyleSheet.create({
         marginRight: 12,
     },
     tradeSidePillYes: {
-        backgroundColor: 'rgba(74, 222, 128, 0.15)',
+        backgroundColor: Theme.textPrimary,
     },
     tradeSidePillNo: {
-        backgroundColor: 'rgba(248, 113, 113, 0.15)',
+        backgroundColor: Theme.bgMain,
+        borderWidth: 1.5,
+        borderColor: Theme.textPrimary,
     },
     tradeSideText: {
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '700',
     },
     tradeSideTextYes: {
-        color: SUCCESS,
+        color: Theme.textInverse,
     },
     tradeSideTextNo: {
-        color: ERROR,
+        color: Theme.textPrimary,
     },
     tradeAmount: {
         fontSize: 20,
