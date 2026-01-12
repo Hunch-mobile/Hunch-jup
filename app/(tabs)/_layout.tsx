@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import { usePrivy } from "@privy-io/expo";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import { Image } from "expo-image";
 import { Tabs } from "expo-router";
 import { useEffect } from "react";
-import { Dimensions, Platform, Pressable, StyleSheet, View } from "react-native";
+import { Dimensions, Pressable, StyleSheet, View } from "react-native";
 import Animated, {
   interpolate,
   useAnimatedStyle,
@@ -17,12 +19,12 @@ import { Theme } from "@/constants/theme";
 // Tab configuration
 const TAB_CONFIG = [
   { name: "index", title: "Home", icon: "home", iconOutline: "home-outline" },
-  { name: "social", title: "Feed", icon: "compass", iconOutline: "compass-outline" },
+  { name: "social", title: "Feed", icon: "people", iconOutline: "people-outline" },
   { name: "profile", title: "Profile", icon: "person", iconOutline: "person-outline" },
 ] as const;
 
 const TAB_COUNT = TAB_CONFIG.length;
-const NAVBAR_HORIZONTAL_MARGIN = 20;
+const NAVBAR_HORIZONTAL_MARGIN = 60; // Increased from 20 to make navbar more compact
 const NAVBAR_HEIGHT = 64;
 const NAVBAR_WIDTH = Dimensions.get('window').width - (NAVBAR_HORIZONTAL_MARGIN * 2);
 const TAB_WIDTH = NAVBAR_WIDTH / TAB_COUNT;
@@ -33,6 +35,12 @@ const INDICATOR_VERTICAL_PADDING = (NAVBAR_HEIGHT - INDICATOR_HEIGHT) / 2;
 // Clean minimalist tab bar
 function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { user } = usePrivy();
+
+  // Get Twitter/X profile picture and remove _normal for higher resolution
+  const twitterAccount = user?.linked_accounts?.find((a: any) => a.type === 'twitter_oauth');
+  const rawProfileImageUrl = (twitterAccount as any)?.profile_picture_url;
+  const profileImageUrl = rawProfileImageUrl?.replace('_normal', '');
 
   // Shared value for smooth indicator animation
   const activeIndex = useSharedValue(state.index);
@@ -40,9 +48,9 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   // Update activeIndex when tab changes
   useEffect(() => {
     activeIndex.value = withSpring(state.index, {
-      damping: 18,
-      stiffness: 150,
-      mass: 1,
+      damping: 15,
+      stiffness: 300,
+      mass: 0.5,
     });
   }, [state.index]);
 
@@ -106,6 +114,8 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               focused={isFocused}
               iconName={tabConfig.icon}
               iconOutline={tabConfig.iconOutline}
+              routeName={route.name}
+              profileImageUrl={profileImageUrl}
               onPress={onPress}
               onLongPress={onLongPress}
             />
@@ -121,12 +131,16 @@ function TabButton({
   focused,
   iconName,
   iconOutline,
+  routeName,
+  profileImageUrl,
   onPress,
   onLongPress,
 }: {
   focused: boolean;
   iconName: string;
   iconOutline: string;
+  routeName: string;
+  profileImageUrl?: string;
   onPress: () => void;
   onLongPress: () => void;
 }) {
@@ -156,11 +170,18 @@ function TabButton({
       android_ripple={null}
     >
       <Animated.View style={[styles.iconWrapper, animatedStyle]}>
-        <Ionicons
-          name={focused ? iconName as any : iconOutline as any}
-          size={24}
-          color={focused ? Theme.textInverse : Theme.textSecondary}
-        />
+        {routeName === 'profile' && profileImageUrl ? (
+          <Image
+            source={{ uri: profileImageUrl }}
+            style={styles.profileImage}
+          />
+        ) : (
+          <Ionicons
+            name={focused ? iconName as any : iconOutline as any}
+            size={24}
+            color={focused ? Theme.textInverse : Theme.textSecondary}
+          />
+        )}
       </Animated.View>
     </Pressable>
   );
@@ -218,7 +239,7 @@ const styles = StyleSheet.create({
   },
   indicatorBackground: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: Theme.textPrimary,
+    backgroundColor: '#333333', // Softer dark gray instead of pure black
     borderRadius: INDICATOR_HEIGHT / 2,
   },
   // Tab container
@@ -241,5 +262,12 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  profileImage: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: Theme.textSecondary,
   },
 });

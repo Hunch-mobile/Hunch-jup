@@ -2,7 +2,6 @@ import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
 import { Follow } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -21,15 +20,18 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Theme constants
-const ACCENT = '#3FE3FF';
-const BG_MAIN = '#000000';
-const BG_CARD = '#111827';
-const BG_ELEVATED = '#161C24';
-const BORDER = '#1F2937';
-const TEXT_PRIMARY = '#E5E7EB';
-const TEXT_SECONDARY = '#9CA3AF';
-const TEXT_DISABLED = '#6B7280';
+// Import theme from central location
+import { Theme } from '@/constants/theme';
+
+// Theme constants - Monochrome design
+const ACCENT = Theme.textPrimary;
+const BG_MAIN = Theme.bgMain;
+const BG_CARD = Theme.bgCard;
+const BG_ELEVATED = Theme.bgElevated;
+const BORDER = Theme.border;
+const TEXT_PRIMARY = Theme.textPrimary;
+const TEXT_SECONDARY = Theme.textSecondary;
+const TEXT_DISABLED = Theme.textDisabled;
 
 type TabType = 'followers' | 'following';
 
@@ -242,7 +244,10 @@ export default function FollowersFollowingScreen() {
                         {inProgress ? (
                             <ActivityIndicator size="small" color={TEXT_PRIMARY} />
                         ) : (
-                            <Text style={styles.followButtonText}>
+                            <Text style={[
+                                styles.followButtonText,
+                                isFollowing && styles.followingButtonText
+                            ]}>
                                 {isFollowing ? "Following" : "Follow"}
                             </Text>
                         )}
@@ -254,7 +259,7 @@ export default function FollowersFollowingScreen() {
 
     return (
         <View style={styles.container}>
-            <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
+
 
             <SafeAreaView style={styles.safeArea}>
                 {/* Header */}
@@ -320,7 +325,7 @@ export default function FollowersFollowingScreen() {
                         <View style={styles.listPane}>
                             {loadingFollowers ? (
                                 <View style={styles.centerContainer}>
-                                    <ActivityIndicator size="large" color={ACCENT} />
+                                    <ActivityIndicator size="large" color={TEXT_PRIMARY} />
                                 </View>
                             ) : followers.length === 0 ? (
                                 <View style={styles.emptyContainer}>
@@ -342,7 +347,7 @@ export default function FollowersFollowingScreen() {
                         <View style={styles.listPane}>
                             {loadingFollowing ? (
                                 <View style={styles.centerContainer}>
-                                    <ActivityIndicator size="large" color={ACCENT} />
+                                    <ActivityIndicator size="large" color={TEXT_PRIMARY} />
                                 </View>
                             ) : following.length === 0 ? (
                                 <View style={styles.emptyContainer}>
@@ -371,9 +376,7 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: BG_MAIN,
     },
-    gradient: {
-        ...StyleSheet.absoluteFillObject,
-    },
+
     safeArea: {
         flex: 1,
     },
@@ -516,7 +519,7 @@ const styles = StyleSheet.create({
         color: TEXT_SECONDARY,
     },
     followButton: {
-        backgroundColor: ACCENT,
+        backgroundColor: Theme.textPrimary,
         paddingVertical: 8,
         paddingHorizontal: 20,
         borderRadius: 20,
@@ -525,16 +528,19 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     followingButton: {
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        backgroundColor: Theme.bgMain,
         borderWidth: 1.5,
-        borderColor: 'rgba(255, 255, 255, 0.2)',
+        borderColor: Theme.textPrimary,
     },
     followButtonDisabled: {
         opacity: 0.6,
     },
     followButtonText: {
-        color: TEXT_PRIMARY,
+        color: Theme.textInverse,
         fontSize: 13,
         fontWeight: '600',
+    },
+    followingButtonText: {
+        color: Theme.textPrimary,
     },
 });

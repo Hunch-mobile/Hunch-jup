@@ -175,10 +175,7 @@ export default function EventDetailScreen() {
             {/* Floating Header */}
             <View style={styles.floatingHeader}>
               <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.refreshButton} onPress={loadEventDetails}>
-                <Ionicons name="refresh" size={20} color={TEXT_PRIMARY} />
+                <Ionicons name="chevron-back" size={20} color={TEXT_PRIMARY} />
               </TouchableOpacity>
             </View>
           </View>
@@ -292,32 +289,19 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
     paddingTop: 12,
     zIndex: 10,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    backdropFilter: 'blur(10px)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: BG_CARD,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  refreshButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    backdropFilter: 'blur(10px)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: BORDER,
   },
   // Event Info
   eventInfo: {

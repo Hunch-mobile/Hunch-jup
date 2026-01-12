@@ -2,7 +2,6 @@ import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
 import { Ionicons } from "@expo/vector-icons";
 import { useLoginWithOAuth, usePrivy } from "@privy-io/expo";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -187,9 +186,6 @@ export default function LoginScreen() {
                         style={styles.modalContent}
                         onPress={(e) => e.stopPropagation()}
                     >
-                        {/* Modal Handle */}
-                        <View style={styles.modalHandle} />
-
                         {/* Close Button */}
                         <TouchableOpacity
                             style={styles.closeButton}
@@ -365,14 +361,7 @@ const styles = StyleSheet.create({
         shadowRadius: 16,
         elevation: 16,
     },
-    modalHandle: {
-        width: 40,
-        height: 4,
-        backgroundColor: Theme.border,
-        borderRadius: 2,
-        alignSelf: "center",
-        marginBottom: 20,
-    },
+
     closeButton: {
         position: "absolute",
         top: 20,

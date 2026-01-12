@@ -1,7 +1,8 @@
 import { CreateTradeRequest, Event, EventsResponse, Follow, Market, MarketsResponse, SyncUserRequest, Trade, User } from './types';
 
 const API_BASE_URL = 'https://hunchdotrun-roan.vercel.app';
-const METADATA_API_BASE_URL = 'https://dev-prediction-markets-api.dflow.net';
+const METADATA_API_BASE_URL = 'https://a.prediction-markets-api.dflow.net';
+const DFLOW_API_KEY = process.env.EXPO_PUBLIC_DFLOW_API_KEY || '';
 
 export const api = {
     // User endpoints
@@ -135,7 +136,10 @@ export const marketsApi = {
             `${METADATA_API_BASE_URL}/api/v1/markets?limit=${limit}`,
             {
                 method: 'GET',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': DFLOW_API_KEY,
+                },
             }
         );
 
@@ -169,12 +173,22 @@ export const marketsApi = {
             `${METADATA_API_BASE_URL}/api/v1/events?${queryParams.toString()}`,
             {
                 method: 'GET',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': DFLOW_API_KEY,
+                },
             }
         );
 
         if (!response.ok) {
-            throw new Error(`Failed to fetch events: ${response.statusText}`);
+            let errorMessage = `Failed to fetch events: ${response.status} ${response.statusText}`;
+            try {
+                const errorData = await response.json();
+                errorMessage = `Failed to fetch events: ${errorData.error || errorData.message || response.statusText}`;
+            } catch {
+                // If response is not JSON, use status text
+            }
+            throw new Error(errorMessage);
         }
 
         const data: EventsResponse = await response.json();
@@ -187,7 +201,10 @@ export const marketsApi = {
             `${METADATA_API_BASE_URL}/api/v1/event/${eventTicker}?withNestedMarkets=true`,
             {
                 method: 'GET',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': DFLOW_API_KEY,
+                },
             }
         );
 
@@ -204,7 +221,10 @@ export const marketsApi = {
             `${METADATA_API_BASE_URL}/api/v1/market/by-mint/${mintAddress}`,
             {
                 method: 'GET',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': DFLOW_API_KEY,
+                },
             }
         );
 
@@ -221,7 +241,10 @@ export const marketsApi = {
             `${METADATA_API_BASE_URL}/api/v1/markets/batch`,
             {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': DFLOW_API_KEY,
+                },
                 body: JSON.stringify({ mints }),
             }
         );
@@ -262,7 +285,10 @@ export const marketsApi = {
             `${METADATA_API_BASE_URL}/api/v1/events?${queryParams.toString()}`,
             {
                 method: 'GET',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': DFLOW_API_KEY,
+                },
             }
         );
 
@@ -280,7 +306,10 @@ export const marketsApi = {
             `${METADATA_API_BASE_URL}/api/v1/filter_outcome_mints`,
             {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': DFLOW_API_KEY,
+                },
                 body: JSON.stringify({ addresses }),
             }
         );
@@ -299,7 +328,10 @@ export const marketsApi = {
             `${METADATA_API_BASE_URL}/api/v1/market/${ticker}`,
             {
                 method: 'GET',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': DFLOW_API_KEY,
+                },
             }
         );
 

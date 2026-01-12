@@ -1,5 +1,7 @@
+import { MarketRail } from "@/components/MarketRail";
 import { marketsApi } from "@/lib/api";
-import { Event } from "@/lib/types";
+import { formatPercent, getTopMarkets } from "@/lib/marketUtils";
+import { Event, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
@@ -22,9 +24,8 @@ const SUCCESS = Theme.success;
 const ERROR = Theme.error;
 
 const EventCard = ({ item }: { item: Event }) => {
-  const activeMarkets = item.markets?.filter(
-    market => market.status === 'active'
-  ) || [];
+  // Get top 2 markets sorted by highest probability
+  const topMarkets = getTopMarkets(item.markets, 2);
 
   const handlePress = () => {
     router.push({ pathname: '/event/[ticker]', params: { ticker: item.ticker } });
@@ -33,7 +34,7 @@ const EventCard = ({ item }: { item: Event }) => {
   return (
     <TouchableOpacity style={styles.eventCard} activeOpacity={0.7} onPress={handlePress}>
       <View style={styles.eventCardLayout}>
-        {/* Event Image - Left Side */}
+        {/* Left - Event Image */}
         {item.imageUrl ? (
           <Image
             source={{ uri: item.imageUrl }}
@@ -43,11 +44,11 @@ const EventCard = ({ item }: { item: Event }) => {
           />
         ) : (
           <View style={styles.eventImagePlaceholder}>
-            <Ionicons name="image-outline" size={32} color={TEXT_DISABLED} />
+            <Ionicons name="image-outline" size={24} color={TEXT_DISABLED} />
           </View>
         )}
 
-        {/* Event Content - Right Side */}
+        {/* Right Content */}
         <View style={styles.eventContent}>
           {item.competition && (
             <Text style={styles.competitionText}>{item.competition}</Text>
@@ -55,23 +56,21 @@ const EventCard = ({ item }: { item: Event }) => {
 
           <Text style={styles.eventTitle} numberOfLines={2}>{item.title}</Text>
 
-          {item.subtitle && (
-            <Text style={styles.eventSubtitle} numberOfLines={1}>{item.subtitle}</Text>
-          )}
-
-          {/* Event Stats */}
-          <View style={styles.eventStats}>
-            <View style={styles.statItem}>
-              <Ionicons name="pulse" size={12} color={ACCENT} />
-              <Text style={styles.statText}>{activeMarkets.length} markets</Text>
+          {/* Top Markets - Clean List */}
+          {topMarkets.length > 0 && (
+            <View style={styles.marketsContainer}>
+              {topMarkets.map((market: Market) => (
+                <View key={market.ticker} style={styles.marketRow}>
+                  <Text style={styles.marketTitle} numberOfLines={1}>
+                    {market.yesSubTitle || market.title}
+                  </Text>
+                  <Text style={styles.marketPercent}>
+                    {formatPercent(market.yesBid)}
+                  </Text>
+                </View>
+              ))}
             </View>
-            {item.volume && (
-              <View style={styles.statItem}>
-                <Ionicons name="trending-up" size={12} color={TEXT_DISABLED} />
-                <Text style={styles.statText}>${(item.volume / 1000000).toFixed(1)}M</Text>
-              </View>
-            )}
-          </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -149,6 +148,7 @@ export default function HomeScreen() {
             refreshing={loading}
             onRefresh={loadEvents}
             ItemSeparatorComponent={() => <View style={styles.separator} />}
+            ListHeaderComponent={<MarketRail />}
           />
         )}
       </SafeAreaView>
@@ -221,66 +221,64 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   eventCard: {
-    // Minimal list style
     paddingVertical: 16,
     paddingHorizontal: 20,
     backgroundColor: 'transparent',
   },
   eventCardLayout: {
     flexDirection: 'row',
-    height: 120,
+    alignItems: 'flex-start',
+    gap: 16,
   },
   eventImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 12,
+    width: 70,
+    height: 70,
+    borderRadius: 10,
   },
   eventImagePlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 12,
+    width: 70,
+    height: 70,
+    borderRadius: 10,
     backgroundColor: BG_CARD,
     justifyContent: 'center',
     alignItems: 'center',
   },
   eventContent: {
     flex: 1,
-    paddingLeft: 16,
-    justifyContent: 'space-between',
-    paddingVertical: 4,
+    gap: 6,
   },
   competitionText: {
     fontSize: 10,
-    fontWeight: '700',
-    color: ACCENT,
+    fontWeight: '600',
+    color: TEXT_SECONDARY,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 4,
+    letterSpacing: 0.5,
   },
   eventTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: TEXT_PRIMARY,
     lineHeight: 20,
-    marginBottom: 4,
   },
-  eventSubtitle: {
-    fontSize: 12,
-    color: TEXT_SECONDARY,
-    marginBottom: 8,
+  marketsContainer: {
+    gap: 4,
+    marginTop: 4,
   },
-  eventStats: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  statItem: {
+  marketRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'space-between',
+    paddingVertical: 4,
   },
-  statText: {
+  marketTitle: {
+    flex: 1,
+    fontSize: 13,
     color: TEXT_SECONDARY,
-    fontSize: 11,
-    fontWeight: '500',
+    marginRight: 8,
+  },
+  marketPercent: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
   },
 });

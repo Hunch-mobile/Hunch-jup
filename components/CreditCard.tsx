@@ -11,7 +11,6 @@ const CARD_WIDTH = SCREEN_WIDTH - 40;
 const CARD_HEIGHT = CARD_WIDTH * 0.63; // ~1.586 aspect ratio
 
 // Import theme from central location
-import { Theme } from '@/constants/theme';
 
 // Theme constants for card overlay
 const TEXT_PRIMARY = '#FFFFFF';
@@ -78,24 +77,24 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                         pointerEvents={isFlipped ? "none" : "auto"}
                     >
                         <ImageBackground
-                            source={require('@/assets/images/text.jpg')}
+                            source={require('@/assets/images/texture.jpeg')}
                             style={styles.textureBackground}
                             imageStyle={styles.textureImage}
                         >
                             <LinearGradient
-                                // Dark charcoal with subtle shading
-                                colors={['rgba(20, 20, 25, 0.75)', 'rgba(35, 35, 45, 0.7)', 'rgba(25, 25, 30, 0.75)']}
+                                // Green gradient overlay with transparency
+                                colors={[
+                                    'rgba(209, 250, 229, 0.5)',
+                                    'rgba(190, 242, 100, 0.5)',
+                                    'rgba(187, 247, 208, 0.5)'
+                                ]}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
                                 style={styles.gradient}
                             >
-                                {/* Decorative Blurs - subtle accent */}
-                                <View style={[styles.blurCircle, styles.blur1]} />
-                                <View style={[styles.blurCircle, styles.blur2]} />
-
                                 {/* Shine Effect - subtle top highlight */}
                                 <LinearGradient
-                                    colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.02)', 'transparent']}
+                                    colors={['rgba(255,255,255,0.3)', 'rgba(255,255,255,0.1)', 'transparent']}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 1, y: 1 }}
                                     style={StyleSheet.absoluteFillObject}
@@ -110,7 +109,7 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
 
                                     {/* Middle Row - Cash Balance */}
                                     <View style={styles.balanceSection}>
-                                        <Text style={styles.label}>Balance</Text>
+                                        <Text style={styles.label}>Cash Balance</Text>
                                         <Text style={styles.balanceValue}>${balance.toFixed(2)}</Text>
                                     </View>
 
@@ -137,24 +136,24 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                         pointerEvents={isFlipped ? "auto" : "none"}
                     >
                         <ImageBackground
-                            source={require('@/assets/images/text.jpg')}
+                            source={require('@/assets/images/texture.jpeg')}
                             style={styles.textureBackground}
                             imageStyle={styles.textureImage}
                         >
                             <LinearGradient
-                                // Dark charcoal matching front
-                                colors={['rgba(25, 25, 30, 0.75)', 'rgba(40, 40, 50, 0.7)', 'rgba(20, 20, 25, 0.75)']}
+                                // Light gray gradient overlay with transparency
+                                colors={[
+                                    'rgba(241, 245, 249, 0.5)',
+                                    'rgba(226, 232, 240, 0.5)',
+                                    'rgba(203, 213, 225, 0.5)'
+                                ]}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
                                 style={styles.gradient}
                             >
-                                {/* Decorative Blurs Back */}
-                                <View style={[styles.blurCircle, styles.blurBack1]} />
-                                <View style={[styles.blurCircle, styles.blurBack2]} />
-
                                 {/* Shine Effect - subtle top highlight */}
                                 <LinearGradient
-                                    colors={['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.02)', 'transparent']}
+                                    colors={['rgba(255,255,255,0.4)', 'rgba(255,255,255,0.1)', 'transparent']}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 1, y: 1 }}
                                     style={StyleSheet.absoluteFillObject}
@@ -206,8 +205,8 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                                                 setWithdrawOpen(true);
                                             }}
                                         >
-                                            <Ionicons name="arrow-up" size={18} color="#FFF" />
-                                            <Text style={styles.actionText}>Withdraw</Text>
+                                            <Ionicons name="arrow-up" size={18} color="#1e293b" />
+                                            <Text style={[styles.actionText, styles.withdrawButtonText]}>Withdraw</Text>
                                         </TouchableOpacity>
                                     </View>
 
@@ -274,45 +273,11 @@ const styles = StyleSheet.create({
     },
     textureImage: {
         borderRadius: 20,
-        opacity: 0.1,
+        opacity: 1.0,
     },
     contentContainer: {
         flex: 1,
         justifyContent: 'space-between',
-    },
-    // Decorative Blurs - subtle highlights
-    blurCircle: {
-        position: 'absolute',
-        borderRadius: 999,
-        opacity: 0.25,
-    },
-    blur1: {
-        top: -60,
-        right: -60,
-        width: 180,
-        height: 180,
-        backgroundColor: 'rgba(255,255,255,0.08)',
-    },
-    blur2: {
-        bottom: -50,
-        left: -50,
-        width: 150,
-        height: 150,
-        backgroundColor: 'rgba(255,255,255,0.05)',
-    },
-    blurBack1: {
-        top: -50,
-        left: -50,
-        width: 160,
-        height: 160,
-        backgroundColor: 'rgba(255,255,255,0.06)',
-    },
-    blurBack2: {
-        bottom: -50,
-        right: -50,
-        width: 180,
-        height: 180,
-        backgroundColor: 'rgba(255,255,255,0.04)',
     },
     // Text Styles
     topRow: {
@@ -320,7 +285,7 @@ const styles = StyleSheet.create({
     },
     tapText: {
         fontSize: 10,
-        color: 'rgba(255,255,255,0.5)',
+        color: 'rgba(0,0,0,0.6)',
         letterSpacing: 1,
         fontWeight: '600',
     },
@@ -330,7 +295,7 @@ const styles = StyleSheet.create({
     },
     label: {
         fontSize: 13,
-        color: 'rgba(255,255,255,0.6)',
+        color: 'rgba(0,0,0,0.8)',
         textTransform: 'uppercase',
         letterSpacing: 1,
         marginBottom: 4,
@@ -338,7 +303,7 @@ const styles = StyleSheet.create({
     },
     labelSmall: {
         fontSize: 11,
-        color: 'rgba(255,255,255,0.9)',
+        color: 'rgba(0,0,0,0.7)',
         textTransform: 'uppercase',
         letterSpacing: 0.5,
         marginBottom: 2,
@@ -346,8 +311,8 @@ const styles = StyleSheet.create({
     },
     balanceValue: {
         fontSize: 36,
-        color: TEXT_PRIMARY,
-        fontWeight: '600',
+        color: '#1e293b',
+        fontWeight: '700',
         letterSpacing: -1,
     },
     statsRow: {
@@ -357,12 +322,12 @@ const styles = StyleSheet.create({
     },
     statValue: {
         fontSize: 20,
-        color: TEXT_PRIMARY,
+        color: '#1e293b',
         fontWeight: '600',
     },
     statValueDim: {
         fontSize: 24,
-        color: 'rgba(255,255,255,0.6)',
+        color: 'rgba(0,0,0,0.5)',
         fontWeight: '700',
     },
     // Back styles
@@ -370,7 +335,7 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
     },
     copyButton: {
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: 'rgba(0,0,0,0.08)',
         padding: 8,
         borderRadius: 8,
         flexDirection: 'row',
@@ -395,24 +360,27 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: 'rgba(255,255,255,0.2)',
+        backgroundColor: '#1e293b',
         paddingVertical: 12,
         borderRadius: 12,
         gap: 8,
     },
     withdrawButton: {
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: '#FFFFFF',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.2)',
+        borderColor: 'rgba(0,0,0,0.2)',
     },
     actionText: {
         color: '#FFF',
         fontSize: 14,
         fontWeight: '700',
     },
+    withdrawButtonText: {
+        color: '#1e293b',
+    },
     tapBackText: {
         textAlign: 'center',
         fontSize: 10,
-        color: 'rgba(255,255,255,0.4)',
+        color: 'rgba(0,0,0,0.4)',
     },
 });

@@ -2,7 +2,7 @@ import CreditCard from "@/components/CreditCard";
 import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
 import { Trade, User } from "@/lib/types";
-import { FontAwesome, Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { usePrivy } from "@privy-io/expo";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -12,7 +12,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Import theme from central location
+import SettingsSheet from "@/components/SettingsSheet";
 import { Theme } from '@/constants/theme';
+import { useFundSolanaWallet } from "@privy-io/expo/ui";
 
 // Theme constants
 const ACCENT = Theme.accentSubtle;
@@ -32,10 +34,12 @@ export default function ProfileScreen() {
     const { user, logout } = usePrivy();
     const { backendUser, setBackendUser } = useUser();
     const router = useRouter();
+    const { fundWallet } = useFundSolanaWallet();
     const [profileData, setProfileData] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [trades, setTrades] = useState<Trade[]>([]);
     const [activeTab, setActiveTab] = useState<TradeTab>('active');
+    const [settingsVisible, setSettingsVisible] = useState(false);
 
     // Animation values
     const slideAnim = useRef(new Animated.Value(0)).current;
@@ -89,10 +93,11 @@ export default function ProfileScreen() {
         router.replace("/login");
     };
 
-    // Get Twitter/X data from linked accounts
+    // Get Twitter/X data from linked accounts and remove _normal for higher resolution
     const twitterAccount = user?.linked_accounts?.find((a: any) => a.type === 'twitter_oauth');
     const twitterHandle = (twitterAccount as any)?.username;
-    const profileImageUrl = (twitterAccount as any)?.profile_picture_url;
+    const rawProfileImageUrl = (twitterAccount as any)?.profile_picture_url;
+    const profileImageUrl = rawProfileImageUrl?.replace('_normal', '');
 
     const displayName = profileData?.displayName || backendUser?.displayName || "User";
     const followerCount = profileData?.followerCount || 0;
@@ -139,9 +144,19 @@ export default function ProfileScreen() {
                 >
                     {/* Profile Header Section */}
                     <View style={styles.profileHeader}>
-                        {/* Top Row: Avatar + Logout */}
-                        <View style={styles.topRow}>
-                            {/* Avatar with Edit Icon */}
+                        {/* Menu Icon - Top Right */}
+                        <View style={styles.logoutContainer}>
+                            <TouchableOpacity
+                                style={styles.headerBtn}
+                                onPress={() => setSettingsVisible(true)}
+                            >
+                                <Ionicons name="menu-outline" size={24} color={TEXT_SECONDARY} />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Main Profile Row: Avatar + Info */}
+                        <View style={styles.profileMainRow}>
+                            {/* Avatar */}
                             <View style={styles.avatarContainer}>
                                 <View style={styles.avatarWrapper}>
                                     <View style={styles.avatarInner}>
@@ -157,74 +172,60 @@ export default function ProfileScreen() {
                                         )}
                                     </View>
                                 </View>
-                                <TouchableOpacity style={styles.avatarEditBtn}>
-                                    <Ionicons name="pencil" size={12} color={Theme.textInverse} />
+                            </View>
+
+                            {/* Info Section - Right of Avatar */}
+                            <View style={styles.profileInfo}>
+                                {/* Name */}
+                                <Text style={styles.name}>{displayName}</Text>
+
+                                {/* Following / Followers */}
+                                <View style={styles.followRow}>
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            if (backendUser?.id) {
+                                                router.push({
+                                                    pathname: '/user/followers/[userId]',
+                                                    params: { userId: backendUser.id, tab: 'following' }
+                                                });
+                                            }
+                                        }}
+                                    >
+                                        <Text style={styles.followText}>
+                                            <Text style={styles.followCount}>{followingCount}</Text> Following
+                                        </Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            if (backendUser?.id) {
+                                                router.push({
+                                                    pathname: '/user/followers/[userId]',
+                                                    params: { userId: backendUser.id, tab: 'followers' }
+                                                });
+                                            }
+                                        }}
+                                    >
+                                        <Text style={styles.followText}>
+                                            <Text style={styles.followCount}>{followerCount}</Text> Followers
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                {/* Add Cash Button */}
+                                <TouchableOpacity
+                                    style={styles.addCashButton}
+                                    onPress={() => {
+                                        if (backendUser?.walletAddress) {
+                                            fundWallet({
+                                                address: backendUser.walletAddress,
+                                                amount: "0.2", // SOL
+                                            });
+                                        }
+                                    }}
+                                >
+                                    <Ionicons name="add-circle-outline" size={18} color={Theme.textPrimary} />
+                                    <Text style={styles.addCashText}>Add Cash</Text>
                                 </TouchableOpacity>
-                            </View>
-
-                            {/* Logout Icon */}
-                            <TouchableOpacity style={styles.headerBtn} onPress={handleLogout}>
-                                <Ionicons name="log-out-outline" size={20} color={TEXT_SECONDARY} />
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Name */}
-                        <Text style={styles.name}>{displayName}</Text>
-
-                        {/* Username with X/Twitter */}
-                        <View style={styles.usernameRow}>
-                            <Text style={styles.username}>
-                                @{twitterHandle || displayName.toLowerCase().replace(/\s/g, '')}
-                            </Text>
-                            <FontAwesome name="twitter" size={14} color={TEXT_PRIMARY} style={styles.twitterIcon} />
-                        </View>
-
-                        {/* Add Bio */}
-                        <TouchableOpacity>
-                            <Text style={styles.addBio}>+ Add a bio</Text>
-                        </TouchableOpacity>
-
-                        {/* Following / Followers */}
-                        <View style={styles.followRow}>
-                            <TouchableOpacity
-                                onPress={() => {
-                                    if (backendUser?.id) {
-                                        router.push({
-                                            pathname: '/user/followers/[userId]',
-                                            params: { userId: backendUser.id, tab: 'following' }
-                                        });
-                                    }
-                                }}
-                            >
-                                <Text style={styles.followText}>
-                                    <Text style={styles.followCount}>{followingCount}</Text> Following
-                                </Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={() => {
-                                    if (backendUser?.id) {
-                                        router.push({
-                                            pathname: '/user/followers/[userId]',
-                                            params: { userId: backendUser.id, tab: 'followers' }
-                                        });
-                                    }
-                                }}
-                            >
-                                <Text style={styles.followText}>
-                                    <Text style={styles.followCount}>{followerCount}</Text> Followers
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Stats Row */}
-                        <View style={styles.statsRow}>
-                            <View style={styles.statItem}>
-                                <Ionicons name="swap-horizontal-outline" size={14} color={TEXT_DISABLED} />
-                                <Text style={styles.statText}>{trades.length} trades</Text>
-                            </View>
-                            <View style={styles.statItem}>
-                                <Ionicons name="calendar-outline" size={14} color={TEXT_DISABLED} />
-                                <Text style={styles.statText}>Joined {joinedDate}</Text>
                             </View>
                         </View>
                     </View>
@@ -387,6 +388,17 @@ export default function ProfileScreen() {
                     <View style={{ height: 80 }} />
                 </ScrollView>
             </SafeAreaView>
+
+            {/* Settings Sheet */}
+            <SettingsSheet
+                visible={settingsVisible}
+                onClose={() => setSettingsVisible(false)}
+                onSwitchTheme={() => {
+                    // TODO: Implement theme switching logic
+                    console.log("Switch theme clicked");
+                }}
+                onLogout={handleLogout}
+            />
         </View>
     );
 }
@@ -407,101 +419,102 @@ const styles = StyleSheet.create({
         marginBottom: 24,
         paddingTop: 16,
     },
-    topRow: {
+    logoutContainer: {
+        alignItems: 'flex-end',
+        marginBottom: 20,
+    },
+    profileMainRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'flex-start',
+        gap: 16,
         marginBottom: 16,
+    },
+    profileInfo: {
+        flex: 1,
+        paddingTop: 4,
     },
     avatarContainer: {
         position: 'relative',
     },
     avatarWrapper: {
-        width: 72,
-        height: 72,
-        borderRadius: 36,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
         position: 'relative',
     },
     avatarInner: {
-        width: 72,
-        height: 72,
-        borderRadius: 36,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
         backgroundColor: BG_CARD,
         justifyContent: 'center',
         alignItems: 'center',
-        borderWidth: 2,
-        borderColor: Theme.textPrimary,
         overflow: 'hidden',
     },
     avatarImage: {
         width: '100%',
         height: '100%',
-        borderRadius: 36,
+        borderRadius: 28,
     },
     avatarText: {
-        fontSize: 28,
+        fontSize: 22,
         fontWeight: '700',
         color: TEXT_PRIMARY,
     },
-    avatarEditBtn: {
-        position: 'absolute',
-        bottom: 0,
-        right: 0,
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: Theme.textPrimary,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 2,
-        borderColor: BG_MAIN,
-    },
+
     headerBtn: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: BG_CARD,
         justifyContent: 'center',
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: BORDER,
     },
     name: {
-        fontSize: 24,
+        fontSize: 20,
         fontWeight: '700',
         color: TEXT_PRIMARY,
-        marginBottom: 4,
+        marginBottom: 12,
     },
     usernameRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        marginBottom: 8,
+        marginBottom: 10,
     },
     username: {
-        fontSize: 14,
+        fontSize: 13,
         color: TEXT_SECONDARY,
     },
     twitterIcon: {
         opacity: 0.8,
     },
-    addBio: {
-        fontSize: 14,
-        color: TEXT_SECONDARY,
-        marginBottom: 16,
-    },
     followRow: {
         flexDirection: 'row',
-        gap: 16,
-        marginBottom: 16,
+        gap: 20,
+        marginBottom: 8,
     },
     followText: {
-        fontSize: 14,
+        fontSize: 16,
         color: TEXT_SECONDARY,
     },
     followCount: {
-        fontWeight: '700',
+        fontWeight: '600',
         color: TEXT_PRIMARY,
+    },
+    addCashButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+        backgroundColor: 'transparent',
+        borderRadius: 20,
+        borderWidth: 1.5,
+        borderColor: Theme.textPrimary,
+        alignSelf: 'flex-start',
+        marginTop: 4,
+    },
+    addCashText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: Theme.textPrimary,
     },
     statsRow: {
         flexDirection: 'row',

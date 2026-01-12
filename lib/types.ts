@@ -132,6 +132,7 @@ export interface Event {
     volume24h?: number;
     liquidity?: number;
     openInterest?: number;
+    closeTime?: number;
     settlementSources?: SettlementSource[] | any;
     markets?: Market[];
 }
