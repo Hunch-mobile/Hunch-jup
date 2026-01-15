@@ -145,3 +145,24 @@ export interface EventsResponse {
     events: Event[];
     cursor?: number;
 }
+
+// Candlestick chart data types
+export interface CandleData {
+    timestamp: number;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+}
+
+export interface CandlesResponse {
+    candles: CandleData[];
+    marketTicker: string;
+    resolution: string;
+}
+
+export interface CandlesticksByMintResponse {
+    candlesticks: CandleData[];
+    ticker: string;
+}

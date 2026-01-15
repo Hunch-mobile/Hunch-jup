@@ -4,78 +4,54 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Import theme from central location
+import { MultiMarketChart } from '@/components/MultiMarketChart';
 import { Theme } from '@/constants/theme';
 
-// Theme constants
-const ACCENT = Theme.accentSubtle;
-const BG_MAIN = Theme.bgMain;
-const BG_CARD = Theme.bgCard;
-const BG_ELEVATED = Theme.bgElevated;
-const BORDER = Theme.border;
-const TEXT_PRIMARY = Theme.textPrimary;
-const TEXT_SECONDARY = Theme.textSecondary;
-const TEXT_DISABLED = Theme.textDisabled;
-const SUCCESS = Theme.success;
-const ERROR = Theme.error;
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
-const MarketCard = ({ item }: { item: Market }) => {
+// Simplified MarketCard for the list below charts
+const MarketCard = ({ item, isCompact = false }: { item: Market; isCompact?: boolean }) => {
   const handlePress = () => {
     router.push({ pathname: '/market/[ticker]', params: { ticker: item.ticker } });
   };
 
-  // Calculate probability from bid/ask if available
   const yesBid = item.yesBid ? parseFloat(item.yesBid) * 100 : null;
   const yesAsk = item.yesAsk ? parseFloat(item.yesAsk) * 100 : null;
   const probability = yesBid && yesAsk ? ((yesBid + yesAsk) / 2) : null;
 
+  // Use yesSubTitle if available, otherwise fallback to title
+  const displayTitle = item.yesSubTitle || item.title;
+
   return (
     <TouchableOpacity style={styles.marketCard} activeOpacity={0.7} onPress={handlePress}>
-      <View style={styles.marketCardContent}>
-        <View style={styles.marketTop}>
-          <View style={styles.marketTopLeft}>
-            {item.status === 'active' && (
-              <View style={styles.activeDot} />
-            )}
-            <Text style={styles.marketTitle} numberOfLines={2}>{item.title}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={TEXT_DISABLED} />
+      <View style={styles.marketCardRow}>
+        <View style={styles.marketCardLeft}>
+          <Text style={styles.marketTitle} numberOfLines={2}>{displayTitle}</Text>
         </View>
-
-        {item.yesSubTitle && (
-          <Text style={styles.outcomeLabel} numberOfLines={1}>
-            Yes: {item.yesSubTitle}
+        <View style={styles.marketCardRight}>
+          <Text style={styles.probabilityValue}>
+            {probability ? `${probability.toFixed(0)}%` : '--'}
           </Text>
-        )}
-
-        <View style={styles.marketStats}>
-          <View style={styles.statRow}>
-            <View style={styles.statCol}>
-              <Text style={styles.statLabel}>Probability</Text>
-              <Text style={styles.statValue}>
-                {probability ? `${probability.toFixed(1)}%` : '--'}
-              </Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statCol}>
-              <Text style={styles.statLabel}>Volume</Text>
-              <Text style={styles.statValue}>
-                ${((item.volume || 0) / 1000).toFixed(1)}K
-              </Text>
-            </View>
-          </View>
+          <Ionicons name="chevron-forward" size={18} color={Theme.textDisabled} />
         </View>
-
-        {probability && (
-          <View style={styles.probabilityBar}>
-            <View style={[styles.probabilityFill, { width: `${probability}%` }]} />
-          </View>
-        )}
       </View>
+      {item.volume && item.volume > 0 && (
+        <Text style={styles.volumeText}>
+          Vol: ${((item.volume || 0) / 1000).toFixed(1)}K
+        </Text>
+      )}
     </TouchableOpacity>
   );
 };
@@ -85,6 +61,7 @@ export default function EventDetailScreen() {
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [chartScrollEnabled, setChartScrollEnabled] = useState(true);
 
   useEffect(() => {
     if (ticker) {
@@ -106,19 +83,49 @@ export default function EventDetailScreen() {
     }
   };
 
-  const activeMarkets = event?.markets?.filter(
-    market => market.status !== 'finalized' &&
-      market.status !== 'resolved' &&
-      market.status !== 'closed'
-  ) || [];
+  // Filter active markets and sort by highest YES percentage
+  const activeMarkets = useMemo(() => {
+    const markets = event?.markets?.filter(
+      market => market.status !== 'finalized' &&
+        market.status !== 'resolved' &&
+        market.status !== 'closed'
+    ) || [];
+
+    // Sort by YES percentage (highest first)
+    return markets.sort((a, b) => {
+      const aYesBid = a.yesBid ? parseFloat(a.yesBid) * 100 : 0;
+      const aYesAsk = a.yesAsk ? parseFloat(a.yesAsk) * 100 : 0;
+      const aProbability = aYesBid && aYesAsk ? (aYesBid + aYesAsk) / 2 : 0;
+
+      const bYesBid = b.yesBid ? parseFloat(b.yesBid) * 100 : 0;
+      const bYesAsk = b.yesAsk ? parseFloat(b.yesAsk) * 100 : 0;
+      const bProbability = bYesBid && bYesAsk ? (bYesBid + bYesAsk) / 2 : 0;
+
+      return bProbability - aProbability; // Descending order
+    });
+  }, [event?.markets]);
+
+  // Get top 4 markets by volume for charts
+  const topMarketsForCharts = useMemo(() => {
+    return [...activeMarkets]
+      .filter(m => m.yesMint || (m.accounts && Object.values(m.accounts).some(a => a?.yesMint)))
+      .sort((a, b) => (b.volume || 0) - (a.volume || 0))
+      .slice(0, 4);
+  }, [activeMarkets]);
+
+  // Remaining markets not in the chart section
+  const remainingMarkets = useMemo(() => {
+    const topTickers = new Set(topMarketsForCharts.map(m => m.ticker));
+    return activeMarkets.filter(m => !topTickers.has(m.ticker));
+  }, [activeMarkets, topMarketsForCharts]);
 
   if (loading) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[BG_MAIN, BG_CARD]} style={styles.gradient} />
+        <LinearGradient colors={[Theme.bgMain, Theme.bgCard]} style={styles.gradient} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color={ACCENT} />
+            <ActivityIndicator size="large" color={Theme.accentSubtle} />
           </View>
         </SafeAreaView>
       </View>
@@ -128,15 +135,15 @@ export default function EventDetailScreen() {
   if (error || !event) {
     return (
       <View style={styles.container}>
-        <LinearGradient colors={[BG_MAIN, BG_CARD]} style={styles.gradient} />
+        <LinearGradient colors={[Theme.bgMain, Theme.bgCard]} style={styles.gradient} />
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
+              <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
             </TouchableOpacity>
           </View>
           <View style={styles.centerContainer}>
-            <Ionicons name="alert-circle-outline" size={64} color={ERROR} />
+            <Ionicons name="alert-circle-outline" size={64} color={Theme.error} />
             <Text style={styles.errorText}>{error || "Event not found"}</Text>
             <TouchableOpacity style={styles.retryButton} onPress={loadEventDetails}>
               <Text style={styles.retryText}>Retry</Text>
@@ -149,11 +156,15 @@ export default function EventDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={[BG_MAIN, BG_CARD]} style={styles.gradient} />
+      <LinearGradient colors={[Theme.bgMain, Theme.bgCard]} style={styles.gradient} />
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          {/* Hero Image with Overlay */}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          scrollEnabled={chartScrollEnabled}
+        >
+          {/* Compact Hero Section */}
           <View style={styles.heroContainer}>
             {event.imageUrl ? (
               <Image
@@ -164,77 +175,69 @@ export default function EventDetailScreen() {
               />
             ) : (
               <View style={styles.heroPlaceholder}>
-                <Ionicons name="image-outline" size={64} color={TEXT_DISABLED} />
+                <Ionicons name="image-outline" size={48} color={Theme.textDisabled} />
               </View>
             )}
             <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.7)', BG_MAIN]}
+              colors={['transparent', 'rgba(0,0,0,0.8)', Theme.bgMain]}
               style={styles.heroGradient}
             />
-            
-            {/* Floating Header */}
-            <View style={styles.floatingHeader}>
-              <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                <Ionicons name="chevron-back" size={20} color={TEXT_PRIMARY} />
-              </TouchableOpacity>
+
+            {/* Back Button */}
+            <TouchableOpacity style={styles.floatingBackButton} onPress={() => router.back()}>
+              <Ionicons name="chevron-back" size={20} color={Theme.textPrimary} />
+            </TouchableOpacity>
+
+            {/* Event Info Overlay */}
+            <View style={styles.heroContent}>
+              {event.competition && (
+                <View style={styles.competitionBadge}>
+                  <Text style={styles.competitionText}>{event.competition}</Text>
+                </View>
+              )}
+              <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
             </View>
           </View>
-
-        {/* Event Info */}
-        <View style={styles.eventInfo}>
-          {event.competition && (
-            <View style={styles.competitionBadge}>
-              <Text style={styles.competitionText}>{event.competition}</Text>
-              {event.competitionScope && (
-                <Text style={styles.competitionScope}> • {event.competitionScope}</Text>
-              )}
-            </View>
-          )}
-          
-          <Text style={styles.eventTitle}>{event.title}</Text>
-          
-          {event.subtitle && (
-            <Text style={styles.eventSubtitle}>{event.subtitle}</Text>
-          )}
 
           {/* Stats Row */}
           <View style={styles.statsRow}>
-            <View style={styles.statPill}>
-              <Ionicons name="pulse" size={14} color={ACCENT} />
-              <Text style={styles.statPillText}>{activeMarkets.length} Markets</Text>
+            <View style={styles.statItem}>
+              <Ionicons name="pulse" size={14} color={Theme.accentSubtle} />
+              <Text style={styles.statText}>{activeMarkets.length} Markets</Text>
             </View>
-            {event.volume && (
-              <View style={styles.statPill}>
-                <Ionicons name="trending-up" size={14} color={TEXT_SECONDARY} />
-                <Text style={styles.statPillText}>${(event.volume / 1000000).toFixed(1)}M Vol</Text>
-              </View>
-            )}
-            {event.liquidity && (
-              <View style={styles.statPill}>
-                <Ionicons name="water" size={14} color={TEXT_SECONDARY} />
-                <Text style={styles.statPillText}>${(event.liquidity / 1000000).toFixed(1)}M Liq</Text>
+            {event.volume && event.volume > 0 && (
+              <View style={styles.statItem}>
+                <Ionicons name="trending-up" size={14} color={Theme.textSecondary} />
+                <Text style={styles.statText}>${(event.volume / 1000000).toFixed(1)}M Vol</Text>
               </View>
             )}
           </View>
-        </View>
 
-        {/* Markets Section */}
-        <View style={styles.marketsSection}>
-          <Text style={styles.sectionTitle}>Markets</Text>
-          {activeMarkets.length === 0 ? (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIcon}>
-                <Ionicons name="bar-chart-outline" size={48} color={TEXT_DISABLED} />
-              </View>
-              <Text style={styles.emptyText}>No active markets</Text>
-              <Text style={styles.emptySubtext}>Check back later for new markets</Text>
+          {/* Top Markets Charts Section */}
+          {topMarketsForCharts.length > 0 && (
+            <View style={styles.chartsSection}>
+              <MultiMarketChart
+                markets={topMarketsForCharts}
+                onInteractionStart={() => setChartScrollEnabled(false)}
+                onInteractionEnd={() => setChartScrollEnabled(true)}
+              />
             </View>
-          ) : (
-            activeMarkets.map((market) => (
-              <MarketCard key={market.ticker} item={market} />
-            ))
           )}
-        </View>
+
+          {/* All Markets List */}
+          <View style={styles.marketsSection}>
+            <Text style={styles.sectionTitle}>Markets</Text>
+            {activeMarkets.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="bar-chart-outline" size={40} color={Theme.textDisabled} />
+                <Text style={styles.emptyText}>No markets available</Text>
+              </View>
+            ) : (
+              activeMarkets.map((market) => (
+                <MarketCard key={market.ticker} item={market} />
+              ))
+            )}
+          </View>
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -246,14 +249,7 @@ export default function EventDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG_MAIN,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 12,
+    backgroundColor: Theme.bgMain,
   },
   gradient: {
     ...StyleSheet.absoluteFillObject,
@@ -264,10 +260,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
   },
-  // Hero Section
+  // Hero Section - Compact
   heroContainer: {
     position: 'relative',
-    height: 320,
+    height: 200,
   },
   heroImage: {
     width: '100%',
@@ -276,217 +272,166 @@ const styles = StyleSheet.create({
   heroPlaceholder: {
     width: '100%',
     height: '100%',
-    backgroundColor: BG_CARD,
+    backgroundColor: Theme.bgCard,
     justifyContent: 'center',
     alignItems: 'center',
   },
   heroGradient: {
     ...StyleSheet.absoluteFillObject,
   },
-  floatingHeader: {
+  floatingBackButton: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    zIndex: 10,
-  },
-  backButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: BG_CARD,
+    top: 12,
+    left: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: BORDER,
   },
-  // Event Info
-  eventInfo: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 24,
+  heroContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
   },
   competitionBadge: {
-    flexDirection: 'row',
     alignSelf: 'flex-start',
-    backgroundColor: `rgba(63, 227, 255, 0.12)`,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: `rgba(63, 227, 255, 0.2)`,
+    backgroundColor: 'rgba(63, 227, 255, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginBottom: 8,
   },
   competitionText: {
-    color: ACCENT,
-    fontSize: 11,
+    color: Theme.accentSubtle,
+    fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
-  competitionScope: {
-    color: TEXT_SECONDARY,
-    fontSize: 11,
-    fontWeight: '600',
-  },
   eventTitle: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '700',
-    color: TEXT_PRIMARY,
-    marginBottom: 8,
-    lineHeight: 36,
+    color: Theme.textPrimary,
+    lineHeight: 28,
   },
-  eventSubtitle: {
-    fontSize: 15,
-    color: TEXT_SECONDARY,
-    marginBottom: 16,
-    lineHeight: 22,
-  },
+  // Stats Row
   statsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 16,
   },
-  statPill: {
+  statItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: BG_CARD,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: BORDER,
   },
-  statPillText: {
-    color: TEXT_SECONDARY,
+  statText: {
+    color: Theme.textSecondary,
     fontSize: 13,
     fontWeight: '600',
   },
-  // Markets Section
-  marketsSection: {
-    paddingHorizontal: 20,
+  // Charts Section
+  chartsSection: {
+    marginTop: 8,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: TEXT_PRIMARY,
-    marginBottom: 16,
+    color: Theme.textPrimary,
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
-  // Market Card
+  chartsList: {
+    paddingHorizontal: 16,
+  },
+  // Markets Section
+  marketsSection: {
+    marginTop: 24,
+    paddingHorizontal: 16,
+  },
+  // Market Card - Simplified
   marketCard: {
-    backgroundColor: BG_CARD,
-    borderRadius: 16,
+    backgroundColor: Theme.bgCard,
+    borderRadius: 14,
+    padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: BORDER,
-    overflow: 'hidden',
+    borderColor: Theme.border,
   },
-  marketCardContent: {
-    padding: 16,
-  },
-  marketTop: {
+  marketCardRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
+    alignItems: 'center',
+    gap: 12,
   },
-  marketTopLeft: {
+  marketCardLeft: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
+    gap: 10,
+    paddingRight: 8,
   },
   activeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: ACCENT,
-    marginTop: 7,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Theme.accentSubtle,
+    marginTop: 4,
   },
   marketTitle: {
     flex: 1,
     fontSize: 15,
     fontWeight: '600',
-    color: TEXT_PRIMARY,
+    color: Theme.textPrimary,
     lineHeight: 21,
   },
-  outcomeLabel: {
-    fontSize: 12,
-    color: TEXT_DISABLED,
-    fontStyle: 'italic',
-    marginBottom: 12,
-  },
-  marketStats: {
-    marginBottom: 12,
-  },
-  statRow: {
+  marketCardRight: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
   },
-  statCol: {
-    flex: 1,
-    gap: 4,
-  },
-  statDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: BORDER,
-    marginHorizontal: 16,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: TEXT_SECONDARY,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontWeight: '600',
-  },
-  statValue: {
-    fontSize: 18,
+  probabilityValue: {
+    fontSize: 20,
     fontWeight: '700',
-    color: TEXT_PRIMARY,
+    color: Theme.textPrimary,
+    minWidth: 50,
+    textAlign: 'right',
   },
-  probabilityBar: {
-    height: 4,
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  probabilityFill: {
-    height: '100%',
-    backgroundColor: ACCENT,
-    borderRadius: 999,
+  volumeText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: Theme.textSecondary,
+    fontWeight: '500',
   },
   // Empty State
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: BG_CARD,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: BORDER,
+    paddingVertical: 40,
+    gap: 8,
   },
   emptyText: {
-    color: TEXT_PRIMARY,
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  emptySubtext: {
-    color: TEXT_SECONDARY,
+    color: Theme.textDisabled,
     fontSize: 14,
   },
-  // Error State
+  // Error/Loading States
+  header: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  backButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Theme.bgCard,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -494,24 +439,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   errorText: {
-    color: ERROR,
+    color: Theme.error,
     fontSize: 16,
     marginTop: 16,
     marginBottom: 12,
     textAlign: 'center',
   },
   retryButton: {
-    backgroundColor: BG_CARD,
+    backgroundColor: Theme.bgCard,
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: Theme.border,
   },
   retryText: {
-    color: TEXT_PRIMARY,
+    color: Theme.textPrimary,
     fontSize: 14,
     fontWeight: '600',
   },
 });
-

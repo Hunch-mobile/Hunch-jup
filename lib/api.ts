@@ -1,8 +1,15 @@
-import { CreateTradeRequest, Event, EventsResponse, Follow, Market, MarketsResponse, SyncUserRequest, Trade, User } from './types';
+import { CandleData, CreateTradeRequest, Event, EventsResponse, Follow, Market, MarketsResponse, SyncUserRequest, Trade, User } from './types';
 
 const API_BASE_URL = 'https://hunchdotrun-roan.vercel.app';
 const METADATA_API_BASE_URL = 'https://a.prediction-markets-api.dflow.net';
 const DFLOW_API_KEY = process.env.EXPO_PUBLIC_DFLOW_API_KEY || '';
+
+// Log API key status on initialization (not the actual key)
+if (!DFLOW_API_KEY) {
+    console.warn('[API] ⚠ DFLOW_API_KEY is not set! API calls may fail.');
+} else {
+    console.log('[API] ✓ DFLOW_API_KEY is configured');
+}
 
 export const api = {
     // User endpoints
@@ -340,6 +347,83 @@ export const marketsApi = {
         }
 
         return await response.json();
+    },
+
+    // Fetch candlestick data for charts by market mint address
+    fetchCandlesticksByMint: async (
+        mintAddress: string,
+        options?: {
+            startTs?: number;
+            endTs?: number;
+            periodInterval?: number; // in seconds (60 = 1min, 3600 = 1hr, 86400 = 1day)
+        }
+    ): Promise<CandleData[]> => {
+        const queryParams = new URLSearchParams();
+        if (options?.startTs) queryParams.append('startTs', options.startTs.toString());
+        if (options?.endTs) queryParams.append('endTs', options.endTs.toString());
+        if (options?.periodInterval) queryParams.append('periodInterval', options.periodInterval.toString());
+
+        const url = `${METADATA_API_BASE_URL}/api/v1/market/by-mint/${mintAddress}/candlesticks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+        try {
+            console.log(`[fetchCandlesticksByMint] Calling: ${url}`);
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': DFLOW_API_KEY,
+                },
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[fetchCandlesticksByMint] API Error (${response.status}) for mint ${mintAddress}:`, errorText);
+                return [];
+            }
+
+            const data: any = await response.json();
+            console.log(`[fetchCandlesticksByMint] Response for mint ${mintAddress.substring(0, 8)}...:`, {
+                hasCandlesticks: !!data.candlesticks,
+                count: data.candlesticks?.length || 0,
+                firstCandle: data.candlesticks?.[0] || null
+            });
+
+            // Validate response structure
+            if (!data.candlesticks || !Array.isArray(data.candlesticks)) {
+                console.warn(`[fetchCandlesticksByMint] Invalid response structure for mint ${mintAddress}:`, data);
+                return [];
+            }
+
+            // Transform the API response to match CandleData interface
+            // API returns: { candlesticks: [{ end_period_ts, price: { open, high, low, close }, volume }] }
+            // We need: { timestamp, open, high, low, close, volume }
+            const candlesticks = data.candlesticks
+                .filter((candle: any) => {
+                    // Validate candle structure
+                    if (!candle.end_period_ts || !candle.price) {
+                        console.warn(`[fetchCandlesticksByMint] Invalid candle structure:`, candle);
+                        return false;
+                    }
+                    return true;
+                })
+                .map((candle: any) => ({
+                    timestamp: candle.end_period_ts,
+                    // Convert from cents to decimal (divide by 100)
+                    open: (candle.price.open || 0) / 100,
+                    high: (candle.price.high || 0) / 100,
+                    low: (candle.price.low || 0) / 100,
+                    close: (candle.price.close || 0) / 100,
+                    volume: candle.volume || 0,
+                }));
+
+            console.log(`[fetchCandlesticksByMint] Transformed ${candlesticks.length} candles. Price range: ${Math.min(...candlesticks.map((c: CandleData) => c.low)).toFixed(4)} - ${Math.max(...candlesticks.map((c: CandleData) => c.high)).toFixed(4)}`);
+            
+            return candlesticks;
+        } catch (error) {
+            console.error(`[fetchCandlesticksByMint] Error fetching candlesticks for mint ${mintAddress}:`, error);
+            return [];
+        }
     },
 };
 
