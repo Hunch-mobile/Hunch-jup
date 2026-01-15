@@ -1,33 +1,9 @@
+import { Theme } from '@/constants/theme';
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
-import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
-} from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-// Import theme from central location
-import { Theme } from '@/constants/theme';
-
-// Use theme constants
-const ACCENT = Theme.accentSubtle;
-const BG_MAIN = Theme.bgMain;
-const BG_SHEET = Theme.bgMain;
-const BG_ELEVATED = Theme.bgElevated;
-const TEXT_PRIMARY = Theme.textPrimary;
-const TEXT_SECONDARY = Theme.textSecondary;
-const TEXT_DISABLED = Theme.textDisabled;
-const SUCCESS = Theme.success;
-const ERROR = Theme.error;
 
 interface TradeQuoteSheetProps {
     visible: boolean;
@@ -54,53 +30,51 @@ export default function TradeQuoteSheet({
     const [quote, setQuote] = useState("");
 
     const handleSubmit = async () => {
-        if (quote.trim()) {
-            await onSubmit(quote.trim());
-        }
+        if (quote.trim()) await onSubmit(quote.trim());
     };
 
     const isYes = tradeInfo.side === 'yes';
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <Pressable style={styles.overlay} onPress={onClose}>
-                <KeyboardAvoidingView
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
-                    keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-                    style={styles.kav}
-                >
+            <Pressable className="flex-1 bg-black/90 justify-center items-center p-5" onPress={onClose}>
+                <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.kav}>
                     <Pressable
                         style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}
                         onPress={(e) => e.stopPropagation()}
                     >
-                        {/* Animated Success Icon */}
-                        <View style={styles.iconContainer}>
-                            <View style={[styles.glowCircle, isYes ? styles.glowYes : styles.glowNo]} />
+                        {/* Success Icon */}
+                        <View className="items-center mb-8 relative">
+                            <View className={`absolute w-[100px] h-[100px] rounded-full opacity-30 ${isYes ? 'bg-green-500' : 'bg-red-500'}`} />
                             <LinearGradient
                                 colors={isYes ? ['#00FF88', '#00CC6E'] : ['#FF3B5C', '#CC2E49']}
-                                style={styles.iconCircle}
+                                className="w-20 h-20 rounded-full justify-center items-center"
                             >
                                 <Ionicons name="checkmark-sharp" size={40} color="#000" />
                             </LinearGradient>
                         </View>
 
                         {/* Trade Summary */}
-                        <View style={styles.summary}>
-                            <Text style={styles.amount}>${tradeInfo.amount}</Text>
-                            <View style={styles.sideContainer}>
-                                <Text style={styles.onText}>on</Text>
-                                <View style={[styles.sideBadge, isYes ? styles.yesBadge : styles.noBadge]}>
-                                    <Text style={styles.sideText}>{tradeInfo.side.toUpperCase()}</Text>
+                        <View className="items-center mb-8">
+                            <Text className="text-5xl font-extrabold text-txt-primary tracking-tight mb-3">
+                                ${tradeInfo.amount}
+                            </Text>
+                            <View className="flex-row items-center gap-2">
+                                <Text className="text-base text-txt-secondary font-medium">on</Text>
+                                <View className={`px-4 py-1.5 rounded-full ${isYes ? 'bg-green-500/15' : 'bg-red-500/15'}`}>
+                                    <Text className="text-[15px] font-bold text-txt-primary tracking-wide">
+                                        {tradeInfo.side.toUpperCase()}
+                                    </Text>
                                 </View>
                             </View>
                         </View>
 
                         {/* Quote Input */}
-                        <View style={styles.inputContainer}>
+                        <View className="mb-6">
                             <TextInput
-                                style={styles.input}
+                                className="bg-white/5 rounded-[20px] border border-white/10 p-[18px] min-h-[120px] text-txt-primary text-base leading-6"
                                 placeholder="Share your reasoning... (optional)"
-                                placeholderTextColor={TEXT_DISABLED}
+                                placeholderTextColor={Theme.textDisabled}
                                 value={quote}
                                 onChangeText={setQuote}
                                 multiline
@@ -109,35 +83,31 @@ export default function TradeQuoteSheet({
                                 autoFocus
                             />
                             {quote.length > 0 && (
-                                <Text style={styles.charCount}>{quote.length}/280</Text>
+                                <Text className="text-xs text-txt-disabled text-right mt-2 font-medium">{quote.length}/280</Text>
                             )}
                         </View>
 
                         {/* Actions */}
-                        <View style={styles.actions}>
+                        <View className="flex-row gap-3">
                             <TouchableOpacity
-                                style={styles.skipButton}
+                                className="flex-1 h-14 justify-center items-center bg-white/5 rounded-2xl border border-white/10"
                                 onPress={onSkip}
                                 disabled={submitting}
                             >
-                                <Text style={styles.skipText}>Skip</Text>
+                                <Text className="text-base font-semibold text-txt-secondary">Skip</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
-                                style={[styles.shareButton, !quote.trim() && styles.disabled]}
+                                className={`flex-1 h-14 flex-row justify-center items-center gap-2 rounded-2xl ${quote.trim() ? 'bg-txt-primary' : 'bg-white/10'}`}
                                 onPress={handleSubmit}
                                 disabled={!quote.trim() || submitting}
                             >
                                 {submitting ? (
-                                    <ActivityIndicator size="small" color={TEXT_PRIMARY} />
+                                    <ActivityIndicator size="small" color={Theme.textPrimary} />
                                 ) : (
                                     <>
-                                        <Ionicons 
-                                            name="arrow-forward" 
-                                            size={20} 
-                                            color={quote.trim() ? TEXT_PRIMARY : TEXT_DISABLED} 
-                                        />
-                                        <Text style={[styles.shareText, !quote.trim() && styles.disabledText]}>
+                                        <Ionicons name="arrow-forward" size={20} color={quote.trim() ? Theme.bgMain : Theme.textDisabled} />
+                                        <Text className={`text-base font-bold ${quote.trim() ? 'text-app-bg' : 'text-txt-disabled'}`}>
                                             Post
                                         </Text>
                                     </>
@@ -151,159 +121,18 @@ export default function TradeQuoteSheet({
     );
 }
 
+// Minimal styles for sheet and gradient sizing
 const styles = StyleSheet.create({
-    overlay: {
-        flex: 1,
-        backgroundColor: "rgba(0,0,0,0.92)",
-        justifyContent: "center",
-        alignItems: "center",
-        padding: 20,
-    },
     kav: {
         width: "100%",
         maxWidth: 440,
     },
     sheet: {
-        backgroundColor: BG_SHEET,
+        backgroundColor: Theme.bgMain,
         borderRadius: 32,
         paddingHorizontal: 28,
         paddingTop: 40,
         borderWidth: 1,
         borderColor: "rgba(255,255,255,0.08)",
-    },
-    iconContainer: {
-        alignItems: "center",
-        marginBottom: 32,
-        position: "relative",
-    },
-    glowCircle: {
-        position: "absolute",
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        opacity: 0.3,
-        ...Platform.select({
-            ios: {
-                shadowColor: SUCCESS,
-                shadowOffset: { width: 0, height: 0 },
-                shadowOpacity: 0.8,
-                shadowRadius: 30,
-            },
-            android: {
-                elevation: 20,
-            },
-        }),
-    },
-    glowYes: {
-        backgroundColor: SUCCESS,
-    },
-    glowNo: {
-        backgroundColor: ERROR,
-    },
-    iconCircle: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    summary: {
-        alignItems: "center",
-        marginBottom: 32,
-    },
-    amount: {
-        fontSize: 48,
-        fontWeight: "800",
-        color: TEXT_PRIMARY,
-        letterSpacing: -1,
-        marginBottom: 12,
-    },
-    sideContainer: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-    },
-    onText: {
-        fontSize: 16,
-        color: TEXT_SECONDARY,
-        fontWeight: "500",
-    },
-    sideBadge: {
-        paddingHorizontal: 16,
-        paddingVertical: 6,
-        borderRadius: 20,
-    },
-    yesBadge: {
-        backgroundColor: "rgba(0, 255, 136, 0.15)",
-    },
-    noBadge: {
-        backgroundColor: "rgba(255, 59, 92, 0.15)",
-    },
-    sideText: {
-        fontSize: 15,
-        fontWeight: "700",
-        color: TEXT_PRIMARY,
-        letterSpacing: 0.5,
-    },
-    inputContainer: {
-        marginBottom: 24,
-    },
-    input: {
-        backgroundColor: "rgba(255,255,255,0.04)",
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: "rgba(255,255,255,0.08)",
-        padding: 18,
-        minHeight: 120,
-        color: TEXT_PRIMARY,
-        fontSize: 16,
-        lineHeight: 24,
-    },
-    charCount: {
-        fontSize: 12,
-        color: TEXT_DISABLED,
-        textAlign: "right",
-        marginTop: 8,
-        fontWeight: "500",
-    },
-    actions: {
-        flexDirection: "row",
-        gap: 12,
-    },
-    skipButton: {
-        flex: 1,
-        height: 56,
-        justifyContent: "center",
-        alignItems: "center",
-        backgroundColor: "rgba(255,255,255,0.04)",
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: "rgba(255,255,255,0.08)",
-    },
-    skipText: {
-        fontSize: 16,
-        fontWeight: "600",
-        color: TEXT_SECONDARY,
-    },
-    shareButton: {
-        flex: 1,
-        height: 56,
-        flexDirection: "row",
-        justifyContent: "center",
-        alignItems: "center",
-        gap: 8,
-        backgroundColor: TEXT_PRIMARY,
-        borderRadius: 16,
-    },
-    disabled: {
-        backgroundColor: "rgba(255,255,255,0.08)",
-    },
-    shareText: {
-        fontSize: 16,
-        fontWeight: "700",
-        color: BG_MAIN,
-    },
-    disabledText: {
-        color: TEXT_DISABLED,
     },
 });

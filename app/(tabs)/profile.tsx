@@ -1,9 +1,12 @@
 import CreditCard from "@/components/CreditCard";
+import SettingsSheet from "@/components/SettingsSheet";
+import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
 import { Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { usePrivy } from "@privy-io/expo";
+import { useFundSolanaWallet } from "@privy-io/expo/ui";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -11,24 +14,35 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Import theme from central location
-import SettingsSheet from "@/components/SettingsSheet";
-import { Theme } from '@/constants/theme';
-import { useFundSolanaWallet } from "@privy-io/expo/ui";
-
-// Theme constants
-const ACCENT = Theme.accentSubtle;
-const BG_MAIN = Theme.bgMain;
-const BG_CARD = Theme.bgCard;
-const BG_ELEVATED = Theme.bgElevated;
-const BORDER = Theme.border;
-const TEXT_PRIMARY = Theme.textPrimary;
-const TEXT_SECONDARY = Theme.textSecondary;
-const TEXT_DISABLED = Theme.textDisabled;
-const SUCCESS = Theme.success;
-const ERROR = Theme.error;
-
 type TradeTab = 'active' | 'previous';
+
+// Trade item component
+const TradeItem = ({ trade, onPress }: { trade: Trade; onPress: () => void }) => (
+    <TouchableOpacity
+        className="flex-row items-center justify-between px-3.5 py-3 border-b border-border"
+        onPress={onPress}
+        activeOpacity={0.7}
+    >
+        <View className="flex-row items-center flex-1">
+            <View className={`px-2 py-1 rounded-md mr-2.5 ${trade.side === 'yes' ? 'bg-txt-primary' : 'bg-app-bg border-[1.5px] border-txt-primary'}`}>
+                <Text className={`text-[11px] font-bold ${trade.side === 'yes' ? 'text-txt-inverse' : 'text-txt-primary'}`}>
+                    {trade.side.toUpperCase()}
+                </Text>
+            </View>
+            <View className="flex-1">
+                <Text className="text-sm font-medium text-txt-primary mb-0.5" numberOfLines={1}>
+                    {trade.marketTicker}
+                </Text>
+                <Text className="text-xs text-txt-disabled">
+                    {new Date(trade.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
+            </View>
+        </View>
+        <Text className="text-sm font-semibold text-txt-primary">
+            ${parseFloat(trade.amount).toFixed(2)}
+        </Text>
+    </TouchableOpacity>
+);
 
 export default function ProfileScreen() {
     const { user, logout } = usePrivy();
@@ -41,11 +55,10 @@ export default function ProfileScreen() {
     const [activeTab, setActiveTab] = useState<TradeTab>('active');
     const [settingsVisible, setSettingsVisible] = useState(false);
 
-    // Animation values
     const slideAnim = useRef(new Animated.Value(0)).current;
 
     const animateToTab = useCallback((tab: TradeTab) => {
-        const toValue = tab === 'active' ? 0 : -SCREEN_WIDTH + 40; // Adjust for padding
+        const toValue = tab === 'active' ? 0 : -SCREEN_WIDTH + 40;
         Animated.spring(slideAnim, {
             toValue,
             useNativeDriver: true,
@@ -65,7 +78,6 @@ export default function ProfileScreen() {
             setIsLoading(false);
             return;
         }
-
         try {
             const data = await api.getUser(backendUser.id);
             setProfileData(data);
@@ -78,7 +90,6 @@ export default function ProfileScreen() {
 
     const loadTrades = async () => {
         if (!backendUser) return;
-
         try {
             const data = await api.getUserTrades(backendUser.id, 50);
             setTrades(data);
@@ -93,9 +104,7 @@ export default function ProfileScreen() {
         router.replace("/login");
     };
 
-    // Get Twitter/X data from linked accounts and remove _normal for higher resolution
     const twitterAccount = user?.linked_accounts?.find((a: any) => a.type === 'twitter_oauth');
-    const twitterHandle = (twitterAccount as any)?.username;
     const rawProfileImageUrl = (twitterAccount as any)?.profile_picture_url;
     const profileImageUrl = rawProfileImageUrl?.replace('_normal', '');
 
@@ -103,12 +112,6 @@ export default function ProfileScreen() {
     const followerCount = profileData?.followerCount || 0;
     const followingCount = profileData?.followingCount || 0;
 
-    // Format joined date
-    const joinedDate = profileData?.createdAt
-        ? new Date(profileData.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-        : 'Nov 2025';
-
-    // Separate active and previous trades
     const now = new Date();
     const activeTrades = trades.filter(trade => {
         const tradeDate = new Date(trade.createdAt);
@@ -121,14 +124,12 @@ export default function ProfileScreen() {
         return hoursDiff >= 24;
     });
 
-    const displayedTrades = activeTab === 'active' ? activeTrades : previousTrades;
-
     if (isLoading) {
         return (
-            <View style={styles.container}>
-                <SafeAreaView style={styles.safeArea} edges={['top']}>
-                    <View style={[styles.content, { flex: 1, justifyContent: 'center', alignItems: 'center' }]}>
-                        <ActivityIndicator size="large" color={TEXT_PRIMARY} />
+            <View className="flex-1 bg-app-bg">
+                <SafeAreaView className="flex-1" edges={['top']}>
+                    <View className="flex-1 justify-center items-center px-5">
+                        <ActivityIndicator size="large" color={Theme.textPrimary} />
                     </View>
                 </SafeAreaView>
             </View>
@@ -136,102 +137,82 @@ export default function ProfileScreen() {
     }
 
     return (
-        <View style={styles.container}>
-            <SafeAreaView style={styles.safeArea} edges={['top']}>
-                <ScrollView
-                    contentContainerStyle={styles.content}
-                    showsVerticalScrollIndicator={false}
-                >
-                    {/* Profile Header Section */}
-                    <View style={styles.profileHeader}>
-                        {/* Menu Icon - Top Right */}
-                        <View style={styles.logoutContainer}>
+        <View className="flex-1 bg-app-bg">
+            <SafeAreaView className="flex-1" edges={['top']}>
+                <ScrollView contentContainerStyle={{ paddingHorizontal: 20 }} showsVerticalScrollIndicator={false}>
+                    {/* Profile Header */}
+                    <View className="mb-6 pt-4">
+                        {/* Menu Button */}
+                        <View className="items-end mb-5">
                             <TouchableOpacity
-                                style={styles.headerBtn}
+                                className="justify-center items-center"
                                 onPress={() => setSettingsVisible(true)}
                             >
-                                <Ionicons name="menu-outline" size={24} color={TEXT_SECONDARY} />
+                                <Ionicons name="menu-outline" size={24} color={Theme.textSecondary} />
                             </TouchableOpacity>
                         </View>
 
-                        {/* Main Profile Row: Avatar + Info */}
-                        <View style={styles.profileMainRow}>
+                        {/* Avatar + Info Row */}
+                        <View className="flex-row items-start gap-4 mb-4">
                             {/* Avatar */}
-                            <View style={styles.avatarContainer}>
-                                <View style={styles.avatarWrapper}>
-                                    <View style={styles.avatarInner}>
-                                        {profileImageUrl ? (
-                                            <Image
-                                                source={{ uri: profileImageUrl }}
-                                                style={styles.avatarImage}
-                                            />
-                                        ) : (
-                                            <Text style={styles.avatarText}>
-                                                {displayName.charAt(0).toUpperCase()}
-                                            </Text>
-                                        )}
-                                    </View>
+                            <View className="relative">
+                                <View className="w-14 h-14 rounded-full bg-app-card justify-center items-center overflow-hidden">
+                                    {profileImageUrl ? (
+                                        <Image
+                                            source={{ uri: profileImageUrl }}
+                                            className="w-full h-full rounded-full"
+                                        />
+                                    ) : (
+                                        <Text className="text-[22px] font-bold text-txt-primary">
+                                            {displayName.charAt(0).toUpperCase()}
+                                        </Text>
+                                    )}
                                 </View>
                             </View>
 
-                            {/* Info Section - Right of Avatar */}
-                            <View style={styles.profileInfo}>
-                                {/* Name */}
-                                <Text style={styles.name}>{displayName}</Text>
+                            {/* Profile Info */}
+                            <View className="flex-1 pt-1">
+                                <Text className="text-xl font-bold text-txt-primary mb-3">{displayName}</Text>
 
-                                {/* Following / Followers */}
-                                <View style={styles.followRow}>
-                                    <TouchableOpacity
-                                        onPress={() => {
-                                            if (backendUser?.id) {
-                                                router.push({
-                                                    pathname: '/user/followers/[userId]',
-                                                    params: { userId: backendUser.id, tab: 'following' }
-                                                });
-                                            }
-                                        }}
-                                    >
-                                        <Text style={styles.followText}>
-                                            <Text style={styles.followCount}>{followingCount}</Text> Following
+                                <View className="flex-row gap-5 mb-2">
+                                    <TouchableOpacity onPress={() => {
+                                        if (backendUser?.id) {
+                                            router.push({ pathname: '/user/followers/[userId]', params: { userId: backendUser.id, tab: 'following' } });
+                                        }
+                                    }}>
+                                        <Text className="text-base text-txt-secondary">
+                                            <Text className="font-semibold text-txt-primary">{followingCount}</Text> Following
                                         </Text>
                                     </TouchableOpacity>
-                                    <TouchableOpacity
-                                        onPress={() => {
-                                            if (backendUser?.id) {
-                                                router.push({
-                                                    pathname: '/user/followers/[userId]',
-                                                    params: { userId: backendUser.id, tab: 'followers' }
-                                                });
-                                            }
-                                        }}
-                                    >
-                                        <Text style={styles.followText}>
-                                            <Text style={styles.followCount}>{followerCount}</Text> Followers
+                                    <TouchableOpacity onPress={() => {
+                                        if (backendUser?.id) {
+                                            router.push({ pathname: '/user/followers/[userId]', params: { userId: backendUser.id, tab: 'followers' } });
+                                        }
+                                    }}>
+                                        <Text className="text-base text-txt-secondary">
+                                            <Text className="font-semibold text-txt-primary">{followerCount}</Text> Followers
                                         </Text>
                                     </TouchableOpacity>
                                 </View>
 
                                 {/* Add Cash Button */}
                                 <TouchableOpacity
-                                    style={styles.addCashButton}
+                                    className="flex-row items-center gap-1.5 px-3.5 py-[7px] bg-transparent rounded-full border-[1.5px] border-txt-primary self-start mt-1"
                                     onPress={() => {
                                         if (backendUser?.walletAddress) {
-                                            fundWallet({
-                                                address: backendUser.walletAddress,
-                                                amount: "0.2", // SOL
-                                            });
+                                            fundWallet({ address: backendUser.walletAddress, amount: "0.2" });
                                         }
                                     }}
                                 >
                                     <Ionicons name="add-circle-outline" size={18} color={Theme.textPrimary} />
-                                    <Text style={styles.addCashText}>Add Cash</Text>
+                                    <Text className="text-[13px] font-semibold text-txt-primary">Add Cash</Text>
                                 </TouchableOpacity>
                             </View>
                         </View>
                     </View>
 
-                    {/* Credit Card with Balance */}
-                    <View style={styles.cardContainer}>
+                    {/* Credit Card */}
+                    <View className="mb-6">
                         <CreditCard
                             tradesCount={trades.length}
                             balance={0.00}
@@ -239,143 +220,68 @@ export default function ProfileScreen() {
                         />
                     </View>
 
-                    {/* Trades Section with Tabs */}
-                    <View style={styles.tradesSection}>
-                        {/* New Tab Header */}
-                        <View style={styles.tabHeader}>
+                    {/* Trades Section */}
+                    <View className="flex-1">
+                        {/* Tab Header */}
+                        <View className="flex-row mb-4 border-b border-border">
                             <TouchableOpacity
-                                style={styles.tabHeaderItem}
+                                className="flex-1 items-center py-3 relative"
                                 onPress={() => animateToTab('active')}
                             >
-                                <Text style={[
-                                    styles.tabHeaderLabel,
-                                    activeTab === 'active' && styles.tabHeaderLabelActive
-                                ]}>
+                                <Text className={`text-sm ${activeTab === 'active' ? 'font-semibold text-txt-primary' : 'font-medium text-txt-secondary'}`}>
                                     Active ({activeTrades.length})
                                 </Text>
-                                {activeTab === 'active' && <View style={styles.tabHeaderIndicator} />}
+                                {activeTab === 'active' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-txt-primary" />}
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={styles.tabHeaderItem}
+                                className="flex-1 items-center py-3 relative"
                                 onPress={() => animateToTab('previous')}
                             >
-                                <Text style={[
-                                    styles.tabHeaderLabel,
-                                    activeTab === 'previous' && styles.tabHeaderLabelActive
-                                ]}>
+                                <Text className={`text-sm ${activeTab === 'previous' ? 'font-semibold text-txt-primary' : 'font-medium text-txt-secondary'}`}>
                                     Previous ({previousTrades.length})
                                 </Text>
-                                {activeTab === 'previous' && <View style={styles.tabHeaderIndicator} />}
+                                {activeTab === 'previous' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-txt-primary" />}
                             </TouchableOpacity>
                         </View>
 
-                        {/* Animated Sliding List Container */}
+                        {/* Animated Sliding Lists */}
                         <View style={styles.listContainer}>
-                            <Animated.View
-                                style={[
-                                    styles.slidingContainer,
-                                    { transform: [{ translateX: slideAnim }] }
-                                ]}
-                            >
-                                {/* Active Trades List */}
+                            <Animated.View style={[styles.slidingContainer, { transform: [{ translateX: slideAnim }] }]}>
+                                {/* Active Trades */}
                                 <View style={styles.listPane}>
                                     {activeTrades.length === 0 ? (
-                                        <View style={styles.emptyTrades}>
-                                            <Ionicons name="bar-chart-outline" size={32} color={TEXT_DISABLED} />
-                                            <Text style={styles.emptyText}>No active trades</Text>
+                                        <View className="p-10 items-center gap-3">
+                                            <Ionicons name="bar-chart-outline" size={32} color={Theme.textDisabled} />
+                                            <Text className="text-sm text-txt-disabled">No active trades</Text>
                                         </View>
                                     ) : (
-                                        <View style={styles.tradesList}>
+                                        <View className="bg-app-card rounded-xl overflow-hidden border border-border">
                                             {activeTrades.map((trade) => (
-                                                <TouchableOpacity
+                                                <TradeItem
                                                     key={trade.id}
-                                                    style={styles.tradeItem}
-                                                    onPress={() => router.push({
-                                                        pathname: '/market/[ticker]',
-                                                        params: { ticker: trade.marketTicker }
-                                                    })}
-                                                    activeOpacity={0.7}
-                                                >
-                                                    <View style={styles.tradeLeft}>
-                                                        <View style={[
-                                                            styles.tradeSideBadge,
-                                                            trade.side === 'yes' ? styles.tradeSideBadgeYes : styles.tradeSideBadgeNo
-                                                        ]}>
-                                                            <Text style={[
-                                                                styles.tradeSideText,
-                                                                trade.side === 'yes' ? styles.tradeSideTextYes : styles.tradeSideTextNo
-                                                            ]}>
-                                                                {trade.side.toUpperCase()}
-                                                            </Text>
-                                                        </View>
-                                                        <View style={styles.tradeInfo}>
-                                                            <Text style={styles.tradeTicker} numberOfLines={1}>
-                                                                {trade.marketTicker}
-                                                            </Text>
-                                                            <Text style={styles.tradeDate}>
-                                                                {new Date(trade.createdAt).toLocaleDateString('en-US', {
-                                                                    month: 'short',
-                                                                    day: 'numeric'
-                                                                })}
-                                                            </Text>
-                                                        </View>
-                                                    </View>
-                                                    <Text style={styles.tradeAmount}>
-                                                        ${parseFloat(trade.amount).toFixed(2)}
-                                                    </Text>
-                                                </TouchableOpacity>
+                                                    trade={trade}
+                                                    onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: trade.marketTicker } })}
+                                                />
                                             ))}
                                         </View>
                                     )}
                                 </View>
 
-                                {/* Previous Trades List */}
+                                {/* Previous Trades */}
                                 <View style={styles.listPane}>
                                     {previousTrades.length === 0 ? (
-                                        <View style={styles.emptyTrades}>
-                                            <Ionicons name="time-outline" size={32} color={TEXT_DISABLED} />
-                                            <Text style={styles.emptyText}>No previous trades</Text>
+                                        <View className="p-10 items-center gap-3">
+                                            <Ionicons name="time-outline" size={32} color={Theme.textDisabled} />
+                                            <Text className="text-sm text-txt-disabled">No previous trades</Text>
                                         </View>
                                     ) : (
-                                        <View style={styles.tradesList}>
+                                        <View className="bg-app-card rounded-xl overflow-hidden border border-border">
                                             {previousTrades.map((trade) => (
-                                                <TouchableOpacity
+                                                <TradeItem
                                                     key={trade.id}
-                                                    style={styles.tradeItem}
-                                                    onPress={() => router.push({
-                                                        pathname: '/market/[ticker]',
-                                                        params: { ticker: trade.marketTicker }
-                                                    })}
-                                                    activeOpacity={0.7}
-                                                >
-                                                    <View style={styles.tradeLeft}>
-                                                        <View style={[
-                                                            styles.tradeSideBadge,
-                                                            trade.side === 'yes' ? styles.tradeSideBadgeYes : styles.tradeSideBadgeNo
-                                                        ]}>
-                                                            <Text style={[
-                                                                styles.tradeSideText,
-                                                                trade.side === 'yes' ? styles.tradeSideTextYes : styles.tradeSideTextNo
-                                                            ]}>
-                                                                {trade.side.toUpperCase()}
-                                                            </Text>
-                                                        </View>
-                                                        <View style={styles.tradeInfo}>
-                                                            <Text style={styles.tradeTicker} numberOfLines={1}>
-                                                                {trade.marketTicker}
-                                                            </Text>
-                                                            <Text style={styles.tradeDate}>
-                                                                {new Date(trade.createdAt).toLocaleDateString('en-US', {
-                                                                    month: 'short',
-                                                                    day: 'numeric'
-                                                                })}
-                                                            </Text>
-                                                        </View>
-                                                    </View>
-                                                    <Text style={styles.tradeAmount}>
-                                                        ${parseFloat(trade.amount).toFixed(2)}
-                                                    </Text>
-                                                </TouchableOpacity>
+                                                    trade={trade}
+                                                    onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: trade.marketTicker } })}
+                                                />
                                             ))}
                                         </View>
                                     )}
@@ -384,191 +290,24 @@ export default function ProfileScreen() {
                         </View>
                     </View>
 
-                    {/* Spacer for bottom navigation */}
-                    <View style={{ height: 80 }} />
+                    <View className="h-20" />
                 </ScrollView>
             </SafeAreaView>
 
-            {/* Settings Sheet */}
             <SettingsSheet
                 visible={settingsVisible}
                 onClose={() => setSettingsVisible(false)}
-                onSwitchTheme={() => {
-                    // TODO: Implement theme switching logic
-                    console.log("Switch theme clicked");
-                }}
+                onSwitchTheme={() => console.log("Switch theme clicked")}
                 onLogout={handleLogout}
             />
         </View>
     );
 }
 
+// Minimal styles for animated components requiring exact dimensions
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: BG_MAIN,
-    },
-    safeArea: {
-        flex: 1,
-    },
-    content: {
-        paddingHorizontal: 20,
-    },
-    // Profile Header Section
-    profileHeader: {
-        marginBottom: 24,
-        paddingTop: 16,
-    },
-    logoutContainer: {
-        alignItems: 'flex-end',
-        marginBottom: 20,
-    },
-    profileMainRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 16,
-        marginBottom: 16,
-    },
-    profileInfo: {
-        flex: 1,
-        paddingTop: 4,
-    },
-    avatarContainer: {
-        position: 'relative',
-    },
-    avatarWrapper: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        position: 'relative',
-    },
-    avatarInner: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        backgroundColor: BG_CARD,
-        justifyContent: 'center',
-        alignItems: 'center',
-        overflow: 'hidden',
-    },
-    avatarImage: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 28,
-    },
-    avatarText: {
-        fontSize: 22,
-        fontWeight: '700',
-        color: TEXT_PRIMARY,
-    },
-
-    headerBtn: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    name: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: TEXT_PRIMARY,
-        marginBottom: 12,
-    },
-    usernameRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        marginBottom: 10,
-    },
-    username: {
-        fontSize: 13,
-        color: TEXT_SECONDARY,
-    },
-    twitterIcon: {
-        opacity: 0.8,
-    },
-    followRow: {
-        flexDirection: 'row',
-        gap: 20,
-        marginBottom: 8,
-    },
-    followText: {
-        fontSize: 16,
-        color: TEXT_SECONDARY,
-    },
-    followCount: {
-        fontWeight: '600',
-        color: TEXT_PRIMARY,
-    },
-    addCashButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: 14,
-        paddingVertical: 7,
-        backgroundColor: 'transparent',
-        borderRadius: 20,
-        borderWidth: 1.5,
-        borderColor: Theme.textPrimary,
-        alignSelf: 'flex-start',
-        marginTop: 4,
-    },
-    addCashText: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: Theme.textPrimary,
-    },
-    statsRow: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 12,
-    },
-    statItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    statText: {
-        fontSize: 12,
-        color: TEXT_DISABLED,
-    },
-    // Card Container
-    cardContainer: {
-        marginBottom: 24,
-    },
-    // Trades Section
-    tradesSection: {
-        flex: 1,
-    },
-    tabHeader: {
-        flexDirection: 'row',
-        marginBottom: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: BORDER,
-    },
-    tabHeaderItem: {
-        flex: 1,
-        alignItems: 'center',
-        paddingVertical: 12,
-        position: 'relative',
-    },
-    tabHeaderLabel: {
-        fontSize: 14,
-        fontWeight: '500',
-        color: TEXT_SECONDARY,
-    },
-    tabHeaderLabelActive: {
-        color: TEXT_PRIMARY,
-        fontWeight: '600',
-    },
-    tabHeaderIndicator: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: 2,
-        backgroundColor: Theme.textPrimary,
-    },
     listContainer: {
-        width: SCREEN_WIDTH - 40, // Match content padding
+        width: SCREEN_WIDTH - 40,
         overflow: 'hidden',
     },
     slidingContainer: {
@@ -577,77 +316,5 @@ const styles = StyleSheet.create({
     },
     listPane: {
         width: SCREEN_WIDTH - 40,
-    },
-    emptyTrades: {
-        padding: 40,
-        alignItems: 'center',
-        gap: 12,
-    },
-    emptyText: {
-        fontSize: 14,
-        color: TEXT_DISABLED,
-    },
-    tradesList: {
-        backgroundColor: BG_CARD,
-        borderRadius: 12,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: BORDER,
-    },
-    tradeItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: BORDER,
-    },
-    tradeLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    tradeSideBadge: {
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 6,
-        marginRight: 10,
-    },
-    tradeSideBadgeYes: {
-        backgroundColor: Theme.textPrimary,
-    },
-    tradeSideBadgeNo: {
-        backgroundColor: Theme.bgMain,
-        borderWidth: 1.5,
-        borderColor: Theme.textPrimary,
-    },
-    tradeSideText: {
-        fontSize: 11,
-        fontWeight: '700',
-    },
-    tradeSideTextYes: {
-        color: Theme.textInverse,
-    },
-    tradeSideTextNo: {
-        color: Theme.textPrimary,
-    },
-    tradeInfo: {
-        flex: 1,
-    },
-    tradeTicker: {
-        fontSize: 14,
-        fontWeight: '500',
-        color: TEXT_PRIMARY,
-        marginBottom: 2,
-    },
-    tradeDate: {
-        fontSize: 12,
-        color: TEXT_DISABLED,
-    },
-    tradeAmount: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: TEXT_PRIMARY,
     },
 });

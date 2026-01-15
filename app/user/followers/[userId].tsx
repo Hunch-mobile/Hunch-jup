@@ -1,37 +1,14 @@
+import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
 import { Follow } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-    ActivityIndicator,
-    Animated,
-    Dimensions,
-    FlatList,
-    Image,
-    PanResponder,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
-} from "react-native";
+import { ActivityIndicator, Animated, Dimensions, FlatList, Image, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// Import theme from central location
-import { Theme } from '@/constants/theme';
-
-// Theme constants - Monochrome design
-const ACCENT = Theme.textPrimary;
-const BG_MAIN = Theme.bgMain;
-const BG_CARD = Theme.bgCard;
-const BG_ELEVATED = Theme.bgElevated;
-const BORDER = Theme.border;
-const TEXT_PRIMARY = Theme.textPrimary;
-const TEXT_SECONDARY = Theme.textSecondary;
-const TEXT_DISABLED = Theme.textDisabled;
 
 type TabType = 'followers' | 'following';
 
@@ -43,6 +20,64 @@ interface UserItem {
     followerCount?: number;
     followingCount?: number;
 }
+
+// User row component
+const UserRow = ({
+    item,
+    isFollowing,
+    inProgress,
+    isSelf,
+    onFollow,
+    onPress
+}: {
+    item: UserItem;
+    isFollowing: boolean;
+    inProgress: boolean;
+    isSelf: boolean;
+    onFollow: () => void;
+    onPress: () => void;
+}) => {
+    const displayName = item.displayName || `${item.walletAddress.slice(0, 6)}...${item.walletAddress.slice(-4)}`;
+    const username = `@${displayName.toLowerCase().replace(/\s/g, '')}`;
+
+    return (
+        <TouchableOpacity
+            className="flex-row items-center py-3 px-1 mb-1"
+            onPress={onPress}
+            activeOpacity={0.7}
+        >
+            <View className="w-12 h-12 rounded-full bg-app-elevated justify-center items-center mr-3 overflow-hidden">
+                {item.avatarUrl ? (
+                    <Image source={{ uri: item.avatarUrl }} className="w-full h-full rounded-full" />
+                ) : (
+                    <Text className="text-lg font-bold text-txt-primary">
+                        {displayName.charAt(0).toUpperCase()}
+                    </Text>
+                )}
+            </View>
+            <View className="flex-1">
+                <Text className="text-[15px] font-semibold text-txt-primary mb-0.5">{displayName}</Text>
+                <Text className="text-[13px] text-txt-secondary">{username}</Text>
+            </View>
+            {!isSelf && (
+                <TouchableOpacity
+                    className={`py-2 px-5 rounded-full min-w-[100px] items-center justify-center ${isFollowing ? 'bg-app-bg border-[1.5px] border-txt-primary' : 'bg-txt-primary'
+                        } ${inProgress ? 'opacity-60' : ''}`}
+                    onPress={(e) => { e.stopPropagation(); onFollow(); }}
+                    disabled={inProgress}
+                >
+                    {inProgress ? (
+                        <ActivityIndicator size="small" color={Theme.textPrimary} />
+                    ) : (
+                        <Text className={`text-[13px] font-semibold ${isFollowing ? 'text-txt-primary' : 'text-txt-inverse'}`}>
+                            {isFollowing ? "Following" : "Follow"}
+                        </Text>
+                    )}
+                </TouchableOpacity>
+            )}
+        </TouchableOpacity>
+    );
+};
 
 export default function FollowersFollowingScreen() {
     const { userId, tab } = useLocalSearchParams<{ userId: string; tab?: string }>();
@@ -56,12 +91,10 @@ export default function FollowersFollowingScreen() {
     const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
     const [followingInProgress, setFollowingInProgress] = useState<Set<string>>(new Set());
 
-    // Animation values - initialize based on tab parameter
     const initialTab = (tab as TabType) || 'followers';
     const slideAnim = useRef(new Animated.Value(initialTab === 'following' ? -SCREEN_WIDTH : 0)).current;
     const activeTabRef = useRef<TabType>(initialTab);
 
-    // Animate slide when tab changes
     const animateToTab = useCallback((toTab: TabType) => {
         const toValue = toTab === 'followers' ? 0 : -SCREEN_WIDTH;
         Animated.spring(slideAnim, {
@@ -74,38 +107,27 @@ export default function FollowersFollowingScreen() {
         setActiveTab(toTab);
     }, [slideAnim]);
 
-    // Swipe gesture handling with proper ref access
     const panResponder = useRef(
         PanResponder.create({
-            onMoveShouldSetPanResponder: (_, gestureState) => {
-                // Only respond to horizontal swipes with enough movement
-                return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 15;
-            },
+            onMoveShouldSetPanResponder: (_, gestureState) =>
+                Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 15,
             onPanResponderMove: (_, gestureState) => {
-                // Real-time dragging feedback
                 const currentOffset = activeTabRef.current === 'followers' ? 0 : -SCREEN_WIDTH;
                 const newValue = currentOffset + gestureState.dx;
-                // Clamp the value between -SCREEN_WIDTH and 0
-                const clampedValue = Math.max(-SCREEN_WIDTH, Math.min(0, newValue));
-                slideAnim.setValue(clampedValue);
+                slideAnim.setValue(Math.max(-SCREEN_WIDTH, Math.min(0, newValue)));
             },
             onPanResponderRelease: (_, gestureState) => {
-                const threshold = SCREEN_WIDTH * 0.25; // 25% of screen width
-
+                const threshold = SCREEN_WIDTH * 0.25;
                 if (activeTabRef.current === 'followers') {
-                    // On followers tab, check for left swipe
                     if (gestureState.dx < -threshold || (gestureState.dx < 0 && gestureState.vx < -0.5)) {
                         animateToTab('following');
                     } else {
-                        // Snap back to followers
                         animateToTab('followers');
                     }
                 } else {
-                    // On following tab, check for right swipe
                     if (gestureState.dx > threshold || (gestureState.dx > 0 && gestureState.vx > 0.5)) {
                         animateToTab('followers');
                     } else {
-                        // Snap back to following
                         animateToTab('following');
                     }
                 }
@@ -117,9 +139,7 @@ export default function FollowersFollowingScreen() {
         if (userId) {
             loadFollowers();
             loadFollowing();
-            if (backendUser) {
-                loadMyFollowingList();
-            }
+            if (backendUser) loadMyFollowingList();
         }
     }, [userId, backendUser]);
 
@@ -127,13 +147,12 @@ export default function FollowersFollowingScreen() {
         try {
             setLoadingFollowers(true);
             const data = await api.getFollowers(userId as string);
-            const users = data.map((f: Follow) => ({
+            setFollowers(data.map((f: Follow) => ({
                 id: f.follower.id,
                 displayName: f.follower.displayName,
                 avatarUrl: f.follower.avatarUrl,
                 walletAddress: f.follower.walletAddress,
-            }));
-            setFollowers(users);
+            })));
         } catch (err) {
             console.error("Failed to fetch followers:", err);
         } finally {
@@ -145,13 +164,12 @@ export default function FollowersFollowingScreen() {
         try {
             setLoadingFollowing(true);
             const data = await api.getFollowing(userId as string);
-            const users = data.map((f: Follow) => ({
+            setFollowing(data.map((f: Follow) => ({
                 id: f.following.id,
                 displayName: f.following.displayName,
                 avatarUrl: f.following.avatarUrl,
                 walletAddress: f.following.walletAddress,
-            }));
-            setFollowing(users);
+            })));
         } catch (err) {
             console.error("Failed to fetch following:", err);
         } finally {
@@ -161,11 +179,9 @@ export default function FollowersFollowingScreen() {
 
     const loadMyFollowingList = async () => {
         if (!backendUser) return;
-
         try {
             const data = await api.getFollowing(backendUser.id);
-            const ids = new Set(data.map(f => f.followingId));
-            setFollowingIds(ids);
+            setFollowingIds(new Set(data.map(f => f.followingId)));
         } catch (error) {
             console.error("Failed to load following list:", error);
         }
@@ -173,19 +189,11 @@ export default function FollowersFollowingScreen() {
 
     const handleFollowUser = async (targetUserId: string) => {
         if (!backendUser || followingInProgress.has(targetUserId)) return;
-
         setFollowingInProgress(prev => new Set([...prev, targetUserId]));
-
         try {
-            const isFollowing = followingIds.has(targetUserId);
-
-            if (isFollowing) {
+            if (followingIds.has(targetUserId)) {
                 await api.unfollowUser(backendUser.id, targetUserId);
-                setFollowingIds(prev => {
-                    const newSet = new Set(prev);
-                    newSet.delete(targetUserId);
-                    return newSet;
-                });
+                setFollowingIds(prev => { const s = new Set(prev); s.delete(targetUserId); return s; });
             } else {
                 await api.followUser(backendUser.id, targetUserId);
                 setFollowingIds(prev => new Set([...prev, targetUserId]));
@@ -193,174 +201,107 @@ export default function FollowersFollowingScreen() {
         } catch (error) {
             console.error("Failed to follow/unfollow user:", error);
         } finally {
-            setFollowingInProgress(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(targetUserId);
-                return newSet;
-            });
+            setFollowingInProgress(prev => { const s = new Set(prev); s.delete(targetUserId); return s; });
         }
     };
 
-    const renderUserItem = ({ item }: { item: UserItem }) => {
-        const isFollowing = followingIds.has(item.id);
-        const inProgress = followingInProgress.has(item.id);
-        const isSelf = backendUser?.id === item.id;
-
-        const displayName = item.displayName || `${item.walletAddress.slice(0, 6)}...${item.walletAddress.slice(-4)}`;
-        const username = `@${displayName.toLowerCase().replace(/\s/g, '')}`;
-
-        return (
-            <TouchableOpacity
-                style={styles.userItem}
-                onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: item.id } })}
-                activeOpacity={0.7}
-            >
-                <View style={styles.userAvatar}>
-                    {item.avatarUrl ? (
-                        <Image source={{ uri: item.avatarUrl }} style={styles.avatarImage} />
-                    ) : (
-                        <Text style={styles.userAvatarText}>
-                            {displayName.charAt(0).toUpperCase()}
-                        </Text>
-                    )}
-                </View>
-                <View style={styles.userInfo}>
-                    <Text style={styles.userName}>{displayName}</Text>
-                    <Text style={styles.userHandle}>{username}</Text>
-                </View>
-                {!isSelf && backendUser && (
-                    <TouchableOpacity
-                        style={[
-                            styles.followButton,
-                            isFollowing && styles.followingButton,
-                            inProgress && styles.followButtonDisabled
-                        ]}
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            handleFollowUser(item.id);
-                        }}
-                        disabled={inProgress}
-                    >
-                        {inProgress ? (
-                            <ActivityIndicator size="small" color={TEXT_PRIMARY} />
-                        ) : (
-                            <Text style={[
-                                styles.followButtonText,
-                                isFollowing && styles.followingButtonText
-                            ]}>
-                                {isFollowing ? "Following" : "Follow"}
-                            </Text>
-                        )}
-                    </TouchableOpacity>
-                )}
-            </TouchableOpacity>
-        );
-    };
-
     return (
-        <View style={styles.container}>
-
-
-            <SafeAreaView style={styles.safeArea}>
+        <View className="flex-1 bg-app-bg">
+            <SafeAreaView className="flex-1">
                 {/* Header */}
-                <View style={styles.header}>
-                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
+                <View className="flex-row items-center justify-between px-4 py-3">
+                    <TouchableOpacity className="w-9 h-9 rounded-full justify-center items-center" onPress={() => router.back()}>
+                        <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
                     </TouchableOpacity>
-                    <View style={styles.headerSpacer} />
-                    <TouchableOpacity style={styles.shareButton}>
-                        <Ionicons name="share-outline" size={20} color={TEXT_SECONDARY} />
+                    <View className="flex-1" />
+                    <TouchableOpacity className="w-9 h-9 rounded-full justify-center items-center">
+                        <Ionicons name="share-outline" size={20} color={Theme.textSecondary} />
                     </TouchableOpacity>
                 </View>
 
                 {/* Tab Header */}
-                <View style={styles.tabHeader}>
-                    <TouchableOpacity
-                        style={styles.tabHeaderItem}
-                        onPress={() => animateToTab('followers')}
-                    >
-                        <Text style={[
-                            styles.tabHeaderCount,
-                            activeTab === 'followers' && styles.tabHeaderCountActive
-                        ]}>
+                <View className="flex-row px-5 pt-2 border-b border-border">
+                    <TouchableOpacity className="flex-1 items-center pb-3 relative" onPress={() => animateToTab('followers')}>
+                        <Text className={`text-base font-bold mb-0.5 ${activeTab === 'followers' ? 'text-txt-primary' : 'text-txt-disabled'}`}>
                             {followers.length}
                         </Text>
-                        <Text style={[
-                            styles.tabHeaderLabel,
-                            activeTab === 'followers' && styles.tabHeaderLabelActive
-                        ]}>
+                        <Text className={`text-[13px] font-medium ${activeTab === 'followers' ? 'text-txt-secondary' : 'text-txt-disabled'}`}>
                             Followers
                         </Text>
-                        {activeTab === 'followers' && <View style={styles.tabHeaderIndicator} />}
+                        {activeTab === 'followers' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-txt-primary" />}
                     </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.tabHeaderItem}
-                        onPress={() => animateToTab('following')}
-                    >
-                        <Text style={[
-                            styles.tabHeaderCount,
-                            activeTab === 'following' && styles.tabHeaderCountActive
-                        ]}>
+                    <TouchableOpacity className="flex-1 items-center pb-3 relative" onPress={() => animateToTab('following')}>
+                        <Text className={`text-base font-bold mb-0.5 ${activeTab === 'following' ? 'text-txt-primary' : 'text-txt-disabled'}`}>
                             {following.length}
                         </Text>
-                        <Text style={[
-                            styles.tabHeaderLabel,
-                            activeTab === 'following' && styles.tabHeaderLabelActive
-                        ]}>
+                        <Text className={`text-[13px] font-medium ${activeTab === 'following' ? 'text-txt-secondary' : 'text-txt-disabled'}`}>
                             Following
                         </Text>
-                        {activeTab === 'following' && <View style={styles.tabHeaderIndicator} />}
+                        {activeTab === 'following' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-txt-primary" />}
                     </TouchableOpacity>
                 </View>
 
-                {/* Animated Sliding List Container */}
+                {/* Sliding Lists */}
                 <View {...panResponder.panHandlers} style={styles.listContainer}>
-                    <Animated.View
-                        style={[
-                            styles.slidingContainer,
-                            { transform: [{ translateX: slideAnim }] }
-                        ]}
-                    >
-                        {/* Followers List */}
+                    <Animated.View style={[styles.slidingContainer, { transform: [{ translateX: slideAnim }] }]}>
+                        {/* Followers */}
                         <View style={styles.listPane}>
                             {loadingFollowers ? (
-                                <View style={styles.centerContainer}>
-                                    <ActivityIndicator size="large" color={TEXT_PRIMARY} />
+                                <View className="flex-1 justify-center items-center">
+                                    <ActivityIndicator size="large" color={Theme.textPrimary} />
                                 </View>
                             ) : followers.length === 0 ? (
-                                <View style={styles.emptyContainer}>
-                                    <Ionicons name="people-outline" size={48} color={TEXT_DISABLED} />
-                                    <Text style={styles.emptyText}>No followers yet</Text>
+                                <View className="flex-1 justify-center items-center px-10 gap-3">
+                                    <Ionicons name="people-outline" size={48} color={Theme.textDisabled} />
+                                    <Text className="text-sm text-txt-disabled text-center">No followers yet</Text>
                                 </View>
                             ) : (
                                 <FlatList
                                     data={followers}
                                     keyExtractor={(item) => item.id}
-                                    renderItem={renderUserItem}
+                                    renderItem={({ item }) => (
+                                        <UserRow
+                                            item={item}
+                                            isFollowing={followingIds.has(item.id)}
+                                            inProgress={followingInProgress.has(item.id)}
+                                            isSelf={backendUser?.id === item.id}
+                                            onFollow={() => handleFollowUser(item.id)}
+                                            onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: item.id } })}
+                                        />
+                                    )}
                                     showsVerticalScrollIndicator={false}
-                                    contentContainerStyle={styles.listContent}
+                                    contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40 }}
                                 />
                             )}
                         </View>
 
-                        {/* Following List */}
+                        {/* Following */}
                         <View style={styles.listPane}>
                             {loadingFollowing ? (
-                                <View style={styles.centerContainer}>
-                                    <ActivityIndicator size="large" color={TEXT_PRIMARY} />
+                                <View className="flex-1 justify-center items-center">
+                                    <ActivityIndicator size="large" color={Theme.textPrimary} />
                                 </View>
                             ) : following.length === 0 ? (
-                                <View style={styles.emptyContainer}>
-                                    <Ionicons name="person-add-outline" size={48} color={TEXT_DISABLED} />
-                                    <Text style={styles.emptyText}>Not following anyone yet</Text>
+                                <View className="flex-1 justify-center items-center px-10 gap-3">
+                                    <Ionicons name="person-add-outline" size={48} color={Theme.textDisabled} />
+                                    <Text className="text-sm text-txt-disabled text-center">Not following anyone yet</Text>
                                 </View>
                             ) : (
                                 <FlatList
                                     data={following}
                                     keyExtractor={(item) => item.id}
-                                    renderItem={renderUserItem}
+                                    renderItem={({ item }) => (
+                                        <UserRow
+                                            item={item}
+                                            isFollowing={followingIds.has(item.id)}
+                                            inProgress={followingInProgress.has(item.id)}
+                                            isSelf={backendUser?.id === item.id}
+                                            onFollow={() => handleFollowUser(item.id)}
+                                            onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: item.id } })}
+                                        />
+                                    )}
                                     showsVerticalScrollIndicator={false}
-                                    contentContainerStyle={styles.listContent}
+                                    contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40 }}
                                 />
                             )}
                         </View>
@@ -371,78 +312,8 @@ export default function FollowersFollowingScreen() {
     );
 }
 
+// Minimal styles for animated sliding container
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: BG_MAIN,
-    },
-
-    safeArea: {
-        flex: 1,
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-    },
-    backButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    headerSpacer: {
-        flex: 1,
-    },
-    shareButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    tabHeader: {
-        flexDirection: 'row',
-        paddingHorizontal: 20,
-        paddingTop: 8,
-        paddingBottom: 0,
-        borderBottomWidth: 1,
-        borderBottomColor: BORDER,
-    },
-    tabHeaderItem: {
-        flex: 1,
-        alignItems: 'center',
-        paddingBottom: 12,
-        position: 'relative',
-    },
-    tabHeaderCount: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: TEXT_DISABLED,
-        marginBottom: 2,
-    },
-    tabHeaderCountActive: {
-        color: TEXT_PRIMARY,
-    },
-    tabHeaderLabel: {
-        fontSize: 13,
-        fontWeight: '500',
-        color: TEXT_DISABLED,
-    },
-    tabHeaderLabelActive: {
-        color: TEXT_SECONDARY,
-    },
-    tabHeaderIndicator: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: 2,
-        backgroundColor: ACCENT,
-    },
     listContainer: {
         flex: 1,
         overflow: 'hidden',
@@ -455,92 +326,5 @@ const styles = StyleSheet.create({
     listPane: {
         width: SCREEN_WIDTH,
         flex: 1,
-    },
-    centerContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: 40,
-        gap: 12,
-    },
-    emptyText: {
-        fontSize: 14,
-        color: TEXT_DISABLED,
-        textAlign: 'center',
-    },
-    listContent: {
-        paddingHorizontal: 16,
-        paddingTop: 16,
-        paddingBottom: 40,
-    },
-    userItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 4,
-        marginBottom: 4,
-    },
-    userAvatar: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: BG_ELEVATED,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-        overflow: 'hidden',
-    },
-    avatarImage: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 24,
-    },
-    userAvatarText: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: TEXT_PRIMARY,
-    },
-    userInfo: {
-        flex: 1,
-    },
-    userName: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: TEXT_PRIMARY,
-        marginBottom: 2,
-    },
-    userHandle: {
-        fontSize: 13,
-        color: TEXT_SECONDARY,
-    },
-    followButton: {
-        backgroundColor: Theme.textPrimary,
-        paddingVertical: 8,
-        paddingHorizontal: 20,
-        borderRadius: 20,
-        minWidth: 100,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    followingButton: {
-        backgroundColor: Theme.bgMain,
-        borderWidth: 1.5,
-        borderColor: Theme.textPrimary,
-    },
-    followButtonDisabled: {
-        opacity: 0.6,
-    },
-    followButtonText: {
-        color: Theme.textInverse,
-        fontSize: 13,
-        fontWeight: '600',
-    },
-    followingButtonText: {
-        color: Theme.textPrimary,
     },
 });

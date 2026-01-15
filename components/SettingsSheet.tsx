@@ -1,26 +1,8 @@
+import { Theme } from '@/constants/theme';
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef } from "react";
-import {
-    Animated,
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from "react-native";
+import { Animated, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-// Import theme from central location
-import { Theme } from '@/constants/theme';
-
-// Use theme constants
-const BG_MAIN = Theme.bgMain;
-const BG_CARD = Theme.bgCard;
-const BORDER = Theme.border;
-const TEXT_PRIMARY = Theme.textPrimary;
-const TEXT_SECONDARY = Theme.textSecondary;
-const ERROR = Theme.error;
 
 export default function SettingsSheet({
     visible,
@@ -55,52 +37,43 @@ export default function SettingsSheet({
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <Pressable style={styles.overlay} onPress={onClose}>
+            <Pressable className="flex-1 bg-black/50 justify-end" onPress={onClose}>
                 <Animated.View
                     style={[
                         styles.sheet,
-                        {
-                            paddingBottom: Math.max(insets.bottom, 20),
-                            transform: [{ translateY: slideAnim }],
-                        }
+                        { paddingBottom: Math.max(insets.bottom, 20), transform: [{ translateY: slideAnim }] }
                     ]}
                 >
                     <Pressable onPress={(e) => e.stopPropagation()}>
-                        <View style={styles.header}>
-                            <Text style={styles.title}>Settings</Text>
+                        <View className="pb-4">
+                            <Text className="text-xl font-bold text-txt-primary">Settings</Text>
                         </View>
 
-                        <View style={styles.menuContainer}>
-                            {/* Switch Theme Option */}
+                        <View className="gap-2 pb-2">
+                            {/* Switch Theme */}
                             <TouchableOpacity
-                                style={styles.menuItem}
-                                onPress={() => {
-                                    onSwitchTheme();
-                                    onClose();
-                                }}
+                                className="flex-row items-center justify-between py-4 px-1"
+                                onPress={() => { onSwitchTheme(); onClose(); }}
                                 activeOpacity={0.7}
                             >
-                                <View style={styles.menuItemLeft}>
-                                    <Ionicons name="moon-outline" size={22} color={TEXT_PRIMARY} />
-                                    <Text style={styles.menuItemText}>Switch Theme</Text>
+                                <View className="flex-row items-center gap-3.5">
+                                    <Ionicons name="moon-outline" size={22} color={Theme.textPrimary} />
+                                    <Text className="text-base font-semibold text-txt-primary">Switch Theme</Text>
                                 </View>
-                                <Ionicons name="chevron-forward" size={20} color={TEXT_SECONDARY} />
+                                <Ionicons name="chevron-forward" size={20} color={Theme.textSecondary} />
                             </TouchableOpacity>
 
-                            {/* Logout Option */}
+                            {/* Logout */}
                             <TouchableOpacity
-                                style={[styles.menuItem, styles.logoutItem]}
-                                onPress={() => {
-                                    onLogout();
-                                    onClose();
-                                }}
+                                className="flex-row items-center justify-between py-4 px-1"
+                                onPress={() => { onLogout(); onClose(); }}
                                 activeOpacity={0.7}
                             >
-                                <View style={styles.menuItemLeft}>
-                                    <Ionicons name="log-out-outline" size={22} color={ERROR} />
-                                    <Text style={[styles.menuItemText, styles.logoutText]}>Logout</Text>
+                                <View className="flex-row items-center gap-3.5">
+                                    <Ionicons name="log-out-outline" size={22} color={Theme.error} />
+                                    <Text className="text-base font-semibold text-status-error">Logout</Text>
                                 </View>
-                                <Ionicons name="chevron-forward" size={20} color={ERROR} />
+                                <Ionicons name="chevron-forward" size={20} color={Theme.error} />
                             </TouchableOpacity>
                         </View>
                     </Pressable>
@@ -110,14 +83,10 @@ export default function SettingsSheet({
     );
 }
 
+// Minimal styles for sheet positioning
 const styles = StyleSheet.create({
-    overlay: {
-        flex: 1,
-        backgroundColor: "rgba(0,0,0,0.5)",
-        justifyContent: "flex-end",
-    },
     sheet: {
-        backgroundColor: BG_MAIN,
+        backgroundColor: Theme.bgMain,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         paddingHorizontal: 20,
@@ -125,43 +94,6 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
         borderLeftWidth: 1,
         borderRightWidth: 1,
-        borderColor: BORDER,
-    },
-
-    header: {
-        paddingBottom: 16,
-    },
-    title: {
-        fontSize: 20,
-        fontWeight: "700",
-        color: TEXT_PRIMARY,
-    },
-    menuContainer: {
-        gap: 8,
-        paddingBottom: 8,
-    },
-    menuItem: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        paddingVertical: 16,
-        paddingHorizontal: 4,
-        backgroundColor: 'transparent',
-    },
-    menuItemLeft: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 14,
-    },
-    menuItemText: {
-        fontSize: 16,
-        fontWeight: "600",
-        color: TEXT_PRIMARY,
-    },
-    logoutItem: {
-        // No special background for logout
-    },
-    logoutText: {
-        color: ERROR,
+        borderColor: Theme.border,
     },
 });

@@ -1,3 +1,4 @@
+import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,19 +10,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Import theme from central location
-import { Theme } from '@/constants/theme';
-
-// Theme constants
-const ACCENT = Theme.accent;
-const BG_MAIN = Theme.bgMain;
-const BG_CARD = Theme.bgCard;
-const BG_ELEVATED = Theme.bgElevated;
-const BORDER = Theme.border;
-const TEXT_PRIMARY = Theme.textPrimary;
-const TEXT_SECONDARY = Theme.textSecondary;
-const TEXT_DISABLED = Theme.textDisabled;
-
 interface OrbitProps {
     size: number;
     duration: number;
@@ -31,6 +19,7 @@ interface OrbitProps {
     offsetY: number;
 }
 
+// Orbit component uses Animated.View which requires style prop for animations
 const Orbit = ({ size, duration, delay, color, offsetX, offsetY }: OrbitProps) => {
     const rotation = new Animated.Value(0);
 
@@ -64,7 +53,7 @@ const Orbit = ({ size, duration, delay, color, offsetX, offsetY }: OrbitProps) =
                 },
             ]}
         >
-            <View style={[styles.orbitDot, { backgroundColor: color }]} />
+            <View style={styles.orbitDot} />
         </Animated.View>
     );
 };
@@ -92,7 +81,6 @@ export default function LoginScreen() {
         },
     });
 
-    // Sync user with backend after Privy authentication and redirect only after successful sync
     useEffect(() => {
         const syncUser = async () => {
             if (isReady && user && !backendUser && !isSyncing) {
@@ -113,7 +101,6 @@ export default function LoginScreen() {
                     if (walletAddress) {
                         const syncedUser = await api.syncUser({ privyId: user.id, walletAddress, displayName });
                         setBackendUser(syncedUser);
-                        // Only redirect after successful backend sync
                         router.replace("/(tabs)");
                     }
                 } catch (error) {
@@ -123,7 +110,6 @@ export default function LoginScreen() {
                     setIsSyncing(false);
                 }
             } else if (isReady && user && backendUser) {
-                // User is already synced, redirect immediately
                 router.replace("/(tabs)");
             }
         };
@@ -138,32 +124,38 @@ export default function LoginScreen() {
     };
 
     return (
-        <View style={styles.container}>
-            {/* Clean white background - no gradients for minimal look */}
-            <View style={styles.gradient} />
+        <View className="flex-1 bg-app-bg">
+            {/* Background */}
+            <View className="absolute inset-0 bg-app-bg" />
 
-            {/* Minimal geometric patterns - subtle gray circles */}
+            {/* Minimal geometric patterns */}
             <Orbit size={300} duration={20000} delay={0} color={Theme.borderLight} offsetX={-80} offsetY={-100} />
             <Orbit size={400} duration={30000} delay={1000} color={Theme.border} offsetX={60} offsetY={50} />
             <Orbit size={200} duration={15000} delay={500} color={Theme.borderLight} offsetX={100} offsetY={-150} />
 
-            <SafeAreaView style={styles.safeArea}>
-                <View style={styles.content}>
+            <SafeAreaView className="flex-1">
+                <View className="flex-1 justify-center items-center px-8">
                     {/* Centered Branding */}
-                    <View style={styles.brandingContainer}>
-                        <Text style={styles.brandName}>hunch</Text>
-                        <Text style={styles.tagline}>bet on what you believe</Text>
+                    <View className="items-center" style={{ marginBottom: SCREEN_HEIGHT * 0.15 }}>
+                        <Text className="text-[56px] font-thin text-txt-primary tracking-[8px] lowercase">
+                            hunch
+                        </Text>
+                        <Text className="text-xs text-txt-secondary tracking-widest mt-4 uppercase font-medium">
+                            bet on what you believe
+                        </Text>
                     </View>
 
                     {/* Get Started Button */}
-                    <View style={styles.buttonContainer}>
+                    <View className="absolute bottom-20 left-8 right-8">
                         <TouchableOpacity
-                            style={styles.getStartedButton}
+                            className="rounded-lg bg-app-dark shadow-lg"
                             onPress={() => setShowModal(true)}
                             activeOpacity={0.9}
                         >
-                            <View style={styles.getStartedGradient}>
-                                <Text style={styles.getStartedText}>Get Started</Text>
+                            <View className="flex-row items-center justify-center py-[18px] px-9 gap-2.5">
+                                <Text className="text-txt-inverse text-base font-medium tracking-wide">
+                                    Get Started
+                                </Text>
                                 <Ionicons name="arrow-forward" size={18} color={Theme.textInverse} />
                             </View>
                         </TouchableOpacity>
@@ -179,61 +171,69 @@ export default function LoginScreen() {
                 onRequestClose={() => setShowModal(false)}
             >
                 <Pressable
-                    style={styles.modalOverlay}
+                    className="flex-1 justify-end"
+                    style={{ backgroundColor: Theme.overlay }}
                     onPress={() => setShowModal(false)}
                 >
                     <Pressable
-                        style={styles.modalContent}
+                        className="bg-app-bg rounded-t-[20px] px-6 pt-3 pb-12 shadow-lg"
+                        style={{ minHeight: SCREEN_HEIGHT * 0.45 }}
                         onPress={(e) => e.stopPropagation()}
                     >
                         {/* Close Button */}
                         <TouchableOpacity
-                            style={styles.closeButton}
+                            className="absolute top-5 right-5 w-9 h-9 rounded-full bg-app-card items-center justify-center z-10"
                             onPress={() => setShowModal(false)}
                         >
-                            <Ionicons name="close" size={20} color={TEXT_SECONDARY} />
+                            <Ionicons name="close" size={20} color={Theme.textSecondary} />
                         </TouchableOpacity>
 
                         {/* Modal Header */}
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Join Hunch</Text>
-                            <Text style={styles.modalSubtitle}>
+                        <View className="items-center mt-5 mb-8">
+                            <Text className="text-2xl font-semibold text-txt-primary mb-2 tracking-wide">
+                                Join Hunch
+                            </Text>
+                            <Text className="text-sm text-txt-secondary text-center">
                                 Make predictions on events that matter
                             </Text>
                         </View>
 
                         {/* Login Buttons */}
-                        <View style={styles.authButtonsContainer}>
-                            {/* Google Login Button */}
+                        <View className="gap-3">
+                            {/* Google Login */}
                             <TouchableOpacity
-                                style={styles.authButton}
+                                className="bg-app-bg border-[1.5px] border-txt-primary flex-row items-center justify-center py-4 px-6 rounded-lg gap-3"
                                 onPress={() => handleLogin("google")}
                                 disabled={loadingProvider !== null}
                                 activeOpacity={0.7}
                             >
                                 {loadingProvider === "google" ? (
-                                    <ActivityIndicator size="small" color={TEXT_PRIMARY} />
+                                    <ActivityIndicator size="small" color={Theme.textPrimary} />
                                 ) : (
                                     <>
-                                        <Ionicons name="logo-google" size={20} color={TEXT_PRIMARY} />
-                                        <Text style={styles.authButtonText}>Continue with Google</Text>
+                                        <Ionicons name="logo-google" size={20} color={Theme.textPrimary} />
+                                        <Text className="text-txt-primary text-[15px] font-semibold">
+                                            Continue with Google
+                                        </Text>
                                     </>
                                 )}
                             </TouchableOpacity>
 
-                            {/* X/Twitter Login Button */}
+                            {/* X/Twitter Login */}
                             <TouchableOpacity
-                                style={styles.authButton}
+                                className="bg-app-bg border-[1.5px] border-txt-primary flex-row items-center justify-center py-4 px-6 rounded-lg gap-3"
                                 onPress={() => handleLogin("twitter")}
                                 disabled={loadingProvider !== null}
                                 activeOpacity={0.7}
                             >
                                 {loadingProvider === "twitter" ? (
-                                    <ActivityIndicator size="small" color={TEXT_PRIMARY} />
+                                    <ActivityIndicator size="small" color={Theme.textPrimary} />
                                 ) : (
                                     <>
-                                        <Ionicons name="logo-twitter" size={20} color={TEXT_PRIMARY} />
-                                        <Text style={styles.authButtonText}>Continue with X</Text>
+                                        <Ionicons name="logo-twitter" size={20} color={Theme.textPrimary} />
+                                        <Text className="text-txt-primary text-[15px] font-semibold">
+                                            Continue with X
+                                        </Text>
                                     </>
                                 )}
                             </TouchableOpacity>
@@ -241,13 +241,13 @@ export default function LoginScreen() {
 
                         {/* Error Message */}
                         {error ? (
-                            <View style={styles.errorContainer}>
-                                <Text style={styles.errorText}>{error}</Text>
+                            <View className="bg-red-50 p-3 rounded-lg mt-4 border border-status-error">
+                                <Text className="text-status-error text-sm text-center">{error}</Text>
                             </View>
                         ) : null}
 
                         {/* Terms */}
-                        <Text style={styles.termsText}>
+                        <Text className="text-[11px] text-txt-disabled text-center mt-6 leading-4">
                             By continuing, you agree to our Terms of Service and Privacy Policy
                         </Text>
                     </Pressable>
@@ -257,73 +257,8 @@ export default function LoginScreen() {
     );
 }
 
+// Minimal styles needed for animated components
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: BG_MAIN,
-    },
-    gradient: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: BG_MAIN,
-    },
-    safeArea: {
-        flex: 1,
-    },
-    content: {
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-        paddingHorizontal: 32,
-    },
-    brandingContainer: {
-        alignItems: "center",
-        marginBottom: SCREEN_HEIGHT * 0.15,
-    },
-    brandName: {
-        fontSize: 56,
-        fontWeight: "100",
-        color: TEXT_PRIMARY,
-        letterSpacing: 8,
-        textTransform: "lowercase",
-    },
-    tagline: {
-        fontSize: 12,
-        color: TEXT_SECONDARY,
-        letterSpacing: 2,
-        marginTop: 16,
-        textTransform: "uppercase",
-        fontWeight: "500",
-    },
-    buttonContainer: {
-        position: "absolute",
-        bottom: 80,
-        left: 32,
-        right: 32,
-    },
-    getStartedButton: {
-        borderRadius: 8,
-        backgroundColor: Theme.bgDark,
-        shadowColor: Theme.shadowColor,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
-        elevation: 8,
-    },
-    getStartedGradient: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 18,
-        paddingHorizontal: 36,
-        gap: 10,
-    },
-    getStartedText: {
-        color: Theme.textInverse,
-        fontSize: 16,
-        fontWeight: "500",
-        letterSpacing: 0.5,
-    },
-    // Orbit styles - minimal
     orbit: {
         position: "absolute",
         borderWidth: 0.5,
@@ -340,95 +275,6 @@ const styles = StyleSheet.create({
         left: "50%",
         marginLeft: -2,
         opacity: 0.5,
-    },
-    // Modal styles - clean white design
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: Theme.overlay,
-        justifyContent: "flex-end",
-    },
-    modalContent: {
-        backgroundColor: Theme.bgMain,
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        paddingHorizontal: 24,
-        paddingTop: 12,
-        paddingBottom: 48,
-        minHeight: SCREEN_HEIGHT * 0.45,
-        shadowColor: Theme.shadowColor,
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 16,
-        elevation: 16,
-    },
-
-    closeButton: {
-        position: "absolute",
-        top: 20,
-        right: 20,
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: Theme.bgCard,
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1,
-    },
-    modalHeader: {
-        alignItems: "center",
-        marginTop: 20,
-        marginBottom: 32,
-    },
-    modalTitle: {
-        fontSize: 24,
-        fontWeight: "600",
-        color: TEXT_PRIMARY,
-        marginBottom: 8,
-        letterSpacing: 0.5,
-    },
-    modalSubtitle: {
-        fontSize: 14,
-        color: TEXT_SECONDARY,
-        textAlign: "center",
-    },
-    authButtonsContainer: {
-        gap: 12,
-    },
-    authButton: {
-        backgroundColor: Theme.bgMain,
-        borderWidth: 1.5,
-        borderColor: Theme.textPrimary,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        paddingVertical: 15,
-        paddingHorizontal: 24,
-        borderRadius: 8,
-        gap: 12,
-    },
-    authButtonText: {
-        color: TEXT_PRIMARY,
-        fontSize: 15,
-        fontWeight: "600",
-    },
-    errorContainer: {
-        backgroundColor: Theme.errorMuted,
-        padding: 12,
-        borderRadius: 8,
-        marginTop: 16,
-        borderWidth: 1,
-        borderColor: Theme.error,
-    },
-    errorText: {
-        color: Theme.error,
-        fontSize: 14,
-        textAlign: "center",
-    },
-    termsText: {
-        fontSize: 11,
-        color: TEXT_DISABLED,
-        textAlign: "center",
-        marginTop: 24,
-        lineHeight: 16,
+        backgroundColor: Theme.border,
     },
 });

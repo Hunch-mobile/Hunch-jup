@@ -1,4 +1,5 @@
 import TradeQuoteSheet from "@/components/TradeQuoteSheet";
+import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, marketsApi } from "@/lib/api";
 import { Market } from "@/lib/types";
@@ -9,21 +10,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-// Import theme from central location
-import { Theme } from '@/constants/theme';
-
-// Theme constants
-const ACCENT = Theme.accentSubtle;
-const BG_MAIN = Theme.bgMain;
-const BG_CARD = Theme.bgCard;
-const BG_ELEVATED = Theme.bgElevated;
-const BORDER = Theme.border;
-const TEXT_PRIMARY = Theme.textPrimary;
-const TEXT_SECONDARY = Theme.textSecondary;
-const TEXT_DISABLED = Theme.textDisabled;
-const SUCCESS = Theme.success;
-const ERROR = Theme.error;
 
 export default function MarketDetailScreen() {
   const { ticker } = useLocalSearchParams<{ ticker: string }>();
@@ -39,9 +25,7 @@ export default function MarketDetailScreen() {
   const [lastTradeId, setLastTradeId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (ticker) {
-      loadMarketDetails();
-    }
+    if (ticker) loadMarketDetails();
   }, [ticker]);
 
   const loadMarketDetails = async () => {
@@ -60,14 +44,12 @@ export default function MarketDetailScreen() {
 
   const handleTrade = async () => {
     if (!market || !backendUser || !amount || parseFloat(amount) <= 0) return;
-
     Keyboard.dismiss();
     setIsTrading(true);
     setTradeError(null);
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
       const trade = await api.createTrade({
         userId: backendUser.id,
         marketTicker: market.ticker,
@@ -78,22 +60,15 @@ export default function MarketDetailScreen() {
         transactionSig: 'dummy_transaction_' + Date.now(),
         isDummy: true,
       });
-
       setLastTradeId(trade.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
-      // Show quote sheet after successful trade
       setShowQuoteSheet(true);
     } catch (err: any) {
       console.error("Trade placement error:", err);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      
       let errorMessage = "Failed to place trade";
-      if (err.message?.includes("insufficient")) {
-        errorMessage = "Insufficient balance";
-      } else if (err.message?.includes("market")) {
-        errorMessage = "Market not available";
-      }
+      if (err.message?.includes("insufficient")) errorMessage = "Insufficient balance";
+      else if (err.message?.includes("market")) errorMessage = "Market not available";
       setTradeError(errorMessage);
     } finally {
       setIsTrading(false);
@@ -101,7 +76,6 @@ export default function MarketDetailScreen() {
   };
 
   const handleQuoteSubmit = async (quote: string) => {
-    // TODO: Update trade with quote via API if needed
     console.log("Quote submitted:", quote, "for trade:", lastTradeId);
     setShowQuoteSheet(false);
     setAmount('');
@@ -114,23 +88,20 @@ export default function MarketDetailScreen() {
     router.back();
   };
 
-  // Calculate probability from bid/ask if available
   const calculateProbability = () => {
     if (market?.yesBid && market?.yesAsk) {
-      const bid = parseFloat(market.yesBid);
-      const ask = parseFloat(market.yesAsk);
-      return ((bid + ask) / 2 * 100);
+      return (parseFloat(market.yesBid) + parseFloat(market.yesAsk)) / 2 * 100;
     }
-    return 50; // Default placeholder
+    return 50;
   };
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color={ACCENT} />
+      <View className="flex-1 bg-app-bg">
+        <LinearGradient colors={[Theme.bgMain, '#0D1117', Theme.bgCard]} style={StyleSheet.absoluteFillObject} />
+        <SafeAreaView className="flex-1">
+          <View className="flex-1 justify-center items-center">
+            <ActivityIndicator size="large" color={Theme.accentSubtle} />
           </View>
         </SafeAreaView>
       </View>
@@ -139,18 +110,18 @@ export default function MarketDetailScreen() {
 
   if (error || !market) {
     return (
-      <View style={styles.container}>
-        <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
+      <View className="flex-1 bg-app-bg">
+        <LinearGradient colors={[Theme.bgMain, '#0D1117', Theme.bgCard]} style={StyleSheet.absoluteFillObject} />
+        <SafeAreaView className="flex-1">
+          <View className="px-5 py-3 flex-row justify-between items-center">
+            <TouchableOpacity className="w-10 h-10 rounded-full bg-app-card justify-center items-center border border-border" onPress={() => router.back()}>
+              <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
             </TouchableOpacity>
           </View>
-          <View style={styles.centerContainer}>
-            <Text style={styles.errorText}>{error || "Market not found"}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={loadMarketDetails}>
-              <Text style={styles.retryText}>Retry</Text>
+          <View className="flex-1 justify-center items-center">
+            <Text className="text-status-error text-base mb-3">{error || "Market not found"}</Text>
+            <TouchableOpacity className="bg-app-card py-2.5 px-5 rounded-[10px] border border-border" onPress={loadMarketDetails}>
+              <Text className="text-txt-primary text-sm font-semibold">Retry</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -163,172 +134,132 @@ export default function MarketDetailScreen() {
   const canTrade = betAmount > 0 && !isTrading && backendUser;
 
   return (
-    <View style={styles.container}>
-      <LinearGradient colors={[BG_MAIN, '#0D1117', BG_CARD]} style={styles.gradient} />
+    <View className="flex-1 bg-app-bg">
+      <LinearGradient colors={[Theme.bgMain, '#0D1117', Theme.bgCard]} style={StyleSheet.absoluteFillObject} />
 
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color={TEXT_PRIMARY} />
+      <SafeAreaView className="flex-1">
+        {/* Header */}
+        <View className="px-5 py-3 flex-row justify-between items-center">
+          <TouchableOpacity className="w-10 h-10 rounded-full bg-app-card justify-center items-center border border-border" onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.refreshButton} onPress={loadMarketDetails}>
-            <Ionicons name="refresh" size={20} color={TEXT_PRIMARY} />
+          <TouchableOpacity className="w-10 h-10 rounded-full bg-app-card justify-center items-center border border-border" onPress={loadMarketDetails}>
+            <Ionicons name="refresh" size={20} color={Theme.textPrimary} />
           </TouchableOpacity>
         </View>
 
-        <ScrollView 
-          showsVerticalScrollIndicator={false} 
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           {/* Market Header */}
-          <View style={styles.marketHeader}>
-            <View style={styles.statusRow}>
+          <View className="mb-5">
+            <View className="flex-row items-center gap-3 mb-3">
               {market.status === 'active' && (
-                <View style={styles.activeBadge}>
-                  <View style={styles.activeDot} />
-                  <Text style={styles.activeText}>Live</Text>
+                <View className="flex-row items-center gap-1.5 bg-cyan-500/10 px-2.5 py-1.5 rounded-lg border border-cyan-500/20">
+                  <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: Theme.accentSubtle }} />
+                  <Text className="text-[11px] font-bold uppercase tracking-wide" style={{ color: Theme.accentSubtle }}>Live</Text>
                 </View>
               )}
-              <View style={styles.volumeContainer}>
-                <Ionicons name="stats-chart" size={14} color={TEXT_SECONDARY} />
-                <Text style={styles.volumeText}>${((market.volume || 0) / 1000).toFixed(1)}K</Text>
+              <View className="flex-row items-center gap-1.5">
+                <Ionicons name="stats-chart" size={14} color={Theme.textSecondary} />
+                <Text className="text-txt-secondary text-[13px] font-medium">${((market.volume || 0) / 1000).toFixed(1)}K</Text>
               </View>
             </View>
-            <Text style={styles.marketTitle}>{market.title}</Text>
+            <Text className="text-2xl font-bold text-txt-primary mb-2.5 leading-8">{market.title}</Text>
             {market.yesSubTitle && (
-              <Text style={styles.outcomeText}>
-                <Text style={styles.yesHighlight}>Yes</Text> = {market.yesSubTitle}
+              <Text className="text-sm text-txt-secondary mb-2.5">
+                <Text className="font-bold text-status-success">Yes</Text> = {market.yesSubTitle}
               </Text>
             )}
             {market.closeTime && (
-              <View style={styles.closeTimeRow}>
-                <Ionicons name="time-outline" size={14} color={TEXT_DISABLED} />
-                <Text style={styles.closeTimeText}>
-                  Closes {new Date(market.closeTime * 1000).toLocaleDateString(undefined, {
-                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                  })}
+              <View className="flex-row items-center gap-1.5">
+                <Ionicons name="time-outline" size={14} color={Theme.textDisabled} />
+                <Text className="text-[13px] text-txt-disabled">
+                  Closes {new Date(market.closeTime * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </Text>
               </View>
             )}
           </View>
 
-          {/* Probability Display */}
-          <View style={styles.probabilityCard}>
-            <View style={styles.probHeader}>
-              <Text style={styles.probLabel}>Current Probability</Text>
-              <Text style={styles.probValue}>{estimatedProbability.toFixed(1)}%</Text>
+          {/* Probability Card */}
+          <View className="bg-app-card rounded-2xl p-[18px] mb-4 border border-border">
+            <View className="flex-row justify-between items-center mb-3.5">
+              <Text className="text-txt-secondary text-[13px] font-semibold">Current Probability</Text>
+              <Text className="text-[28px] font-bold" style={{ color: Theme.accentSubtle }}>{estimatedProbability.toFixed(1)}%</Text>
             </View>
-            <View style={styles.probBarContainer}>
-              <View style={styles.probBar}>
-                <View style={[styles.probFill, { width: `${estimatedProbability}%` }]} />
+            <View className="mb-2">
+              <View className="h-1.5 bg-red-400/25 rounded-full overflow-hidden">
+                <View className="h-full bg-status-success rounded-full" style={{ width: `${estimatedProbability}%` }} />
               </View>
-              <View style={styles.probLabels}>
-                <Text style={styles.yesLabel}>Yes</Text>
-                <Text style={styles.noLabel}>No</Text>
-              </View>
+            </View>
+            <View className="flex-row justify-between">
+              <Text className="text-status-success text-[11px] font-bold">Yes</Text>
+              <Text className="text-status-error text-[11px] font-bold">No</Text>
             </View>
           </View>
 
           {/* Trading Card */}
-          <View style={styles.tradingCard}>
+          <View className="bg-app-card rounded-[20px] p-5 mb-4 border border-border">
             {/* Side Selector */}
-            <View style={styles.sideSelector}>
+            <View className="flex-row gap-2.5 mb-5">
               <TouchableOpacity
-                style={[
-                  styles.sideButton,
-                  selectedSide === 'yes' && styles.yesSideActive,
-                ]}
-                onPress={() => {
-                  setSelectedSide('yes');
-                  Haptics.selectionAsync();
-                }}
+                className={`flex-1 flex-row items-center justify-between py-3.5 px-4 rounded-[14px] border-2 ${selectedSide === 'yes' ? 'bg-green-500/10 border-green-500/40' : 'bg-app-elevated border-transparent'
+                  }`}
+                onPress={() => { setSelectedSide('yes'); Haptics.selectionAsync(); }}
                 activeOpacity={0.8}
               >
-                <View style={styles.sideContent}>
-                  <Ionicons 
-                    name="trending-up" 
-                    size={20} 
-                    color={selectedSide === 'yes' ? SUCCESS : TEXT_DISABLED} 
-                  />
-                  <Text style={[
-                    styles.sideText,
-                    selectedSide === 'yes' && styles.yesTextActive,
-                  ]}>Yes</Text>
+                <View className="flex-row items-center gap-2.5">
+                  <Ionicons name="trending-up" size={20} color={selectedSide === 'yes' ? Theme.success : Theme.textDisabled} />
+                  <Text className={`text-base font-bold ${selectedSide === 'yes' ? 'text-status-success' : 'text-txt-disabled'}`}>Yes</Text>
                 </View>
                 {selectedSide === 'yes' && (
-                  <View style={styles.sideCheck}>
-                    <Ionicons name="checkmark" size={14} color={SUCCESS} />
+                  <View className="w-[22px] h-[22px] rounded-full bg-white/10 justify-center items-center">
+                    <Ionicons name="checkmark" size={14} color={Theme.success} />
                   </View>
                 )}
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[
-                  styles.sideButton,
-                  selectedSide === 'no' && styles.noSideActive,
-                ]}
-                onPress={() => {
-                  setSelectedSide('no');
-                  Haptics.selectionAsync();
-                }}
+                className={`flex-1 flex-row items-center justify-between py-3.5 px-4 rounded-[14px] border-2 ${selectedSide === 'no' ? 'bg-red-400/10 border-red-400/40' : 'bg-app-elevated border-transparent'
+                  }`}
+                onPress={() => { setSelectedSide('no'); Haptics.selectionAsync(); }}
                 activeOpacity={0.8}
               >
-                <View style={styles.sideContent}>
-                  <Ionicons 
-                    name="trending-down" 
-                    size={20} 
-                    color={selectedSide === 'no' ? ERROR : TEXT_DISABLED} 
-                  />
-                  <Text style={[
-                    styles.sideText,
-                    selectedSide === 'no' && styles.noTextActive,
-                  ]}>No</Text>
+                <View className="flex-row items-center gap-2.5">
+                  <Ionicons name="trending-down" size={20} color={selectedSide === 'no' ? Theme.error : Theme.textDisabled} />
+                  <Text className={`text-base font-bold ${selectedSide === 'no' ? 'text-status-error' : 'text-txt-disabled'}`}>No</Text>
                 </View>
                 {selectedSide === 'no' && (
-                  <View style={styles.sideCheck}>
-                    <Ionicons name="checkmark" size={14} color={ERROR} />
+                  <View className="w-[22px] h-[22px] rounded-full bg-white/10 justify-center items-center">
+                    <Ionicons name="checkmark" size={14} color={Theme.error} />
                   </View>
                 )}
               </TouchableOpacity>
             </View>
 
             {/* Amount Input */}
-            <View style={styles.amountSection}>
-              <Text style={styles.amountLabel}>Amount</Text>
-              <View style={styles.amountInputRow}>
-                <View style={styles.inputWrapper}>
-                  <Text style={styles.inputPrefix}>$</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="0"
-                    placeholderTextColor={TEXT_DISABLED}
-                    keyboardType="decimal-pad"
-                    value={amount}
-                    onChangeText={(t) => {
-                      setAmount(t.replace(',', '.'));
-                      setTradeError(null);
-                    }}
-                  />
-                </View>
+            <View className="mb-4">
+              <Text className="text-txt-secondary text-xs font-bold uppercase tracking-wide mb-2.5">Amount</Text>
+              <View className="flex-row items-center bg-app-elevated rounded-[14px] border border-border px-4">
+                <Text className="text-txt-secondary text-2xl font-semibold">$</Text>
+                <TextInput
+                  className="flex-1 text-txt-primary text-[28px] font-bold py-3.5 pl-1.5"
+                  placeholder="0"
+                  placeholderTextColor={Theme.textDisabled}
+                  keyboardType="decimal-pad"
+                  value={amount}
+                  onChangeText={(t) => { setAmount(t.replace(',', '.')); setTradeError(null); }}
+                />
               </View>
-              <View style={styles.quickAmounts}>
+              <View className="flex-row gap-2 mt-3">
                 {['5', '10', '25', '50', '100'].map((value) => (
                   <TouchableOpacity
                     key={value}
-                    style={[
-                      styles.quickBtn,
-                      amount === value && styles.quickBtnActive,
-                    ]}
-                    onPress={() => {
-                      setAmount(value);
-                      Haptics.selectionAsync();
-                    }}
+                    className={`flex-1 py-2.5 rounded-[10px] border items-center ${amount === value ? 'bg-cyan-500/10 border-cyan-500/30' : 'bg-app-elevated border-border'
+                      }`}
+                    onPress={() => { setAmount(value); Haptics.selectionAsync(); }}
                   >
-                    <Text style={[
-                      styles.quickBtnText,
-                      amount === value && styles.quickBtnTextActive,
-                    ]}>${value}</Text>
+                    <Text className={`text-[13px] font-semibold ${amount === value ? '' : 'text-txt-secondary'}`} style={amount === value ? { color: Theme.accentSubtle } : {}}>
+                      ${value}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -336,531 +267,89 @@ export default function MarketDetailScreen() {
 
             {/* Payout Preview */}
             {betAmount > 0 && (
-              <View style={styles.payoutPreview}>
-                <View style={styles.payoutRow}>
-                  <Text style={styles.payoutLabel}>If you win</Text>
-                  <Text style={styles.payoutValue}>
-                    ${(betAmount * (100 / estimatedProbability)).toFixed(2)}
-                  </Text>
+              <View className="bg-cyan-500/10 rounded-xl p-3.5 mb-4 border border-cyan-500/15">
+                <View className="flex-row justify-between mb-1.5">
+                  <Text className="text-txt-secondary text-[13px]">If you win</Text>
+                  <Text className="text-txt-primary text-sm font-bold">${(betAmount * (100 / estimatedProbability)).toFixed(2)}</Text>
                 </View>
-                <View style={styles.payoutRow}>
-                  <Text style={styles.payoutLabel}>Profit</Text>
-                  <Text style={styles.profitValue}>
-                    +${((betAmount * (100 / estimatedProbability)) - betAmount).toFixed(2)}
-                  </Text>
+                <View className="flex-row justify-between">
+                  <Text className="text-txt-secondary text-[13px]">Profit</Text>
+                  <Text className="text-status-success text-sm font-bold">+${((betAmount * (100 / estimatedProbability)) - betAmount).toFixed(2)}</Text>
                 </View>
               </View>
             )}
 
-            {/* Error Message */}
+            {/* Error Banner */}
             {tradeError && (
-              <View style={styles.errorBanner}>
-                <Ionicons name="alert-circle" size={18} color={ERROR} />
-                <Text style={styles.errorBannerText}>{tradeError}</Text>
+              <View className="flex-row items-center gap-2 bg-red-400/10 rounded-[10px] p-3 mb-4 border border-red-400/20">
+                <Ionicons name="alert-circle" size={18} color={Theme.error} />
+                <Text className="text-status-error text-[13px] font-medium flex-1">{tradeError}</Text>
               </View>
             )}
 
             {/* Trade Button */}
             <TouchableOpacity
-              style={[styles.tradeButton, !canTrade && styles.tradeButtonDisabled]}
+              className={`rounded-[14px] overflow-hidden ${!canTrade ? 'opacity-70' : ''}`}
               onPress={handleTrade}
               disabled={!canTrade}
               activeOpacity={0.85}
             >
               <LinearGradient
-                colors={canTrade ? [ACCENT, '#00B8D4'] : [BG_ELEVATED, BG_ELEVATED]}
+                colors={canTrade ? [Theme.accentSubtle, '#00B8D4'] : [Theme.bgElevated, Theme.bgElevated]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                style={styles.tradeGradient}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16 }}
               >
                 {isTrading ? (
-                  <ActivityIndicator size="small" color={BG_MAIN} />
+                  <ActivityIndicator size="small" color={Theme.bgMain} />
                 ) : (
                   <>
-                    <Text style={[styles.tradeButtonText, !canTrade && styles.tradeButtonTextDisabled]}>
+                    <Text className={`text-base font-bold ${canTrade ? 'text-app-bg' : 'text-txt-disabled'}`}>
                       {betAmount > 0 ? `Bet $${betAmount.toFixed(2)} on ${selectedSide.toUpperCase()}` : 'Enter Amount'}
                     </Text>
-                    {canTrade && <Ionicons name="arrow-forward" size={18} color={BG_MAIN} />}
+                    {canTrade && <Ionicons name="arrow-forward" size={18} color={Theme.bgMain} />}
                   </>
                 )}
               </LinearGradient>
             </TouchableOpacity>
           </View>
 
-          {/* Market Info */}
-          <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Details</Text>
-            <View style={styles.infoGrid}>
-              <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>Status</Text>
-                <Text style={styles.infoValue}>{market.status}</Text>
+          {/* Info Card */}
+          <View className="bg-app-card rounded-2xl p-[18px] border border-border">
+            <Text className="text-base font-bold text-txt-primary mb-3.5">Details</Text>
+            <View className="flex-row flex-wrap gap-3 mb-3.5">
+              <View className="bg-app-elevated rounded-[10px] p-3 min-w-[30%] flex-1">
+                <Text className="text-txt-disabled text-[11px] font-semibold uppercase tracking-wide mb-1">Status</Text>
+                <Text className="text-txt-primary text-sm font-semibold">{market.status}</Text>
               </View>
-              <View style={styles.infoItem}>
-                <Text style={styles.infoLabel}>Volume</Text>
-                <Text style={styles.infoValue}>${((market.volume || 0) / 1000).toFixed(1)}K</Text>
+              <View className="bg-app-elevated rounded-[10px] p-3 min-w-[30%] flex-1">
+                <Text className="text-txt-disabled text-[11px] font-semibold uppercase tracking-wide mb-1">Volume</Text>
+                <Text className="text-txt-primary text-sm font-semibold">${((market.volume || 0) / 1000).toFixed(1)}K</Text>
               </View>
               {market.openInterest && (
-                <View style={styles.infoItem}>
-                  <Text style={styles.infoLabel}>Open Interest</Text>
-                  <Text style={styles.infoValue}>${(market.openInterest / 1000).toFixed(1)}K</Text>
+                <View className="bg-app-elevated rounded-[10px] p-3 min-w-[30%] flex-1">
+                  <Text className="text-txt-disabled text-[11px] font-semibold uppercase tracking-wide mb-1">Open Interest</Text>
+                  <Text className="text-txt-primary text-sm font-semibold">${(market.openInterest / 1000).toFixed(1)}K</Text>
                 </View>
               )}
             </View>
             {market.rulesPrimary && (
-              <View style={styles.rulesSection}>
-                <Text style={styles.rulesLabel}>Rules</Text>
-                <Text style={styles.rulesText}>{market.rulesPrimary}</Text>
+              <View className="pt-3.5 border-t border-border">
+                <Text className="text-txt-secondary text-xs font-semibold mb-2">Rules</Text>
+                <Text className="text-txt-primary text-[13px] leading-5">{market.rulesPrimary}</Text>
               </View>
             )}
           </View>
         </ScrollView>
       </SafeAreaView>
 
-      {/* Quote Sheet */}
       <TradeQuoteSheet
         visible={showQuoteSheet}
         onClose={() => setShowQuoteSheet(false)}
         onSubmit={handleQuoteSubmit}
         onSkip={handleQuoteSkip}
-        tradeInfo={{
-          side: selectedSide,
-          amount: amount,
-          marketTitle: market.title,
-        }}
+        tradeInfo={{ side: selectedSide, amount: amount, marketTitle: market.title }}
       />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BG_MAIN,
-  },
-  gradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: BG_CARD,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  refreshButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: BG_CARD,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorText: {
-    color: ERROR,
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  retryButton: {
-    backgroundColor: BG_CARD,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  retryText: {
-    color: TEXT_PRIMARY,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  // Market Header
-  marketHeader: {
-    marginBottom: 20,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-  },
-  activeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(63, 227, 255, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(63, 227, 255, 0.2)',
-  },
-  activeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: ACCENT,
-  },
-  activeText: {
-    color: ACCENT,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  volumeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  volumeText: {
-    color: TEXT_SECONDARY,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  marketTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-    marginBottom: 10,
-    lineHeight: 32,
-  },
-  outcomeText: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
-    marginBottom: 10,
-  },
-  yesHighlight: {
-    fontWeight: '700',
-    color: SUCCESS,
-  },
-  closeTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  closeTimeText: {
-    fontSize: 13,
-    color: TEXT_DISABLED,
-  },
-  // Probability Card
-  probabilityCard: {
-    backgroundColor: BG_CARD,
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  probHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  probLabel: {
-    color: TEXT_SECONDARY,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  probValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: ACCENT,
-  },
-  probBarContainer: {},
-  probBar: {
-    height: 6,
-    backgroundColor: 'rgba(248, 113, 113, 0.25)',
-    borderRadius: 999,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  probFill: {
-    height: '100%',
-    backgroundColor: SUCCESS,
-    borderRadius: 999,
-  },
-  probLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  yesLabel: {
-    color: SUCCESS,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  noLabel: {
-    color: ERROR,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  // Trading Card
-  tradingCard: {
-    backgroundColor: BG_CARD,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  sideSelector: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
-  },
-  sideButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    backgroundColor: BG_ELEVATED,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  sideContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  sideText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: TEXT_DISABLED,
-  },
-  yesSideActive: {
-    backgroundColor: 'rgba(74, 222, 128, 0.1)',
-    borderColor: 'rgba(74, 222, 128, 0.4)',
-  },
-  noSideActive: {
-    backgroundColor: 'rgba(248, 113, 113, 0.1)',
-    borderColor: 'rgba(248, 113, 113, 0.4)',
-  },
-  yesTextActive: {
-    color: SUCCESS,
-  },
-  noTextActive: {
-    color: ERROR,
-  },
-  sideCheck: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  // Amount Section
-  amountSection: {
-    marginBottom: 16,
-  },
-  amountLabel: {
-    color: TEXT_SECONDARY,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 10,
-  },
-  amountInputRow: {},
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: BORDER,
-    paddingHorizontal: 16,
-  },
-  inputPrefix: {
-    color: TEXT_SECONDARY,
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  input: {
-    flex: 1,
-    color: TEXT_PRIMARY,
-    fontSize: 28,
-    fontWeight: '700',
-    paddingVertical: 14,
-    paddingLeft: 6,
-  },
-  quickAmounts: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  quickBtn: {
-    flex: 1,
-    backgroundColor: BG_ELEVATED,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: BORDER,
-    alignItems: 'center',
-  },
-  quickBtnActive: {
-    backgroundColor: 'rgba(63, 227, 255, 0.1)',
-    borderColor: 'rgba(63, 227, 255, 0.3)',
-  },
-  quickBtnText: {
-    color: TEXT_SECONDARY,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  quickBtnTextActive: {
-    color: ACCENT,
-  },
-  // Payout Preview
-  payoutPreview: {
-    backgroundColor: 'rgba(63, 227, 255, 0.08)',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(63, 227, 255, 0.15)',
-  },
-  payoutRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  payoutLabel: {
-    color: TEXT_SECONDARY,
-    fontSize: 13,
-  },
-  payoutValue: {
-    color: TEXT_PRIMARY,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  profitValue: {
-    color: SUCCESS,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  // Error Banner
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(248, 113, 113, 0.1)',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.2)',
-  },
-  errorBannerText: {
-    color: ERROR,
-    fontSize: 13,
-    fontWeight: '500',
-    flex: 1,
-  },
-  // Trade Button
-  tradeButton: {
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  tradeButtonDisabled: {
-    opacity: 0.7,
-  },
-  tradeGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-  },
-  tradeButtonText: {
-    color: BG_MAIN,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  tradeButtonTextDisabled: {
-    color: TEXT_DISABLED,
-  },
-  // Info Card
-  infoCard: {
-    backgroundColor: BG_CARD,
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: TEXT_PRIMARY,
-    marginBottom: 14,
-  },
-  infoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 14,
-  },
-  infoItem: {
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 10,
-    padding: 12,
-    minWidth: '30%',
-    flex: 1,
-  },
-  infoLabel: {
-    color: TEXT_DISABLED,
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  infoValue: {
-    color: TEXT_PRIMARY,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  rulesSection: {
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
-  },
-  rulesLabel: {
-    color: TEXT_SECONDARY,
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  rulesText: {
-    color: TEXT_PRIMARY,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-});
-
