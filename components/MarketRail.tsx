@@ -250,7 +250,7 @@ export const MarketRail = () => {
         <View className="py-5 bg-app-bg">
             {/* Header */}
             <View className="flex-row items-center px-5 mb-4 gap-2">
-                <Text className="text-xl font-extrabold text-txt-primary tracking-tight">Trending Markets</Text>
+                <Text className="text-3xl font-extrabold text-txt-primary tracking-tight">Trending Markets</Text>
                 <Ionicons name="flame" size={18} color={Theme.chartLine} />
             </View>
 

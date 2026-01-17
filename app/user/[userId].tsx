@@ -10,6 +10,7 @@ import { ActivityIndicator, Animated, Dimensions, ScrollView, Share, StyleSheet,
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const defaultProfileImage = require("@/assets/default.jpeg");
 
 type TabType = 'active' | 'previous';
 
@@ -181,6 +182,7 @@ export default function UserProfileScreen() {
     }
 
     const displayName = profile.displayName || `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}`;
+    const username = `@${(profile.id || profile.walletAddress || "user").toLowerCase().replace(/\s/g, '')}`;
     const profileImageUrl = profile.avatarUrl?.replace('_normal', '');
 
     const now = new Date();
@@ -204,7 +206,7 @@ export default function UserProfileScreen() {
                         </TouchableOpacity>
                         <TouchableOpacity
                             className="justify-center items-center"
-                            onPress={() => Share.share({ message: `${displayName} on Hunch\n${profile.walletAddress}` })}
+                            onPress={() => Share.share({ message: `${username} on Hunch\n${profile.walletAddress}` })}
                         >
                             <Ionicons name="share-outline" size={20} color={Theme.textSecondary} />
                         </TouchableOpacity>
@@ -214,19 +216,17 @@ export default function UserProfileScreen() {
                     <View className="flex-row items-start gap-4 mb-4">
                         {/* Avatar */}
                         <View className="w-14 h-14 rounded-full bg-app-card justify-center items-center overflow-hidden">
-                            {profileImageUrl ? (
-                                <Image source={{ uri: profileImageUrl }} className="w-full h-full rounded-full" contentFit="cover" />
-                            ) : (
-                                <Text className="text-[22px] font-bold text-txt-primary">
-                                    {displayName.charAt(0).toUpperCase()}
-                                </Text>
-                            )}
+                            <Image
+                                source={profileImageUrl ? { uri: profileImageUrl } : defaultProfileImage}
+                                className="w-full h-full rounded-full"
+                                contentFit="cover"
+                            />
                         </View>
 
                         {/* Info */}
                         <View className="flex-1 pt-1">
                             <View className="flex-row items-center justify-between mb-2.5 gap-3">
-                                <Text className="text-xl font-bold text-txt-primary flex-1" numberOfLines={1}>{displayName}</Text>
+                                <Text className="text-xl font-bold text-txt-primary flex-1" numberOfLines={1}>{username}</Text>
 
                                 {!isOwnProfile && currentUser && (
                                     <TouchableOpacity

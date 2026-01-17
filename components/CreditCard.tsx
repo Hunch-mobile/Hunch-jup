@@ -3,7 +3,7 @@ import { useFundSolanaWallet } from '@privy-io/expo/ui';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from "expo-linear-gradient";
 import { useRef, useState } from "react";
-import { Animated, Dimensions, ImageBackground, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Dimensions, Image, ImageBackground, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import WithdrawSheet from "./WithdrawSheet";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -77,16 +77,21 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                         pointerEvents={isFlipped ? "none" : "auto"}
                     >
                         <ImageBackground
-                            source={require('@/assets/images/texture.jpeg')}
+                            source={require('../assets/cardbg.png')}
                             style={styles.textureBackground}
                             imageStyle={styles.textureImage}
                         >
+                            <Image
+                                source={require('../assets/images/texture.jpeg')}
+                                style={styles.textureOverlay}
+                                resizeMode="cover"
+                            />
                             <LinearGradient
-                                // Green gradient overlay with transparency
+                                // Blue/Slate gradient overlay with transparency
                                 colors={[
-                                    'rgba(209, 250, 229, 0.5)',
-                                    'rgba(190, 242, 100, 0.5)',
-                                    'rgba(187, 247, 208, 0.5)'
+                                    'rgba(254, 240, 138, 0.44)',
+                                    'rgba(250, 204, 21, 0.45)',
+                                    'rgba(253, 224, 71, 0.55)'
                                 ]}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
@@ -109,7 +114,7 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
 
                                     {/* Middle Row - Cash Balance */}
                                     <View style={styles.balanceSection}>
-                                        <Text style={styles.label}>Cash Balance</Text>
+                                        <Text className="text-sm text-txt-primary" style={styles.label}>Cash Balance</Text>
                                         <Text style={styles.balanceValue}>${balance.toFixed(2)}</Text>
                                     </View>
 
@@ -136,10 +141,15 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                         pointerEvents={isFlipped ? "auto" : "none"}
                     >
                         <ImageBackground
-                            source={require('@/assets/images/texture.jpeg')}
+                            source={require('../assets/cardbg.png')}
                             style={styles.textureBackground}
                             imageStyle={styles.textureImage}
                         >
+                            <Image
+                                source={require('../assets/images/texture.jpeg')}
+                                style={styles.textureOverlay}
+                                resizeMode="cover"
+                            />
                             <LinearGradient
                                 // Light gray gradient overlay with transparency
                                 colors={[
@@ -273,7 +283,11 @@ const styles = StyleSheet.create({
     },
     textureImage: {
         borderRadius: 20,
-        opacity: 1.0,
+        opacity: 0.6,
+    },
+    textureOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        opacity: 0.35,
     },
     contentContainer: {
         flex: 1,

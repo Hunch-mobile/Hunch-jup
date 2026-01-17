@@ -1,7 +1,7 @@
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
-import { Follow } from "@/lib/types";
+import { Follow, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -9,6 +9,7 @@ import { ActivityIndicator, Animated, Dimensions, FlatList, Image, PanResponder,
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const defaultProfileImage = require("@/assets/default.jpeg");
 
 type TabType = 'followers' | 'following';
 
@@ -47,21 +48,17 @@ const UserRow = ({
             activeOpacity={0.7}
         >
             <View className="w-12 h-12 rounded-full bg-app-elevated justify-center items-center mr-3 overflow-hidden">
-                {item.avatarUrl ? (
-                    <Image source={{ uri: item.avatarUrl }} className="w-full h-full rounded-full" />
-                ) : (
-                    <Text className="text-lg font-bold text-txt-primary">
-                        {displayName.charAt(0).toUpperCase()}
-                    </Text>
-                )}
+                <Image
+                    source={item.avatarUrl ? { uri: item.avatarUrl } : defaultProfileImage}
+                    className="w-full h-full rounded-full"
+                />
             </View>
             <View className="flex-1">
-                <Text className="text-[15px] font-semibold text-txt-primary mb-0.5">{displayName}</Text>
-                <Text className="text-[13px] text-txt-secondary">{username}</Text>
-            </View>
+                <Text className="text-[15px] font-semibold  mb-0.5">{displayName}</Text>
+                </View>
             {!isSelf && (
                 <TouchableOpacity
-                    className={`py-2 px-5 rounded-full min-w-[100px] items-center justify-center ${isFollowing ? 'bg-app-bg border-[1.5px] border-txt-primary' : 'bg-txt-primary'
+                    className={`py-2 px-5 rounded-xl min-w-[100px] items-center justify-center ${isFollowing ? 'bg-slate-200  ' : 'bg-txt-primary'
                         } ${inProgress ? 'opacity-60' : ''}`}
                     onPress={(e) => { e.stopPropagation(); onFollow(); }}
                     disabled={inProgress}
@@ -69,7 +66,9 @@ const UserRow = ({
                     {inProgress ? (
                         <ActivityIndicator size="small" color={Theme.textPrimary} />
                     ) : (
-                        <Text className={`text-[13px] font-semibold ${isFollowing ? 'text-txt-primary' : 'text-txt-inverse'}`}>
+                        <Text
+                            className={`text-[13px] ${isFollowing ? 'font-lg text-txt-primary ' : 'font-semibold text-txt-inverse'}`}
+                        >
                             {isFollowing ? "Following" : "Follow"}
                         </Text>
                     )}
@@ -84,6 +83,7 @@ export default function FollowersFollowingScreen() {
     const { backendUser } = useUser();
 
     const [activeTab, setActiveTab] = useState<TabType>((tab as TabType) || 'followers');
+    const [viewedUser, setViewedUser] = useState<User | null>(null);
     const [followers, setFollowers] = useState<UserItem[]>([]);
     const [following, setFollowing] = useState<UserItem[]>([]);
     const [loadingFollowers, setLoadingFollowers] = useState(true);
@@ -137,11 +137,21 @@ export default function FollowersFollowingScreen() {
 
     useEffect(() => {
         if (userId) {
+            loadViewedUser();
             loadFollowers();
             loadFollowing();
             if (backendUser) loadMyFollowingList();
         }
     }, [userId, backendUser]);
+
+    const loadViewedUser = async () => {
+        try {
+            const data = await api.getUser(userId as string);
+            setViewedUser(data);
+        } catch (err) {
+            console.error("Failed to fetch viewed user:", err);
+        }
+    };
 
     const loadFollowers = async () => {
         try {
@@ -214,9 +224,13 @@ export default function FollowersFollowingScreen() {
                         <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
                     </TouchableOpacity>
                     <View className="flex-1" />
-                    <TouchableOpacity className="w-9 h-9 rounded-full justify-center items-center">
-                        <Ionicons name="share-outline" size={20} color={Theme.textSecondary} />
-                    </TouchableOpacity>
+                </View>
+
+                {/* Viewed user */}
+                <View className="px-5 pb-2">
+                    <Text className="text-lg font-semibold text-txt-primary">
+                        {viewedUser?.displayName || viewedUser?.walletAddress?.slice(0, 6) || 'User'}
+                    </Text>
                 </View>
 
                 {/* Tab Header */}

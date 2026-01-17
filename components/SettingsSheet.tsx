@@ -1,7 +1,8 @@
 import { Theme } from '@/constants/theme';
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import { useEffect, useRef } from "react";
-import { Animated, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Dimensions, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function SettingsSheet({
@@ -16,7 +17,8 @@ export default function SettingsSheet({
     onLogout: () => void;
 }) {
     const insets = useSafeAreaInsets();
-    const slideAnim = useRef(new Animated.Value(300)).current;
+    const halfScreenHeight = Math.round(Dimensions.get("window").height * 0.5);
+    const slideAnim = useRef(new Animated.Value(halfScreenHeight)).current;
 
     useEffect(() => {
         if (visible) {
@@ -28,25 +30,31 @@ export default function SettingsSheet({
             }).start();
         } else {
             Animated.timing(slideAnim, {
-                toValue: 300,
+                toValue: halfScreenHeight,
                 duration: 150,
                 useNativeDriver: true,
             }).start();
         }
-    }, [visible]);
+    }, [visible, halfScreenHeight]);
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <Pressable className="flex-1 bg-black/50 justify-end" onPress={onClose}>
+            <Pressable style={styles.backdrop} onPress={onClose}>
+                <BlurView intensity={25} tint="default" style={StyleSheet.absoluteFill} />
+                <View style={styles.backdropTint} />
                 <Animated.View
                     style={[
                         styles.sheet,
-                        { paddingBottom: Math.max(insets.bottom, 20), transform: [{ translateY: slideAnim }] }
+                        {
+                            height: halfScreenHeight,
+                            paddingBottom: Math.max(insets.bottom, 20),
+                            transform: [{ translateY: slideAnim }],
+                        }
                     ]}
                 >
                     <Pressable onPress={(e) => e.stopPropagation()}>
                         <View className="pb-4">
-                            <Text className="text-xl font-bold text-txt-primary">Settings</Text>
+                            <Text className="text-3xl pt-4 px-3 font-bold text-txt-primary">Settings</Text>
                         </View>
 
                         <View className="gap-2 pb-2">
@@ -85,6 +93,14 @@ export default function SettingsSheet({
 
 // Minimal styles for sheet positioning
 const styles = StyleSheet.create({
+    backdrop: {
+        flex: 1,
+        justifyContent: "flex-end",
+    },
+    backdropTint: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: "rgba(0, 0, 0, 0.25)",
+    },
     sheet: {
         backgroundColor: Theme.bgMain,
         borderTopLeftRadius: 24,

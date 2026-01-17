@@ -126,8 +126,31 @@ export const api = {
     },
 
     // Feed endpoint
-    getFeed: async (userId: string, limit = 50, offset = 0): Promise<Trade[]> => {
-        const response = await fetch(`${API_BASE_URL}/api/feed?userId=${userId}&limit=${limit}&offset=${offset}`);
+    getFeed: async ({
+        userId,
+        mode = 'following',
+        limit = 50,
+        offset = 0,
+    }: {
+        userId?: string;
+        mode?: 'following' | 'global';
+        limit?: number;
+        offset?: number;
+    }): Promise<Trade[]> => {
+        const params = new URLSearchParams({
+            limit: limit.toString(),
+            offset: offset.toString(),
+            mode,
+        });
+        if (userId && mode === 'following') {
+            params.append('userId', userId);
+        }
+        const url = `${API_BASE_URL}/api/feed?${params.toString()}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const response = await fetch(url, { signal: controller.signal }).finally(() => {
+            clearTimeout(timeoutId);
+        });
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.error || 'Failed to get feed');

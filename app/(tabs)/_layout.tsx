@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { usePrivy } from "@privy-io/expo";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { Tabs } from "expo-router";
 import { useEffect } from "react";
@@ -24,13 +25,14 @@ const TAB_CONFIG = [
 ] as const;
 
 const TAB_COUNT = TAB_CONFIG.length;
-const NAVBAR_HORIZONTAL_MARGIN = 60; // Increased from 20 to make navbar more compact
-const NAVBAR_HEIGHT = 64;
+const NAVBAR_HORIZONTAL_MARGIN = 44; // Wider and more prominent
+const NAVBAR_HEIGHT = 72;
 const NAVBAR_WIDTH = Dimensions.get('window').width - (NAVBAR_HORIZONTAL_MARGIN * 2);
 const TAB_WIDTH = NAVBAR_WIDTH / TAB_COUNT;
-const INDICATOR_WIDTH = 56;
-const INDICATOR_HEIGHT = 48;
+const INDICATOR_WIDTH = 62;
+const INDICATOR_HEIGHT = 54;
 const INDICATOR_VERTICAL_PADDING = (NAVBAR_HEIGHT - INDICATOR_HEIGHT) / 2;
+const defaultProfileImage = require("@/assets/default.jpeg");
 
 // Clean minimalist tab bar
 function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
@@ -72,7 +74,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   });
 
   return (
-    <View style={[styles.floatingContainer, { bottom: Math.max(insets.bottom, 16) + 8 }]}>
+    <View style={[styles.floatingContainer, { bottom: Math.max(insets.bottom, 0) + 4 }]}>
       {/* Clean white background with subtle shadow */}
       <View style={styles.tabBarContainer}>
         {/* Sliding indicator - minimalist black rounded rectangle */}
@@ -153,6 +155,9 @@ function TabButton({
   });
 
   const handlePressIn = () => {
+    if (process.env.EXPO_OS === 'ios') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     scaleValue.value = withSpring(0.92, { damping: 15, stiffness: 300 });
   };
 
@@ -170,15 +175,15 @@ function TabButton({
       android_ripple={null}
     >
       <Animated.View style={[styles.iconWrapper, animatedStyle]}>
-        {routeName === 'profile' && profileImageUrl ? (
+        {routeName === 'profile' ? (
           <Image
-            source={{ uri: profileImageUrl }}
+            source={profileImageUrl ? { uri: profileImageUrl } : defaultProfileImage}
             style={styles.profileImage}
           />
         ) : (
           <Ionicons
             name={focused ? iconName as any : iconOutline as any}
-            size={24}
+            size={26}
             color={focused ? Theme.textInverse : Theme.textSecondary}
           />
         )}
@@ -209,23 +214,22 @@ const styles = StyleSheet.create({
     left: NAVBAR_HORIZONTAL_MARGIN,
     right: NAVBAR_HORIZONTAL_MARGIN,
     height: NAVBAR_HEIGHT,
-  },
-  tabBarContainer: {
-    ...StyleSheet.absoluteFillObject,
     backgroundColor: Theme.bgMain,
     borderRadius: NAVBAR_HEIGHT / 2,
     borderWidth: 1,
-    borderColor: Theme.border,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.20,
+    shadowRadius: 24,
+    elevation: 14,
+  },
+  tabBarContainer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+    borderRadius: NAVBAR_HEIGHT / 2,
     overflow: 'hidden',
-    // Clean shadow
-    shadowColor: Theme.shadowColor,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 8,
+    // Shadows are on floatingContainer so they aren't clipped
   },
   // Indicator styles - minimalist black pill
   indicatorContainer: {
@@ -239,7 +243,7 @@ const styles = StyleSheet.create({
   },
   indicatorBackground: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#333333', // Softer dark gray instead of pure black
+    backgroundColor: '#000000',
     borderRadius: INDICATOR_HEIGHT / 2,
   },
   // Tab container
@@ -257,16 +261,16 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   iconWrapper: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   profileImage: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 2,
     borderColor: Theme.textSecondary,
   },
