@@ -224,11 +224,14 @@ export const MarketRail = () => {
 
                 try {
                     const endTs = Math.floor(Date.now() / 1000);
-                    const startTs = endTs - (30 * 24 * 60 * 60);
-                    const candles = await marketsApi.fetchCandlesticksByMint(marketMint, { startTs, endTs, periodInterval: 1440 });
+                    const startTs = endTs - (7 * 24 * 60 * 60); // 1 week = 604800 seconds
+                    console.log(`[MarketRail] Fetching candles for ${item.market.ticker}: startTs=${startTs}, endTs=${endTs}, range=${new Date(startTs * 1000).toISOString()} to ${new Date(endTs * 1000).toISOString()}`);
+                    const candles = await marketsApi.fetchCandlesticksByMint(marketMint, { startTs, endTs, periodInterval: 60 });
+                    console.log(`[MarketRail] Got ${candles?.length || 0} candles for ${item.market.ticker}`);
                     newCandlesMap[item.market.ticker] = candles || [];
                     if (candles?.length > 0) candleCache.set(marketMint, { data: candles, timestamp: Date.now() });
                 } catch (error) {
+                    console.error(`[MarketRail] Error fetching candles for ${item.market.ticker}:`, error);
                     newCandlesMap[item.market.ticker] = [];
                 }
             })

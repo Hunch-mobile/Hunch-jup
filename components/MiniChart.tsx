@@ -96,9 +96,8 @@ export const MiniChart: React.FC<InteractiveChartProps> = ({
             return { prices: [], minPrice: 0, maxPrice: 1, path: '', areaPath: '' };
         }
 
-        // Take last 20 candles
-        const recentCandles = candles.slice(-20);
-        const prices = recentCandles.map(c => c.close);
+        // Use all candles for accurate representation
+        const prices = candles.map(c => c.close);
 
         if (prices.length === 0) {
             return { prices: [], minPrice: 0, maxPrice: 1, path: '', areaPath: '' };
@@ -113,14 +112,14 @@ export const MiniChart: React.FC<InteractiveChartProps> = ({
         const chartHeight = height - paddingY * 2;
         const chartWidth = width;
 
-        // Generate SVG path
+        // Generate SVG path with points for each candle
         const points = prices.map((price, index) => {
-            const x = (index / (prices.length - 1)) * chartWidth;
+            const x = prices.length === 1 ? chartWidth / 2 : (index / (prices.length - 1)) * chartWidth;
             const y = paddingY + chartHeight - ((price - minPrice) / priceRange) * chartHeight;
             return { x, y, price };
         });
 
-        // Create bezier curve path
+        // Create straight line path (no bezier curves for accurate data)
         let path = '';
         let areaPath = '';
 
@@ -129,14 +128,11 @@ export const MiniChart: React.FC<InteractiveChartProps> = ({
             areaPath = `M ${points[0].x} ${height}`;
             areaPath += ` L ${points[0].x} ${points[0].y}`;
 
+            // Use straight lines (L command) instead of bezier curves (Q command)
             for (let i = 1; i < points.length; i++) {
-                const prev = points[i - 1];
                 const curr = points[i];
-                const cpx = (prev.x + curr.x) / 2;
-                path += ` Q ${cpx} ${prev.y} ${cpx} ${(prev.y + curr.y) / 2}`;
-                path += ` Q ${cpx} ${curr.y} ${curr.x} ${curr.y}`;
-                areaPath += ` Q ${cpx} ${prev.y} ${cpx} ${(prev.y + curr.y) / 2}`;
-                areaPath += ` Q ${cpx} ${curr.y} ${curr.x} ${curr.y}`;
+                path += ` L ${curr.x} ${curr.y}`;
+                areaPath += ` L ${curr.x} ${curr.y}`;
             }
 
             areaPath += ` L ${points[points.length - 1].x} ${height}`;
@@ -317,7 +313,6 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         borderRadius: 12,
         position: 'relative',
-        backgroundColor: 'rgba(255, 217, 61, 0.05)', // Subtle yellow tint
     },
     svg: {
         position: 'absolute',
@@ -326,7 +321,6 @@ const styles = StyleSheet.create({
     },
     placeholder: {
         flex: 1,
-        backgroundColor: 'rgba(255, 217, 61, 0.05)',
         borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',

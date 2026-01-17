@@ -390,7 +390,7 @@ export const marketsApi = {
 
         try {
             console.log(`[fetchCandlesticksByMint] Calling: ${url}`);
-            
+
             const response = await fetch(url, {
                 method: 'GET',
                 headers: {
@@ -421,27 +421,48 @@ export const marketsApi = {
             // Transform the API response to match CandleData interface
             // API returns: { candlesticks: [{ end_period_ts, price: { open, high, low, close }, volume }] }
             // We need: { timestamp, open, high, low, close, volume }
+            // For null close prices (zero volume periods), carry forward the previous close price
+            let lastValidClose: number | null = null;
+
             const candlesticks = data.candlesticks
                 .filter((candle: any) => {
-                    // Validate candle structure
+                    // Validate basic candle structure
                     if (!candle.end_period_ts || !candle.price) {
                         console.warn(`[fetchCandlesticksByMint] Invalid candle structure:`, candle);
                         return false;
                     }
                     return true;
                 })
-                .map((candle: any) => ({
-                    timestamp: candle.end_period_ts,
-                    // Convert from cents to decimal (divide by 100)
-                    open: (candle.price.open || 0) / 100,
-                    high: (candle.price.high || 0) / 100,
-                    low: (candle.price.low || 0) / 100,
-                    close: (candle.price.close || 0) / 100,
-                    volume: candle.volume || 0,
-                }));
+                .map((candle: any) => {
+                    // Use current close if available, otherwise carry forward from previous candle
+                    const currentClose = candle.price.close;
+                    let closePrice: number;
+
+                    if (currentClose !== null && currentClose !== undefined) {
+                        closePrice = currentClose;
+                        lastValidClose = currentClose; // Update last valid close
+                    } else if (lastValidClose !== null) {
+                        // Use previous valid close price for null periods
+                        closePrice = lastValidClose;
+                    } else {
+                        // Skip this candle if no previous valid close exists yet
+                        return null;
+                    }
+
+                    return {
+                        timestamp: candle.end_period_ts,
+                        // Convert from cents to decimal (divide by 100)
+                        open: (candle.price.open ?? closePrice) / 100,
+                        high: (candle.price.high ?? closePrice) / 100,
+                        low: (candle.price.low ?? closePrice) / 100,
+                        close: closePrice / 100,
+                        volume: candle.volume || 0,
+                    };
+                })
+                .filter((candle: any) => candle !== null); // Remove any null entries
 
             console.log(`[fetchCandlesticksByMint] Transformed ${candlesticks.length} candles. Price range: ${Math.min(...candlesticks.map((c: CandleData) => c.low)).toFixed(4)} - ${Math.max(...candlesticks.map((c: CandleData) => c.high)).toFixed(4)}`);
-            
+
             return candlesticks;
         } catch (error) {
             console.error(`[fetchCandlesticksByMint] Error fetching candlesticks for mint ${mintAddress}:`, error);

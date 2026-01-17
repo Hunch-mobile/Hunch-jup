@@ -1,13 +1,15 @@
 import { CandleData } from '@/lib/types';
 import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
+import Svg, { Circle, ClipPath, Defs, Image, Line, LinearGradient, Path, Stop } from 'react-native-svg';
 
 interface LightChartProps {
     candles: CandleData[];
     width: number;
     height: number;
     isYes?: boolean; // true = green, false = red
+    entryTimestamp?: number; // seconds
+    entryAvatarUri?: string;
 }
 
 /**
@@ -19,63 +21,98 @@ export const LightChart: React.FC<LightChartProps> = ({
     width,
     height,
     isYes = true,
+    entryTimestamp,
+    entryAvatarUri,
 }) => {
     // Process candle data - memoized for performance
     const chartData = useMemo(() => {
         if (!candles || candles.length === 0) {
-            return { path: '', areaPath: '', lastPoint: null };
+            return { path: '', areaPath: '', lastPoint: null, entryPoint: null, gridLines: [] };
         }
 
-        // Take last 20 candles
-        const recentCandles = candles.slice(-20);
-        const prices = recentCandles.map(c => c.close);
+        const rawPrices = candles.map(c => c.close);
 
-        if (prices.length === 0) {
-            return { path: '', areaPath: '', lastPoint: null };
+        if (rawPrices.length === 0) {
+            return { path: '', areaPath: '', lastPoint: null, entryPoint: null, gridLines: [] };
         }
 
-        const minPrice = Math.min(...prices);
-        const maxPrice = Math.max(...prices);
-        const priceRange = maxPrice - minPrice || 0.01;
+        const entryIndex = typeof entryTimestamp === 'number'
+            ? candles.reduce((closestIndex, candle, index) => {
+                const closestDiff = Math.abs(candles[closestIndex].timestamp - entryTimestamp);
+                const currentDiff = Math.abs(candle.timestamp - entryTimestamp);
+                return currentDiff < closestDiff ? index : closestIndex;
+            }, 0)
+            : null;
+        const entryPrice = entryIndex !== null ? candles[entryIndex].close : null;
+
+        const maxPoints = Math.min(120, Math.max(24, Math.floor(width / 3)));
+        const stride = Math.max(1, Math.ceil(rawPrices.length / maxPoints));
+        const prices = rawPrices.filter((_, index) => index % stride === 0);
+        const rangePrices = entryPrice !== null ? [...prices, entryPrice] : prices;
+        const minPrice = Math.min(...rangePrices);
+        const maxPrice = Math.max(...rangePrices);
+        const pricePadding = Math.max((maxPrice - minPrice) * 0.08, 0.01);
+        const minPadded = minPrice - pricePadding;
+        const maxPadded = maxPrice + pricePadding;
+        const priceRange = maxPadded - minPadded || 0.02;
 
         // Padding for chart
-        const paddingY = height * 0.15;
+        const paddingY = height * 0.2;
+        const paddingX = 6;
         const paddingRight = 12; // Space for dot
         const chartHeight = height - paddingY * 2;
-        const chartWidth = width - paddingRight;
+        const chartWidth = width - paddingRight - paddingX;
 
-        // Generate points
+        // Generate points for each candle
         const points = prices.map((price, index) => {
-            const x = (index / (prices.length - 1)) * chartWidth;
-            const y = paddingY + chartHeight - ((price - minPrice) / priceRange) * chartHeight;
-            return { x, y };
+            const x = prices.length === 1 ? chartWidth / 2 : (index / (prices.length - 1)) * chartWidth;
+            const y = paddingY + chartHeight - ((price - minPadded) / priceRange) * chartHeight;
+            return { x: x + paddingX, y };
         });
 
-        // Create bezier curve path
+        const buildSmoothPath = (pathPoints: { x: number; y: number }[]) => {
+            if (pathPoints.length === 0) return '';
+            if (pathPoints.length === 1) {
+                const single = pathPoints[0];
+                return `M ${single.x} ${single.y} L ${single.x} ${single.y}`;
+            }
+            let d = `M ${pathPoints[0].x} ${pathPoints[0].y}`;
+            for (let i = 1; i < pathPoints.length; i++) {
+                const prev = pathPoints[i - 1];
+                const curr = pathPoints[i];
+                const midX = (prev.x + curr.x) / 2;
+                const midY = (prev.y + curr.y) / 2;
+                if (i === 1) {
+                    d += ` Q ${prev.x} ${prev.y} ${midX} ${midY}`;
+                } else {
+                    d += ` T ${midX} ${midY}`;
+                }
+            }
+            const last = pathPoints[pathPoints.length - 1];
+            d += ` T ${last.x} ${last.y}`;
+            return d;
+        };
+
+        // Create smooth line path
         let path = '';
         let areaPath = '';
 
         if (points.length > 0) {
-            path = `M ${points[0].x} ${points[0].y}`;
-            areaPath = `M ${points[0].x} ${height}`;
-            areaPath += ` L ${points[0].x} ${points[0].y}`;
-
-            for (let i = 1; i < points.length; i++) {
-                const prev = points[i - 1];
-                const curr = points[i];
-                const cpx = (prev.x + curr.x) / 2;
-                path += ` Q ${cpx} ${prev.y} ${cpx} ${(prev.y + curr.y) / 2}`;
-                path += ` Q ${cpx} ${curr.y} ${curr.x} ${curr.y}`;
-                areaPath += ` Q ${cpx} ${prev.y} ${cpx} ${(prev.y + curr.y) / 2}`;
-                areaPath += ` Q ${cpx} ${curr.y} ${curr.x} ${curr.y}`;
-            }
-
-            areaPath += ` L ${points[points.length - 1].x} ${height}`;
-            areaPath += ' Z';
+            path = buildSmoothPath(points);
+            const firstPoint = points[0];
+            const lastPoint = points[points.length - 1];
+            areaPath = `${path} L ${lastPoint.x} ${height} L ${firstPoint.x} ${height} Z`;
         }
 
         const lastPoint = points[points.length - 1];
-        return { path, areaPath, lastPoint };
+        const gridLines = [0.25, 0.5, 0.75].map((ratio) => paddingY + chartHeight * ratio);
+        const entryPoint = entryIndex !== null && entryPrice !== null
+            ? {
+                x: paddingX + (rawPrices.length === 1 ? chartWidth / 2 : (entryIndex / (rawPrices.length - 1)) * chartWidth),
+                y: paddingY + chartHeight - ((entryPrice - minPadded) / priceRange) * chartHeight,
+            }
+            : null;
+        return { path, areaPath, lastPoint, gridLines, entryPoint };
     }, [candles, width, height]);
 
     // Colors based on trade side
@@ -103,21 +140,114 @@ export const LightChart: React.FC<LightChartProps> = ({
                     </LinearGradient>
                 </Defs>
 
+                {/* Grid lines */}
+                {chartData.gridLines?.map((y, index) => (
+                    <Line
+                        key={`grid-${index}`}
+                        x1={0}
+                        y1={y}
+                        x2={width}
+                        y2={y}
+                        stroke={lineColor}
+                        strokeOpacity={0.08}
+                        strokeWidth={1}
+                    />
+                ))}
+
                 {/* Area fill */}
                 <Path
                     d={chartData.areaPath}
                     fill={`url(#${gradientId})`}
                 />
 
-                {/* Main line */}
+                {/* Glow line */}
                 <Path
                     d={chartData.path}
                     stroke={lineColor}
-                    strokeWidth={2}
+                    strokeWidth={4}
+                    opacity={0.18}
                     fill="none"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                 />
+
+                {/* Main line */}
+                <Path
+                    d={chartData.path}
+                    stroke={lineColor}
+                    strokeWidth={2.5}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
+
+                {/* Entry marker */}
+                {chartData.entryPoint && (
+                    <>
+                        {(() => {
+                            const avatarRadius = entryAvatarUri ? 9 : 4;
+                            const avatarYOffset = entryAvatarUri ? 7 : 0;
+                            const entryY = Math.max(avatarRadius + 2, chartData.entryPoint.y - avatarYOffset);
+                            return (
+                                <>
+                        <Line
+                            x1={chartData.entryPoint.x}
+                            y1={0}
+                            x2={chartData.entryPoint.x}
+                            y2={height}
+                            stroke={lineColor}
+                            strokeOpacity={0.2}
+                            strokeWidth={1}
+                            strokeDasharray="4,4"
+                        />
+                        {entryAvatarUri ? (
+                            <>
+                                <Defs>
+                                    <ClipPath id={`entry-avatar-${gradientId}`}>
+                                        <Circle
+                                            cx={chartData.entryPoint.x}
+                                            cy={entryY}
+                                            r={9}
+                                        />
+                                    </ClipPath>
+                                </Defs>
+                                <Circle
+                                    cx={chartData.entryPoint.x}
+                                    cy={entryY}
+                                    r={10}
+                                    fill="#FFFFFF"
+                                />
+                                <Image
+                                    x={chartData.entryPoint.x - 9}
+                                    y={entryY - 9}
+                                    width={18}
+                                    height={18}
+                                    href={{ uri: entryAvatarUri }}
+                                    clipPath={`url(#entry-avatar-${gradientId})`}
+                                    preserveAspectRatio="xMidYMid slice"
+                                />
+                            </>
+                        ) : (
+                            <>
+                                <Circle
+                                    cx={chartData.entryPoint.x}
+                                    cy={entryY}
+                                    r={5}
+                                    fill="#FFFFFF"
+                                />
+                                <Circle
+                                    cx={chartData.entryPoint.x}
+                                    cy={entryY}
+                                    r={4}
+                                    fill={lineColor}
+                                />
+                            </>
+                        )}
+                                </>
+                            );
+                        })()}
+                    </>
+                )}
 
                 {/* Static dot at end */}
                 {chartData.lastPoint && (

@@ -108,6 +108,28 @@ const getPriceChange = (candles: CandleData[]) => {
     };
 };
 
+const getEntryPnl = (candles: CandleData[], entryTimestamp: number, isYes: boolean) => {
+    if (!candles || candles.length < 2) return null;
+    const latest = candles[candles.length - 1];
+    const entryIndex = candles.reduce((closestIndex, candle, index) => {
+        const closestDiff = Math.abs(candles[closestIndex].timestamp - entryTimestamp);
+        const currentDiff = Math.abs(candle.timestamp - entryTimestamp);
+        return currentDiff < closestDiff ? index : closestIndex;
+    }, 0);
+    const entryPrice = candles[entryIndex]?.close;
+    if (!Number.isFinite(entryPrice)) return null;
+    const rawChange = latest.close - entryPrice;
+    const adjustedChange = isYes ? rawChange : -rawChange;
+    const changePercent = entryPrice > 0 ? (adjustedChange / entryPrice) * 100 : 0;
+    return {
+        change: adjustedChange,
+        changePercent: changePercent.toFixed(1),
+        isPositive: adjustedChange >= 0,
+        currentPrice: latest.close,
+        entryPrice,
+    };
+};
+
 // Chart dimensions for FeedCard
 const FEED_CARD_CHART_WIDTH = SCREEN_WIDTH - 40 - 28; // mx-5 (40) + p-3.5 (28)
 const FEED_CARD_CHART_HEIGHT = 72;
@@ -136,7 +158,8 @@ const FeedCard = ({
     const handle = rawName ? rawName.replace(/^@+/, '') : item.user?.walletAddress?.slice(0, 6) || 'anonymous';
 
     // Price change calculation from candles
-    const priceChange = candles ? getPriceChange(candles) : null;
+    const entryTimestamp = Math.floor(new Date(item.createdAt).getTime() / 1000);
+    const priceChange = candles ? (getEntryPnl(candles, entryTimestamp, isYes) || getPriceChange(candles)) : null;
     const pnlText = priceChange ? `${priceChange.isPositive ? '+' : ''}${priceChange.changePercent}%` : (isYes ? '+0.0%' : '-0.0%');
     const pnlColor = priceChange ? (priceChange.isPositive ? '#22c55e' : '#ef4444') : (isYes ? '#22c55e' : '#ef4444');
 
@@ -222,20 +245,22 @@ const FeedCard = ({
                     </View>
                 </View>
 
-            <TouchableOpacity
-                className="h-[72px] rounded-xl overflow-hidden mb-4"
-                activeOpacity={0.9}
-                onPress={(event) => {
-                    event?.stopPropagation?.();
-                    onChartPress();
-                }}
-            >
+                <TouchableOpacity
+                    className="h-[72px] rounded-xl overflow-hidden mb-4"
+                    activeOpacity={0.9}
+                    onPress={(event) => {
+                        event?.stopPropagation?.();
+                        onChartPress();
+                    }}
+                >
                     {candles && candles.length > 0 ? (
                         <LightChart
                             candles={candles}
                             width={FEED_CARD_CHART_WIDTH}
                             height={FEED_CARD_CHART_HEIGHT}
                             isYes={isYes}
+                            entryTimestamp={entryTimestamp}
+                            entryAvatarUri={avatarUrl || undefined}
                         />
                     ) : (
                         <View className="flex-1 justify-center items-center gap-1.5 bg-gray-50">
@@ -243,7 +268,7 @@ const FeedCard = ({
                             <Text className="text-[10px] text-gray-400">Loading chart...</Text>
                         </View>
                     )}
-            </TouchableOpacity>
+                </TouchableOpacity>
 
                 <View className="flex-row items-center">
                     <View className="flex-1">
@@ -272,11 +297,20 @@ const FeedCard = ({
 
 const SHEET_CHART_HEIGHT = 180;
 
+type TimeFilter = '24h' | '1w' | '1m' | 'all';
+
+const TIME_FILTER_OPTIONS: { key: TimeFilter; label: string; seconds: number }[] = [
+    { key: '24h', label: '24H', seconds: 24 * 60 * 60 },
+    { key: '1w', label: '1W', seconds: 7 * 24 * 60 * 60 },
+    { key: '1m', label: '1M', seconds: 30 * 24 * 60 * 60 },
+    { key: 'all', label: 'All', seconds: 365 * 24 * 60 * 60 },
+];
+
 const MarketTradeSheet = ({
     visible,
     onClose,
     item,
-    candles,
+    candles: initialCandles,
     backendUser,
 }: {
     visible: boolean;
@@ -293,6 +327,51 @@ const MarketTradeSheet = ({
     const [quote, setQuote] = useState('');
     const [isTrading, setIsTrading] = useState(false);
     const [tradeError, setTradeError] = useState<string | null>(null);
+    const [timeFilter, setTimeFilter] = useState<TimeFilter>('1w');
+    const [filteredCandles, setFilteredCandles] = useState<CandleData[]>([]);
+    const [isLoadingCandles, setIsLoadingCandles] = useState(false);
+
+    // Fetch candles based on time filter
+    useEffect(() => {
+        if (!visible || !item?.marketDetails) return;
+
+        const fetchFilteredCandles = async () => {
+            const market = item.marketDetails;
+            let marketMint: string | undefined = market?.yesMint;
+            if (!marketMint && market?.accounts) {
+                const accountValues = Object.values(market.accounts);
+                for (const account of accountValues) {
+                    if (typeof account === 'object' && account?.yesMint) {
+                        marketMint = account.yesMint;
+                        break;
+                    }
+                }
+            }
+
+            if (!marketMint) {
+                setFilteredCandles(initialCandles || []);
+                return;
+            }
+
+            setIsLoadingCandles(true);
+            try {
+                const filterOption = TIME_FILTER_OPTIONS.find(f => f.key === timeFilter);
+                const endTs = Math.floor(Date.now() / 1000);
+                const startTs = endTs - (filterOption?.seconds || 7 * 24 * 60 * 60);
+                const periodInterval = timeFilter === '24h' ? 1 : timeFilter === '1w' ? 60 : 1440;
+
+                const candles = await marketsApi.fetchCandlesticksByMint(marketMint, { startTs, endTs, periodInterval });
+                setFilteredCandles(candles || []);
+            } catch (error) {
+                console.error('Failed to fetch filtered candles:', error);
+                setFilteredCandles(initialCandles || []);
+            } finally {
+                setIsLoadingCandles(false);
+            }
+        };
+
+        fetchFilteredCandles();
+    }, [visible, item?.marketDetails, timeFilter, initialCandles]);
 
     useEffect(() => {
         if (visible) {
@@ -300,6 +379,7 @@ const MarketTradeSheet = ({
             setAmount('');
             setQuote('');
             setTradeError(null);
+            setTimeFilter('1w');
             Animated.spring(slideAnim, {
                 toValue: 0,
                 useNativeDriver: true,
@@ -349,6 +429,8 @@ const MarketTradeSheet = ({
         ? ((parseFloat(market.yesBid) + parseFloat(market.yesAsk)) / 2) * 100
         : 50;
 
+    const displayCandles = filteredCandles.length > 0 ? filteredCandles : (initialCandles || []);
+
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
             <Pressable className="flex-1 bg-black/40 justify-end" onPress={onClose}>
@@ -394,10 +476,31 @@ const MarketTradeSheet = ({
                                     </View>
                                 </View>
 
+                                {/* Time Filter Tabs */}
+                                <View className="flex-row gap-2 mb-3">
+                                    {TIME_FILTER_OPTIONS.map((option) => (
+                                        <TouchableOpacity
+                                            key={option.key}
+                                            className={`flex-1 py-2 rounded-lg items-center ${timeFilter === option.key ? 'bg-cyan-500/15 border border-cyan-500/40' : 'bg-app-elevated border border-border'}`}
+                                            onPress={() => { setTimeFilter(option.key); Haptics.selectionAsync(); }}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Text className={`text-xs font-semibold ${timeFilter === option.key ? '' : 'text-txt-disabled'}`} style={timeFilter === option.key ? { color: Theme.accentSubtle } : {}}>
+                                                {option.label}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+
                                 <View className="h-[180px] rounded-2xl overflow-hidden border border-border mb-5 bg-app-card">
-                                    {candles && candles.length > 0 ? (
+                                    {isLoadingCandles ? (
+                                        <View className="flex-1 justify-center items-center gap-2">
+                                            <ActivityIndicator size="small" color={Theme.accentSubtle} />
+                                            <Text className="text-xs text-txt-disabled">Loading chart...</Text>
+                                        </View>
+                                    ) : displayCandles.length > 0 ? (
                                         <LightChart
-                                            candles={candles}
+                                            candles={displayCandles}
                                             width={SCREEN_WIDTH - 40}
                                             height={SHEET_CHART_HEIGHT}
                                             isYes={selectedSide === 'yes'}
@@ -405,7 +508,7 @@ const MarketTradeSheet = ({
                                     ) : (
                                         <View className="flex-1 justify-center items-center gap-2">
                                             <ActivityIndicator size="small" color={Theme.textDisabled} />
-                                            <Text className="text-xs text-txt-disabled">Loading chart...</Text>
+                                            <Text className="text-xs text-txt-disabled">No data available</Text>
                                         </View>
                                     )}
                                 </View>
@@ -496,10 +599,10 @@ const MarketTradeSheet = ({
                                         disabled={isTrading}
                                         activeOpacity={0.85}
                                     >
-                        <LinearGradient
+                                        <LinearGradient
                                             colors={[Theme.accentSubtle, '#00B8D4']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 1, y: 1 }}
                                             style={styles.sheetCta}
                                         >
                                             {isTrading ? (
@@ -510,9 +613,9 @@ const MarketTradeSheet = ({
                                                     <Text className="text-app-bg text-base font-extrabold">Place Trade</Text>
                                                 </>
                                             )}
-                        </LinearGradient>
-                    </TouchableOpacity>
-                </View>
+                                        </LinearGradient>
+                                    </TouchableOpacity>
+                                </View>
                             </ScrollView>
                         </Pressable>
                     </Animated.View>
@@ -631,8 +734,8 @@ export default function SocialScreen() {
             if (marketMint) {
                 try {
                     const endTs = Math.floor(Date.now() / 1000);
-                    const startTs = endTs - (30 * 24 * 60 * 60); // 30 days
-                    const candles = await marketsApi.fetchCandlesticksByMint(marketMint, { startTs, endTs, periodInterval: 1440 });
+                    const startTs = endTs - (7 * 24 * 60 * 60); // 1 week
+                    const candles = await marketsApi.fetchCandlesticksByMint(marketMint, { startTs, endTs, periodInterval: 60 });
                     if (candles && candles.length > 0) {
                         setCandlesMap(prev => ({ ...prev, [item.marketTicker]: candles }));
                     }
@@ -1050,7 +1153,7 @@ export default function SocialScreen() {
                 {showSearch ? (
                     <>
                         {renderHeader()}
-                            <FlatList
+                        <FlatList
                             data={[
                                 ...searchMarketResults.map((item) => ({ type: 'marketResult' as const, item })),
                                 ...searchResults.map((item) => ({ type: 'userResult' as const, item })),
@@ -1072,8 +1175,8 @@ export default function SocialScreen() {
                                         canFollow={!!backendUser}
                                         onFollow={() => handleFollowUser(entry.item.id)}
                                         onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: entry.item.id } })}
-                            />
-                        ) : (
+                                    />
+                                ) : (
                                     <TouchableOpacity
                                         className="flex-row items-center py-3.5 px-5"
                                         onPress={() => {
@@ -1110,14 +1213,14 @@ export default function SocialScreen() {
                                     </TouchableOpacity>
                                 )
                             }
-                                contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
-                                showsVerticalScrollIndicator={false}
-                                ListEmptyComponent={() => (
-                                    <View className="px-6 py-8">
+                            contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
+                            showsVerticalScrollIndicator={false}
+                            ListEmptyComponent={() => (
+                                <View className="px-6 py-8">
                                     <Text className="text-sm text-txt-secondary">No results found.</Text>
-                                    </View>
-                                )}
-                            />
+                                </View>
+                            )}
+                        />
                     </>
                 ) : (
                     <>
