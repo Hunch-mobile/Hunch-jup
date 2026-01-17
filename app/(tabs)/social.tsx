@@ -8,8 +8,8 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, FlatList, Image, PanResponder, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { ActivityIndicator, Animated, Dimensions, FlatList, Image, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface FeedItem extends Trade {
     type: 'trade';
@@ -113,7 +113,19 @@ const FEED_CARD_CHART_WIDTH = SCREEN_WIDTH - 40 - 28; // mx-5 (40) + p-3.5 (28)
 const FEED_CARD_CHART_HEIGHT = 72;
 
 // Feed card component
-const FeedCard = ({ item, candles, onPress, onUserPress }: { item: FeedItem; candles?: CandleData[]; onPress: () => void; onUserPress: () => void }) => {
+const FeedCard = ({
+    item,
+    candles,
+    onPress,
+    onUserPress,
+    onChartPress,
+}: {
+    item: FeedItem;
+    candles?: CandleData[];
+    onPress: () => void;
+    onUserPress: () => void;
+    onChartPress: () => void;
+}) => {
     const isYes = item.side === 'yes';
     const market = item.marketDetails;
     const subtitle = isYes ? market?.yesSubTitle : market?.noSubTitle;
@@ -129,13 +141,18 @@ const FeedCard = ({ item, candles, onPress, onUserPress }: { item: FeedItem; can
     const pnlColor = priceChange ? (priceChange.isPositive ? '#22c55e' : '#ef4444') : (isYes ? '#22c55e' : '#ef4444');
 
     const formatValue = (value: number) => {
-        if (!Number.isFinite(value)) return '0.0';
-        if (value >= 1000) {
-            const scaled = value / 1000;
-            const precision = scaled >= 10 ? 0 : 1;
-            return `${scaled.toFixed(precision)}K`;
+        if (!Number.isFinite(value)) return '0';
+        const formatCompact = (val: number, suffix: string) => {
+            const precision = val >= 10 ? 0 : 1;
+            return `${val.toFixed(precision).replace(/\.0$/, '')}${suffix}`;
+        };
+        if (value >= 1_000_000) {
+            return formatCompact(value / 1_000_000, 'M');
         }
-        return value.toFixed(1);
+        if (value >= 1_000) {
+            return formatCompact(value / 1_000, 'K');
+        }
+        return value.toFixed(1).replace(/\.0$/, '');
     };
 
     const getTimeAgo = (dateString: string) => {
@@ -153,7 +170,11 @@ const FeedCard = ({ item, candles, onPress, onUserPress }: { item: FeedItem; can
     };
 
     return (
-        <TouchableOpacity className="mx-5 mb-5" onPress={onPress} activeOpacity={0.9}>
+        <TouchableOpacity
+            className="mx-5 mb-5"
+            onPress={onChartPress}
+            activeOpacity={0.9}
+        >
             {/* Header */}
             <View className="flex-row items-center mb-2">
                 <TouchableOpacity className="mr-3" onPress={(e) => { e.stopPropagation(); onUserPress(); }}>
@@ -174,7 +195,7 @@ const FeedCard = ({ item, candles, onPress, onUserPress }: { item: FeedItem; can
                         </Text>
                     </View>
                     {hasQuote && (
-                        <Text className="text-[18px] text-txt-primary mt-1" numberOfLines={3}>
+                        <Text className="text-[18px] text-txt-primary mt-1 px-2 py-1 leading-[26px]">
                             {item.quote}
                         </Text>
                     )}
@@ -184,10 +205,7 @@ const FeedCard = ({ item, candles, onPress, onUserPress }: { item: FeedItem; can
 
 
             {/* Market Card */}
-            <View className="bg-white rounded-[24px] p-3.5 border border-[#E8E8E8] shadow-sm">
-                <View className="absolute -top-2 -right-2 bg-[#f7d21b] px-3.5 py-1.5 rounded-lg rotate-[8deg] border-2 border-black">
-                    <Text className="text-black font-black text-[15px]">$0</Text>
-                </View>
+            <View className="bg-white rounded-[24px] p-3.5 border border-[#E8E8E8] shadow-sm relative">
 
                 <View className="flex-row items-center gap-3 mb-3.5">
                     <Text className={`text-[32px] font-black ${isYes ? 'text-[#41d93b]' : 'text-[#ef4444]'}`}>
@@ -204,7 +222,14 @@ const FeedCard = ({ item, candles, onPress, onUserPress }: { item: FeedItem; can
                     </View>
                 </View>
 
-                <View className="h-[72px] rounded-xl overflow-hidden mb-4">
+            <TouchableOpacity
+                className="h-[72px] rounded-xl overflow-hidden mb-4"
+                activeOpacity={0.9}
+                onPress={(event) => {
+                    event?.stopPropagation?.();
+                    onChartPress();
+                }}
+            >
                     {candles && candles.length > 0 ? (
                         <LightChart
                             candles={candles}
@@ -218,7 +243,7 @@ const FeedCard = ({ item, candles, onPress, onUserPress }: { item: FeedItem; can
                             <Text className="text-[10px] text-gray-400">Loading chart...</Text>
                         </View>
                     )}
-                </View>
+            </TouchableOpacity>
 
                 <View className="flex-row items-center">
                     <View className="flex-1">
@@ -233,19 +258,267 @@ const FeedCard = ({ item, candles, onPress, onUserPress }: { item: FeedItem; can
                             {pnlText}
                         </Text>
                     </View>
-                    <TouchableOpacity className="mt-4 border-2 border-black rounded-xl overflow-hidden">
-                        <LinearGradient
-                            colors={['#fde020', '#f7d215']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={{ paddingHorizontal: 20, paddingVertical: 10 }}
-                        >
-                            <Text className="text-[16px] font-black text-black">TRADE</Text>
-                        </LinearGradient>
-                    </TouchableOpacity>
+                    <View className="flex-1">
+                        <Text className="text-[11px] text-[#9ca3af] uppercase">Total Bought</Text>
+                        <Text className="text-[16px] font-semibold text-[#111827]">
+                            ${formatValue(totalValue)}
+                        </Text>
+                    </View>
                 </View>
             </View>
         </TouchableOpacity>
+    );
+};
+
+const SHEET_CHART_HEIGHT = 180;
+
+const MarketTradeSheet = ({
+    visible,
+    onClose,
+    item,
+    candles,
+    backendUser,
+}: {
+    visible: boolean;
+    onClose: () => void;
+    item: FeedItem | null;
+    candles?: CandleData[];
+    backendUser: BackendUser | null;
+}) => {
+    const insets = useSafeAreaInsets();
+    const sheetHeight = Math.round(Dimensions.get("window").height * 0.7);
+    const slideAnim = useRef(new Animated.Value(sheetHeight)).current;
+    const [selectedSide, setSelectedSide] = useState<'yes' | 'no'>('yes');
+    const [amount, setAmount] = useState('');
+    const [quote, setQuote] = useState('');
+    const [isTrading, setIsTrading] = useState(false);
+    const [tradeError, setTradeError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (visible) {
+            setSelectedSide(item?.side || 'yes');
+            setAmount('');
+            setQuote('');
+            setTradeError(null);
+            Animated.spring(slideAnim, {
+                toValue: 0,
+                useNativeDriver: true,
+                damping: 30,
+                stiffness: 500,
+            }).start();
+        } else {
+            Animated.timing(slideAnim, {
+                toValue: sheetHeight,
+                duration: 160,
+                useNativeDriver: true,
+            }).start();
+        }
+    }, [visible, item?.side, sheetHeight, slideAnim]);
+
+    const handleTrade = async () => {
+        if (!item || !backendUser) {
+            setTradeError("Sign in to trade");
+            return;
+        }
+        if (!amount || Number(amount) <= 0) {
+            setTradeError("Enter a valid amount");
+            return;
+        }
+        try {
+            setIsTrading(true);
+            setTradeError(null);
+            await api.createTrade({
+                userId: backendUser.id,
+                marketTicker: item.marketTicker,
+                side: selectedSide,
+                amount: amount,
+                walletAddress: backendUser.walletAddress,
+                quote: quote.trim() ? quote.trim() : undefined,
+            });
+            onClose();
+        } catch (error: any) {
+            setTradeError(error?.message || "Failed to place trade");
+        } finally {
+            setIsTrading(false);
+        }
+    };
+
+    const market = item?.marketDetails;
+    const betAmount = parseFloat(amount || '0');
+    const estimatedProbability = market?.yesBid && market?.yesAsk
+        ? ((parseFloat(market.yesBid) + parseFloat(market.yesAsk)) / 2) * 100
+        : 50;
+
+    return (
+        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+            <Pressable className="flex-1 bg-black/40 justify-end" onPress={onClose}>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    keyboardVerticalOffset={Platform.OS === "ios" ? 16 : 0}
+                    style={{ width: "100%" }}
+                >
+                    <Animated.View
+                        style={[
+                            styles.sheet,
+                            {
+                                paddingBottom: Math.max(insets.bottom, 20),
+                                height: sheetHeight,
+                                transform: [{ translateY: slideAnim }],
+                            },
+                        ]}
+                    >
+                        <Pressable onPress={(e) => e.stopPropagation()}>
+                            <View className="items-center py-2">
+                                <View className="w-12 h-1.5 rounded-full bg-border" />
+                            </View>
+
+                            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
+                                <View className="mb-4">
+                                    <Text className="text-xl font-bold text-txt-primary mb-1" numberOfLines={2}>
+                                        {market?.title || item?.marketTicker || 'Market'}
+                                    </Text>
+                                    <Text className="text-sm text-txt-secondary" numberOfLines={1}>
+                                        {market?.subtitle || market?.yesSubTitle || market?.noSubTitle || 'Market'}
+                                    </Text>
+                                    <View className="flex-row items-center gap-3 mt-2">
+                                        {market?.status && (
+                                            <Text className="text-[11px] uppercase tracking-wide text-txt-disabled">
+                                                {market.status}
+                                            </Text>
+                                        )}
+                                        {market?.closeTime && (
+                                            <Text className="text-[11px] text-txt-disabled">
+                                                Closes {new Date(market.closeTime * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                            </Text>
+                                        )}
+                                    </View>
+                                </View>
+
+                                <View className="h-[180px] rounded-2xl overflow-hidden border border-border mb-5 bg-app-card">
+                                    {candles && candles.length > 0 ? (
+                                        <LightChart
+                                            candles={candles}
+                                            width={SCREEN_WIDTH - 40}
+                                            height={SHEET_CHART_HEIGHT}
+                                            isYes={selectedSide === 'yes'}
+                                        />
+                                    ) : (
+                                        <View className="flex-1 justify-center items-center gap-2">
+                                            <ActivityIndicator size="small" color={Theme.textDisabled} />
+                                            <Text className="text-xs text-txt-disabled">Loading chart...</Text>
+                                        </View>
+                                    )}
+                                </View>
+
+                                <View className="bg-app-card rounded-2xl p-4 border border-border mb-4">
+                                    <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">Side</Text>
+                                    <View className="flex-row gap-2 mb-4">
+                                        <TouchableOpacity
+                                            className={`flex-1 py-3 rounded-xl border ${selectedSide === 'yes' ? 'bg-green-500/10 border-green-500/40' : 'bg-app-elevated border-border'}`}
+                                            onPress={() => { setSelectedSide('yes'); Haptics.selectionAsync(); }}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Text className={`text-center font-semibold ${selectedSide === 'yes' ? 'text-status-success' : 'text-txt-disabled'}`}>Yes</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            className={`flex-1 py-3 rounded-xl border ${selectedSide === 'no' ? 'bg-red-400/10 border-red-400/40' : 'bg-app-elevated border-border'}`}
+                                            onPress={() => { setSelectedSide('no'); Haptics.selectionAsync(); }}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Text className={`text-center font-semibold ${selectedSide === 'no' ? 'text-status-error' : 'text-txt-disabled'}`}>No</Text>
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">Amount</Text>
+                                    <View className="flex-row items-center bg-app-elevated rounded-[14px] border border-border px-4">
+                                        <Text className="text-txt-secondary text-2xl font-semibold">$</Text>
+                                        <TextInput
+                                            className="flex-1 text-txt-primary text-[24px] font-bold py-3 pl-1.5"
+                                            placeholder="0"
+                                            placeholderTextColor={Theme.textDisabled}
+                                            keyboardType="decimal-pad"
+                                            value={amount}
+                                            onChangeText={(t) => { setAmount(t.replace(',', '.')); setTradeError(null); }}
+                                        />
+                                    </View>
+                                    <View className="flex-row gap-2 mt-3">
+                                        {['5', '10', '25', '50', '100'].map((value) => (
+                                            <TouchableOpacity
+                                                key={value}
+                                                className={`flex-1 py-2.5 rounded-[10px] border items-center ${amount === value ? 'bg-cyan-500/10 border-cyan-500/30' : 'bg-app-elevated border-border'}`}
+                                                onPress={() => { setAmount(value); Haptics.selectionAsync(); }}
+                                            >
+                                                <Text className={`text-[13px] font-semibold ${amount === value ? '' : 'text-txt-secondary'}`} style={amount === value ? { color: Theme.accentSubtle } : {}}>
+                                                    ${value}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                    {betAmount > 0 && (
+                                        <View className="bg-cyan-500/10 rounded-xl p-3.5 mt-3 border border-cyan-500/15">
+                                            <View className="flex-row justify-between mb-1.5">
+                                                <Text className="text-txt-secondary text-[13px]">If you win</Text>
+                                                <Text className="text-txt-primary text-sm font-bold">
+                                                    ${(betAmount * (100 / estimatedProbability)).toFixed(2)}
+                                                </Text>
+                                            </View>
+                                            <View className="flex-row justify-between">
+                                                <Text className="text-txt-secondary text-[13px]">Profit</Text>
+                                                <Text className="text-status-success text-sm font-bold">
+                                                    +${((betAmount * (100 / estimatedProbability)) - betAmount).toFixed(2)}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                    )}
+                                    <View className="mt-4">
+                                        <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">Comment</Text>
+                                        <TextInput
+                                            className="bg-app-elevated rounded-[14px] border border-border p-4 text-txt-primary text-base min-h-[96px]"
+                                            placeholder="Share your reasoning... (optional)"
+                                            placeholderTextColor={Theme.textDisabled}
+                                            value={quote}
+                                            onChangeText={setQuote}
+                                            multiline
+                                            maxLength={280}
+                                            textAlignVertical="top"
+                                        />
+                                        {quote.length > 0 && (
+                                            <Text className="text-xs text-txt-disabled text-right mt-2 font-medium">{quote.length}/280</Text>
+                                        )}
+                                    </View>
+                                    {tradeError && (
+                                        <Text className="text-status-error text-xs mt-2">{tradeError}</Text>
+                                    )}
+
+                                    <TouchableOpacity
+                                        className={`mt-4 rounded-2xl overflow-hidden ${isTrading ? 'opacity-70' : ''}`}
+                                        onPress={handleTrade}
+                                        disabled={isTrading}
+                                        activeOpacity={0.85}
+                                    >
+                        <LinearGradient
+                                            colors={[Theme.accentSubtle, '#00B8D4']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                                            style={styles.sheetCta}
+                                        >
+                                            {isTrading ? (
+                                                <ActivityIndicator size="small" color={Theme.bgMain} />
+                                            ) : (
+                                                <>
+                                                    <Ionicons name="flash" size={18} color={Theme.bgMain} />
+                                                    <Text className="text-app-bg text-base font-extrabold">Place Trade</Text>
+                                                </>
+                                            )}
+                        </LinearGradient>
+                    </TouchableOpacity>
+                </View>
+                            </ScrollView>
+                        </Pressable>
+                    </Animated.View>
+                </KeyboardAvoidingView>
+            </Pressable>
+        </Modal>
     );
 };
 
@@ -272,7 +545,6 @@ export default function SocialScreen() {
     const [hasMoreByMode, setHasMoreByMode] = useState({ global: true, following: true });
     const [showSearch, setShowSearch] = useState(false);
     const [candlesMap, setCandlesMap] = useState<Record<string, CandleData[]>>({});
-    const [searchTab, setSearchTab] = useState<'markets' | 'users'>('users');
     const [tabLayouts, setTabLayouts] = useState<{
         global?: { x: number; width: number };
         following?: { x: number; width: number };
@@ -285,6 +557,8 @@ export default function SocialScreen() {
     const slideAnim = useRef(new Animated.Value(backendUser ? -SCREEN_WIDTH : 0)).current;
     const modeRef = useRef<'following' | 'global'>(backendUser ? 'following' : 'global');
     const hasUserRef = useRef(!!backendUser);
+    const [tradeSheetVisible, setTradeSheetVisible] = useState(false);
+    const [tradeSheetItem, setTradeSheetItem] = useState<FeedItem | null>(null);
 
     useEffect(() => {
         if (backendUser) {
@@ -308,6 +582,15 @@ export default function SocialScreen() {
             useNativeDriver: false,
         }).start();
     }, [showSearch]);
+
+    const handleOpenTradeSheet = useCallback((item: FeedItem) => {
+        setTradeSheetItem(item);
+        setTradeSheetVisible(true);
+    }, []);
+
+    const handleCloseTradeSheet = useCallback(() => {
+        setTradeSheetVisible(false);
+    }, []);
 
     const loadFollowingList = async () => {
         if (!backendUser) {
@@ -649,11 +932,11 @@ export default function SocialScreen() {
                                 <Ionicons name="search" size={24} color={Theme.textPrimary} />
                             </TouchableOpacity>
                         ) : (
-                            <View className="flex-row items-center h-10 gap-2.5 px-3">
+                            <View className="flex-row items-center h-12 gap-2.5 px-3">
                                 <Ionicons name="search" size={16} color={Theme.textDisabled} />
                                 <Animated.View style={{ flex: 1, opacity: searchInputOpacity }}>
                                     <TextInput
-                                        className="text-txt-primary text-[15px]"
+                                        className="text-txt-primary text-[17px]"
                                         placeholder="Search users, markets, events..."
                                         placeholderTextColor={Theme.textDisabled}
                                         value={searchQuery}
@@ -673,7 +956,6 @@ export default function SocialScreen() {
                                         setSearchQuery("");
                                         setSearchResults([]);
                                         setSearchMarketResults([]);
-                                        setSearchTab('users');
                                     }}
                                 >
                                     <Ionicons name="close" size={18} color={Theme.textSecondary} />
@@ -684,31 +966,6 @@ export default function SocialScreen() {
                 </View>
                 <View className="border-b border-border mt-4" />
             </>
-        );
-    };
-
-    const renderSearchTabs = () => {
-        return (
-            <View className="px-5 pt-3 pb-2 bg-app-bg border-b border-border">
-                <View className="flex-row items-center gap-6">
-                    <TouchableOpacity
-                        className={`pb-1 ${searchTab === 'markets' ? 'border-b-2 border-txt-primary' : 'border-b-2 border-transparent'}`}
-                        onPress={() => setSearchTab('markets')}
-                    >
-                        <Text className={`text-[15px] font-semibold ${searchTab === 'markets' ? 'text-txt-primary' : 'text-txt-disabled'}`}>
-                            Markets/Events
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        className={`pb-1 ${searchTab === 'users' ? 'border-b-2 border-txt-primary' : 'border-b-2 border-transparent'}`}
-                        onPress={() => setSearchTab('users')}
-                    >
-                        <Text className={`text-[15px] font-semibold ${searchTab === 'users' ? 'text-txt-primary' : 'text-txt-disabled'}`}>
-                            Users
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
         );
     };
 
@@ -793,79 +1050,74 @@ export default function SocialScreen() {
                 {showSearch ? (
                     <>
                         {renderHeader()}
-                        {renderSearchTabs()}
-                        {searchTab === 'users' ? (
                             <FlatList
-                                data={searchResults}
-                                keyExtractor={(item) => item.id}
-                                renderItem={({ item }) => (
+                            data={[
+                                ...searchMarketResults.map((item) => ({ type: 'marketResult' as const, item })),
+                                ...searchResults.map((item) => ({ type: 'userResult' as const, item })),
+                            ]}
+                            keyExtractor={(entry) =>
+                                entry.type === 'marketResult'
+                                    ? entry.item.type === 'event'
+                                        ? `event-${entry.item.event.ticker}`
+                                        : `market-${entry.item.market.ticker}`
+                                    : `user-${entry.item.id}`
+                            }
+                            renderItem={({ item: entry }) =>
+                                entry.type === 'userResult' ? (
                                     <SearchResultRow
-                                        item={item}
-                                        isFollowing={followingIds.has(item.id)}
-                                        inProgress={followingInProgress.has(item.id)}
-                                        isSelf={backendUser?.id === item.id}
+                                        item={entry.item}
+                                        isFollowing={followingIds.has(entry.item.id)}
+                                        inProgress={followingInProgress.has(entry.item.id)}
+                                        isSelf={backendUser?.id === entry.item.id}
                                         canFollow={!!backendUser}
-                                        onFollow={() => handleFollowUser(item.id)}
-                                        onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: item.id } })}
-                                    />
-                                )}
-                                contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
-                                showsVerticalScrollIndicator={false}
-                                ListEmptyComponent={() => (
-                                    <View className="px-6 py-8">
-                                        <Text className="text-sm text-txt-secondary">No users found.</Text>
-                                    </View>
-                                )}
+                                        onFollow={() => handleFollowUser(entry.item.id)}
+                                        onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: entry.item.id } })}
                             />
                         ) : (
-                            <FlatList
-                                data={searchMarketResults}
-                                keyExtractor={(item) => item.type === 'event' ? `event-${item.event.ticker}` : `market-${item.market.ticker}`}
-                                renderItem={({ item }) => (
                                     <TouchableOpacity
                                         className="flex-row items-center py-3.5 px-5"
                                         onPress={() => {
-                                            if (item.type === 'event') {
-                                                router.push({ pathname: '/event/[ticker]', params: { ticker: item.event.ticker } });
+                                            if (entry.item.type === 'event') {
+                                                router.push({ pathname: '/event/[ticker]', params: { ticker: entry.item.event.ticker } });
                                             } else {
-                                                router.push({ pathname: '/market/[ticker]', params: { ticker: item.market.ticker } });
+                                                router.push({ pathname: '/market/[ticker]', params: { ticker: entry.item.market.ticker } });
                                             }
                                         }}
                                         activeOpacity={0.7}
                                     >
                                         <View className="w-12 h-12 rounded-full justify-center items-center mr-3.5 bg-app-card border border-border">
                                             <Ionicons
-                                                name={item.type === 'event' ? 'sparkles-outline' : 'stats-chart-outline'}
+                                                name={entry.item.type === 'event' ? 'sparkles-outline' : 'stats-chart-outline'}
                                                 size={22}
                                                 color={Theme.textPrimary}
                                             />
                                         </View>
                                         <View className="flex-1">
                                             <Text className="text-base font-semibold text-txt-primary mb-0.5" numberOfLines={1}>
-                                                {item.type === 'event' ? item.event.title : item.market.title}
+                                                {entry.item.type === 'event' ? entry.item.event.title : entry.item.market.title}
                                             </Text>
                                             <Text className="text-[13px] text-txt-disabled" numberOfLines={1}>
-                                                {item.type === 'event'
-                                                    ? (item.event.subtitle || 'Event')
-                                                    : (item.market.subtitle || item.market.yesSubTitle || item.market.noSubTitle || 'Market')}
+                                                {entry.item.type === 'event'
+                                                    ? (entry.item.event.subtitle || 'Event')
+                                                    : (entry.item.market.subtitle || entry.item.market.yesSubTitle || entry.item.market.noSubTitle || 'Market')}
                                             </Text>
-                                            {item.type === 'market' && item.event?.title ? (
+                                            {entry.item.type === 'market' && entry.item.event?.title ? (
                                                 <Text className="text-[11px] text-txt-secondary mt-1" numberOfLines={1}>
-                                                    {item.event.title}
+                                                    {entry.item.event.title}
                                                 </Text>
                                             ) : null}
                                         </View>
                                     </TouchableOpacity>
-                                )}
+                                )
+                            }
                                 contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
                                 showsVerticalScrollIndicator={false}
                                 ListEmptyComponent={() => (
                                     <View className="px-6 py-8">
-                                        <Text className="text-sm text-txt-secondary">No markets or events found.</Text>
+                                    <Text className="text-sm text-txt-secondary">No results found.</Text>
                                     </View>
                                 )}
                             />
-                        )}
                     </>
                 ) : (
                     <>
@@ -892,8 +1144,9 @@ export default function SocialScreen() {
                                                         <FeedCard
                                                             item={feedItem}
                                                             candles={candlesMap[feedItem.marketTicker]}
-                                                            onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: feedItem.marketTicker } })}
+                                                            onPress={() => handleOpenTradeSheet(feedItem)}
                                                             onUserPress={() => feedItem.user?.id && router.push({ pathname: '/user/[userId]', params: { userId: feedItem.user.id } })}
+                                                            onChartPress={() => handleOpenTradeSheet(feedItem)}
                                                         />
                                                     )}
                                                     contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
@@ -920,6 +1173,14 @@ export default function SocialScreen() {
                     </>
                 )}
             </SafeAreaView>
+
+            <MarketTradeSheet
+                visible={tradeSheetVisible}
+                onClose={handleCloseTradeSheet}
+                item={tradeSheetItem}
+                candles={tradeSheetItem ? candlesMap[tradeSheetItem.marketTicker] : undefined}
+                backendUser={backendUser || null}
+            />
         </View>
     );
 }
@@ -961,5 +1222,25 @@ const styles = StyleSheet.create({
         backgroundColor: Theme.textPrimary,
         bottom: -2,
         left: 0,
+    },
+    sheet: {
+        backgroundColor: Theme.bgMain,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        paddingHorizontal: 20,
+        paddingTop: 12,
+        overflow: "hidden",
+        borderTopWidth: 1,
+        borderLeftWidth: 1,
+        borderRightWidth: 1,
+        borderColor: Theme.border,
+    },
+    sheetCta: {
+        height: 52,
+        borderRadius: 16,
+        justifyContent: "center",
+        alignItems: "center",
+        flexDirection: "row",
+        gap: 8,
     },
 });

@@ -2,8 +2,8 @@ import CreditCard from "@/components/CreditCard";
 import SettingsSheet from "@/components/SettingsSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
-import { api } from "@/lib/api";
-import { Trade, User } from "@/lib/types";
+import { api, getMarketDetails } from "@/lib/api";
+import { Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { usePrivy } from "@privy-io/expo";
 import { useFundSolanaWallet } from "@privy-io/expo/ui";
@@ -19,13 +19,33 @@ const defaultProfileImage = require("@/assets/default.jpeg");
 type TradeTab = 'active' | 'previous';
 
 // Trade item component
-const TradeItem = ({ trade, onPress }: { trade: Trade; onPress: () => void }) => (
+const formatUnixTime = (timestamp?: number | null) => {
+    if (!timestamp) return '—';
+    return new Date(timestamp * 1000).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    });
+};
+
+const TradeItem = ({
+    trade,
+    onPress,
+    market,
+    showDetails = false,
+}: {
+    trade: Trade;
+    onPress: () => void;
+    market?: Market | null;
+    showDetails?: boolean;
+}) => (
     <TouchableOpacity
         className="flex-row items-center justify-between px-3.5 py-3 border-b border-border"
         onPress={onPress}
         activeOpacity={0.7}
     >
-        <View className="flex-row items-center flex-1">
+        <View className="flex-row items-start flex-1">
             <View className={`px-2 py-1 rounded-md mr-2.5 ${trade.side === 'yes' ? 'bg-txt-primary' : 'bg-app-bg border-[1.5px] border-txt-primary'}`}>
                 <Text className={`text-[11px] font-bold ${trade.side === 'yes' ? 'text-txt-inverse' : 'text-txt-primary'}`}>
                     {trade.side.toUpperCase()}
@@ -38,6 +58,52 @@ const TradeItem = ({ trade, onPress }: { trade: Trade; onPress: () => void }) =>
                 <Text className="text-xs text-txt-disabled">
                     {new Date(trade.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </Text>
+                {showDetails && market === undefined && (
+                    <Text className="text-[11px] text-txt-disabled mt-1">Loading market details...</Text>
+                )}
+                {showDetails && market === null && (
+                    <Text className="text-[11px] text-txt-disabled mt-1">Market details unavailable</Text>
+                )}
+                {showDetails && market && (
+                    <View className="mt-2">
+                        <Text className="text-xs text-txt-secondary" numberOfLines={2}>
+                            {market.title}
+                        </Text>
+                        {market.subtitle ? (
+                            <Text className="text-xs text-txt-disabled" numberOfLines={2}>
+                                {market.subtitle}
+                            </Text>
+                        ) : null}
+                        <View className="mt-1">
+                            <Text className="text-[11px] text-txt-disabled">
+                                Status: {market.status || '—'}
+                            </Text>
+                            <Text className="text-[11px] text-txt-disabled">
+                                Resolution: {formatUnixTime(market.expirationTime ?? market.closeTime)}
+                            </Text>
+                            {market.openTime ? (
+                                <Text className="text-[11px] text-txt-disabled">
+                                    Open: {formatUnixTime(market.openTime)}
+                                </Text>
+                            ) : null}
+                            {market.eventTicker ? (
+                                <Text className="text-[11px] text-txt-disabled">
+                                    Event: {market.eventTicker}
+                                </Text>
+                            ) : null}
+                            {market.marketType ? (
+                                <Text className="text-[11px] text-txt-disabled">
+                                    Type: {market.marketType}
+                                </Text>
+                            ) : null}
+                            {market.result ? (
+                                <Text className="text-[11px] text-txt-disabled">
+                                    Result: {market.result}
+                                </Text>
+                            ) : null}
+                        </View>
+                    </View>
+                )}
             </View>
         </View>
         <Text className="text-sm font-semibold text-txt-primary">
@@ -58,9 +124,12 @@ export default function ProfileScreen() {
     const [settingsVisible, setSettingsVisible] = useState(false);
     const [solBalance, setSolBalance] = useState<number | null>(null);
     const [solUsdPrice, setSolUsdPrice] = useState<number | null>(null);
+    const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
+    const [marketDetailsByTicker, setMarketDetailsByTicker] = useState<Record<string, Market | null>>({});
 
     const slideAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(0.6)).current;
+    const loadedMarketTickers = useRef(new Set<string>());
 
     const animateToTab = useCallback((tab: TradeTab) => {
         const toValue = tab === 'active' ? 0 : -SCREEN_WIDTH + 40;
@@ -119,6 +188,7 @@ export default function ProfileScreen() {
     const loadSolBalance = useCallback(async () => {
         if (!walletAddress) {
             setSolBalance(null);
+            setSolUsdPrice(null);
             return;
         }
         try {
@@ -138,9 +208,63 @@ export default function ProfileScreen() {
         }
     }, [walletAddress]);
 
+    const loadUsdcBalance = useCallback(async () => {
+        if (!walletAddress) {
+            setUsdcBalance(null);
+            return;
+        }
+        try {
+            const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
+            const connection = new Connection(rpcUrl, 'confirmed');
+            const usdcMint = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+            const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+                new PublicKey(walletAddress),
+                { mint: usdcMint }
+            );
+            const totalBalance = tokenAccounts.value.reduce((sum, accountInfo) => {
+                const amount = accountInfo.account.data?.parsed?.info?.tokenAmount?.uiAmount;
+                return sum + (typeof amount === 'number' ? amount : 0);
+            }, 0);
+            setUsdcBalance(totalBalance);
+        } catch (error) {
+            console.error("Failed to load USDC balance:", error);
+            setUsdcBalance(null);
+        }
+    }, [walletAddress]);
+
     useEffect(() => {
         loadSolBalance();
-    }, [loadSolBalance]);
+        loadUsdcBalance();
+    }, [loadSolBalance, loadUsdcBalance]);
+
+    useEffect(() => {
+        const uniqueTickers = Array.from(new Set(trades.map((trade) => trade.marketTicker)));
+        const tickersToFetch = uniqueTickers.filter((ticker) => !loadedMarketTickers.current.has(ticker));
+        if (tickersToFetch.length === 0) return;
+
+        let cancelled = false;
+        const loadMarkets = async () => {
+            const results = await Promise.all(
+                tickersToFetch.map(async (ticker) => ({
+                    ticker,
+                    market: await getMarketDetails(ticker),
+                }))
+            );
+            if (cancelled) return;
+            setMarketDetailsByTicker((prev) => {
+                const next = { ...prev };
+                results.forEach(({ ticker, market }) => {
+                    loadedMarketTickers.current.add(ticker);
+                    next[ticker] = market;
+                });
+                return next;
+            });
+        };
+        loadMarkets();
+        return () => {
+            cancelled = true;
+        };
+    }, [trades]);
 
     const handleLogout = async () => {
         await logout();
@@ -164,6 +288,7 @@ export default function ProfileScreen() {
     const followerCount = profileData?.followerCount || 0;
     const followingCount = profileData?.followingCount || 0;
     const usdBalance = solBalance !== null && solUsdPrice !== null ? solBalance * solUsdPrice : null;
+    const cashBalance = usdcBalance ?? usdBalance ?? 0;
 
     const now = new Date();
     const activeTrades = trades.filter(trade => {
@@ -280,7 +405,7 @@ export default function ProfileScreen() {
                         >
                             <CreditCard
                                 tradesCount={trades.length}
-                                balance={usdBalance ?? 0}
+                                balance={cashBalance}
                                 walletAddress={walletAddress || ""}
                             />
                         </View>
@@ -339,6 +464,8 @@ export default function ProfileScreen() {
                                                     <TradeItem
                                                         key={trade.id}
                                                         trade={trade}
+                                                        market={marketDetailsByTicker[trade.marketTicker]}
+                                                        showDetails
                                                         onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: trade.marketTicker } })}
                                                     />
                                                 ))}
