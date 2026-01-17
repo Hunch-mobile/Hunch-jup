@@ -21,6 +21,7 @@ interface InteractiveChartProps {
     onInteractionStart?: () => void;
     onInteractionEnd?: () => void;
     showLiveDot?: boolean;
+    interactive?: boolean;
 }
 
 /**
@@ -35,6 +36,7 @@ export const MiniChart: React.FC<InteractiveChartProps> = ({
     onInteractionStart,
     onInteractionEnd,
     showLiveDot = true,
+    interactive = true,
 }) => {
     const [touchPosition, setTouchPosition] = useState<{ x: number; y: number; price: number } | null>(null);
     const [isInteracting, setIsInteracting] = useState(false);
@@ -210,15 +212,17 @@ export const MiniChart: React.FC<InteractiveChartProps> = ({
     return (
         <View
             style={[styles.container, { width, height }]}
-            onStartShouldSetResponder={() => true}
-            onMoveShouldSetResponder={() => true}
-            onStartShouldSetResponderCapture={() => true}
-            onMoveShouldSetResponderCapture={() => true}
-            onResponderTerminationRequest={() => false}
-            onResponderGrant={handleTouchStart}
-            onResponderMove={handleTouchMove}
-            onResponderRelease={handleTouchEnd}
-            onResponderTerminate={handleTouchEnd}
+            {...(interactive ? {
+                onStartShouldSetResponder: () => true,
+                onMoveShouldSetResponder: () => true,
+                onStartShouldSetResponderCapture: () => true,
+                onMoveShouldSetResponderCapture: () => true,
+                onResponderTerminationRequest: () => false,
+                onResponderGrant: handleTouchStart,
+                onResponderMove: handleTouchMove,
+                onResponderRelease: handleTouchEnd,
+                onResponderTerminate: handleTouchEnd,
+            } : {})}
         >
             <Svg width={width} height={height} style={styles.svg}>
                 <Defs>

@@ -1,7 +1,8 @@
+import LightChart from '@/components/LightChart';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, getMarketDetails, marketsApi } from "@/lib/api";
-import { User as BackendUser, Event, Market, Trade } from "@/lib/types";
+import { User as BackendUser, CandleData, Event, Market, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -45,65 +46,88 @@ const SearchResultRow = ({
 
     return (
         <TouchableOpacity
-        className="flex-row items-center py-3.5 px-5"
-        onPress={onPress}
-        activeOpacity={0.7}
-    >
-        <View className="w-12 h-12 rounded-full justify-center items-center mr-3.5 bg-app-card border border-border">
-            <Image
-                source={avatarUrl ? { uri: avatarUrl } : defaultProfileImage}
-                className="w-full h-full rounded-full"
-            />
-        </View>
-        <View className="flex-1">
-            <Text className="text-base font-semibold text-txt-primary mb-0.5">
-                {item.displayName || "Anonymous"}
-            </Text>
-            <Text className="text-[13px] text-txt-disabled font-mono mb-1.5">
-                {item.walletAddress.slice(0, 6)}...{item.walletAddress.slice(-4)}
-            </Text>
-            <View className="flex-row items-center">
-                <Text className="text-xs text-txt-secondary">
-                    <Text className="font-semibold text-txt-primary">{item.followerCount || 0}</Text> followers
-                </Text>
-                <Text className="text-txt-disabled mx-1.5">•</Text>
-                <Text className="text-xs text-txt-secondary">
-                    <Text className="font-semibold text-txt-primary">{item.followingCount || 0}</Text> following
-                </Text>
+            className="flex-row items-center py-3.5 px-5"
+            onPress={onPress}
+            activeOpacity={0.7}
+        >
+            <View className="w-12 h-12 rounded-full justify-center items-center mr-3.5 bg-app-card border border-border">
+                <Image
+                    source={avatarUrl ? { uri: avatarUrl } : defaultProfileImage}
+                    className="w-full h-full rounded-full"
+                />
             </View>
-        </View>
-        {!isSelf && canFollow && (
-            <TouchableOpacity
-                className={`py-2 px-[18px] rounded-md min-w-[90px] items-center justify-center ${isFollowing ? 'bg-app-bg border-[1.5px] border-txt-primary' : 'bg-txt-primary'
-                    } ${inProgress ? 'opacity-60' : ''}`}
-                onPress={(e) => { e.stopPropagation(); onFollow(); }}
-                disabled={inProgress}
-            >
-                {inProgress ? (
-                    <ActivityIndicator size="small" color={isFollowing ? Theme.textPrimary : Theme.accentSubtle} />
-                ) : (
-                    <Text className={`text-[13px] font-semibold ${isFollowing ? 'text-txt-primary' : 'text-txt-inverse'}`}>
-                        {isFollowing ? "Following" : "Follow"}
+            <View className="flex-1">
+                <Text className="text-base font-semibold text-txt-primary mb-0.5">
+                    {item.displayName || "Anonymous"}
+                </Text>
+                <Text className="text-[13px] text-txt-disabled font-mono mb-1.5">
+                    {item.walletAddress.slice(0, 6)}...{item.walletAddress.slice(-4)}
+                </Text>
+                <View className="flex-row items-center">
+                    <Text className="text-xs text-txt-secondary">
+                        <Text className="font-semibold text-txt-primary">{item.followerCount || 0}</Text> followers
                     </Text>
-                )}
-            </TouchableOpacity>
-        )}
-    </TouchableOpacity>
+                    <Text className="text-txt-disabled mx-1.5">•</Text>
+                    <Text className="text-xs text-txt-secondary">
+                        <Text className="font-semibold text-txt-primary">{item.followingCount || 0}</Text> following
+                    </Text>
+                </View>
+            </View>
+            {!isSelf && canFollow && (
+                <TouchableOpacity
+                    className={`py-2 px-[18px] rounded-md min-w-[90px] items-center justify-center ${isFollowing ? 'bg-app-bg border-[1.5px] border-txt-primary' : 'bg-txt-primary'
+                        } ${inProgress ? 'opacity-60' : ''}`}
+                    onPress={(e) => { e.stopPropagation(); onFollow(); }}
+                    disabled={inProgress}
+                >
+                    {inProgress ? (
+                        <ActivityIndicator size="small" color={isFollowing ? Theme.textPrimary : Theme.accentSubtle} />
+                    ) : (
+                        <Text className={`text-[13px] font-semibold ${isFollowing ? 'text-txt-primary' : 'text-txt-inverse'}`}>
+                            {isFollowing ? "Following" : "Follow"}
+                        </Text>
+                    )}
+                </TouchableOpacity>
+            )}
+        </TouchableOpacity>
     );
 };
 
+// Get price change from candles
+const getPriceChange = (candles: CandleData[]) => {
+    if (!candles || candles.length < 2) return null;
+    const latest = candles[candles.length - 1];
+    const first = candles[0];
+    const change = latest.close - first.close;
+    const changePercent = first.close > 0 ? (change / first.close) * 100 : 0;
+    return {
+        change,
+        changePercent: changePercent.toFixed(1),
+        isPositive: change >= 0,
+        currentPrice: latest.close,
+    };
+};
+
+// Chart dimensions for FeedCard
+const FEED_CARD_CHART_WIDTH = SCREEN_WIDTH - 40 - 28; // mx-5 (40) + p-3.5 (28)
+const FEED_CARD_CHART_HEIGHT = 72;
+
 // Feed card component
-const FeedCard = ({ item, onPress, onUserPress }: { item: FeedItem; onPress: () => void; onUserPress: () => void }) => {
+const FeedCard = ({ item, candles, onPress, onUserPress }: { item: FeedItem; candles?: CandleData[]; onPress: () => void; onUserPress: () => void }) => {
     const isYes = item.side === 'yes';
     const market = item.marketDetails;
     const subtitle = isYes ? market?.yesSubTitle : market?.noSubTitle;
     const hasQuote = item.quote && item.quote.trim().length > 0;
     const avatarUrl = item.user?.avatarUrl?.replace('_normal', '');
     const totalValue = Number.parseFloat(item.amount || '0');
-    const pnlText = isYes ? '+0.0%' : '-0.0%';
-    const pnlColor = isYes ? '#22c55e' : '#ef4444';
     const rawName = item.user?.displayName?.trim();
     const handle = rawName ? rawName.replace(/^@+/, '') : item.user?.walletAddress?.slice(0, 6) || 'anonymous';
+
+    // Price change calculation from candles
+    const priceChange = candles ? getPriceChange(candles) : null;
+    const pnlText = priceChange ? `${priceChange.isPositive ? '+' : ''}${priceChange.changePercent}%` : (isYes ? '+0.0%' : '-0.0%');
+    const pnlColor = priceChange ? (priceChange.isPositive ? '#22c55e' : '#ef4444') : (isYes ? '#22c55e' : '#ef4444');
+
     const formatValue = (value: number) => {
         if (!Number.isFinite(value)) return '0.0';
         if (value >= 1000) {
@@ -157,7 +181,7 @@ const FeedCard = ({ item, onPress, onUserPress }: { item: FeedItem; onPress: () 
                 </View>
             </View>
 
-            
+
 
             {/* Market Card */}
             <View className="bg-white rounded-[24px] p-3.5 border border-[#E8E8E8] shadow-sm">
@@ -180,27 +204,20 @@ const FeedCard = ({ item, onPress, onUserPress }: { item: FeedItem; onPress: () 
                     </View>
                 </View>
 
-                <View className="h-[72px] rounded-2xl overflow-hidden mb-4.5 border border-[#F0F0F0] bg-[#fafafa]">
-                    <LinearGradient
-                        colors={[
-                            isYes ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)',
-                            'rgba(255,255,255,0.0)',
-                        ]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 0, y: 1 }}
-                        style={{ flex: 1 }}
-                    />
-                    <View
-                        style={{
-                            position: 'absolute',
-                            left: 12,
-                            right: 12,
-                            top: 36,
-                            height: 3,
-                            borderRadius: 999,
-                            backgroundColor: isYes ? '#22c55e' : '#ef4444',
-                        }}
-                    />
+                <View className="h-[72px] rounded-xl overflow-hidden mb-4">
+                    {candles && candles.length > 0 ? (
+                        <LightChart
+                            candles={candles}
+                            width={FEED_CARD_CHART_WIDTH}
+                            height={FEED_CARD_CHART_HEIGHT}
+                            isYes={isYes}
+                        />
+                    ) : (
+                        <View className="flex-1 justify-center items-center gap-1.5 bg-gray-50">
+                            <ActivityIndicator size="small" color="#9ca3af" />
+                            <Text className="text-[10px] text-gray-400">Loading chart...</Text>
+                        </View>
+                    )}
                 </View>
 
                 <View className="flex-row items-center">
@@ -232,6 +249,7 @@ const FeedCard = ({ item, onPress, onUserPress }: { item: FeedItem; onPress: () 
     );
 };
 
+
 export default function SocialScreen() {
     const { backendUser } = useUser();
     const [feedItemsByMode, setFeedItemsByMode] = useState<{ global: FeedItem[]; following: FeedItem[] }>({
@@ -253,6 +271,7 @@ export default function SocialScreen() {
     const [mode, setMode] = useState<'following' | 'global'>(backendUser ? 'following' : 'global');
     const [hasMoreByMode, setHasMoreByMode] = useState({ global: true, following: true });
     const [showSearch, setShowSearch] = useState(false);
+    const [candlesMap, setCandlesMap] = useState<Record<string, CandleData[]>>({});
     const [searchTab, setSearchTab] = useState<'markets' | 'users'>('users');
     const [tabLayouts, setTabLayouts] = useState<{
         global?: { x: number; width: number };
@@ -313,6 +332,31 @@ export default function SocialScreen() {
                     existing.id === item.id ? { ...existing, marketDetails } : existing
                 ),
             }));
+
+            // Fetch candlestick data for the market
+            let marketMint: string | undefined = marketDetails.yesMint;
+            if (!marketMint && marketDetails.accounts) {
+                const accountValues = Object.values(marketDetails.accounts);
+                for (const account of accountValues) {
+                    if (typeof account === 'object' && account?.yesMint) {
+                        marketMint = account.yesMint;
+                        break;
+                    }
+                }
+            }
+
+            if (marketMint) {
+                try {
+                    const endTs = Math.floor(Date.now() / 1000);
+                    const startTs = endTs - (30 * 24 * 60 * 60); // 30 days
+                    const candles = await marketsApi.fetchCandlesticksByMint(marketMint, { startTs, endTs, periodInterval: 1440 });
+                    if (candles && candles.length > 0) {
+                        setCandlesMap(prev => ({ ...prev, [item.marketTicker]: candles }));
+                    }
+                } catch (error) {
+                    console.error(`Failed to fetch candles for ${item.marketTicker}:`, error);
+                }
+            }
         });
     }, []);
 
@@ -534,113 +578,112 @@ export default function SocialScreen() {
             : null;
 
         return (
-        <>
-            <View className="px-5 pt-14 pb-2 flex-row items-center justify-between bg-app-bg">
-                <View className="flex-1" />
-                <View className="absolute left-0 right-0 items-center">
-                    <View className="flex-row items-center gap-6 relative">
-                    <TouchableOpacity
-                        className="relative pb-2"
-                        onPress={() => {
-                            if (modeRef.current !== 'global') {
-                                triggerHaptic();
-                            }
-                            animateToMode('global');
-                        }}
-                        onLayout={(event) => {
-                            const { x, width } = event.nativeEvent.layout;
-                            setTabLayouts(prev => ({ ...prev, global: { x, width } }));
-                        }}
-                    >
-                        <Text className={`text-lg font-semibold ${isGlobalActive ? 'text-txt-primary' : 'text-txt-disabled'}`}>
-                            For you
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        className="relative pb-2"
-                        onPress={() => {
-                            if (!backendUser) return;
-                            if (modeRef.current !== 'following') {
-                                triggerHaptic();
-                            }
-                            animateToMode('following');
-                        }}
-                        disabled={!backendUser}
-                        onLayout={(event) => {
-                            const { x, width } = event.nativeEvent.layout;
-                            setTabLayouts(prev => ({ ...prev, following: { x, width } }));
-                        }}
-                    >
-                        <Text
-                            className={`text-lg font-semibold ${
-                                isFollowingActive && backendUser
-                                    ? 'text-txt-primary'
-                                    : 'text-txt-disabled'
-                            }`}
-                        >
-                            Following
-                        </Text>
-                    </TouchableOpacity>
-                    {underlineTranslateX && (
-                        <Animated.View
-                            style={[
-                                styles.tabUnderline,
-                                { width: underlineWidth, transform: [{ translateX: underlineTranslateX }] },
-                            ]}
-                        />
-                    )}
-                    </View>
-                </View>
-                <Animated.View
-                    style={[
-                        styles.searchBarContainer,
-                        showSearch ? styles.searchBarOpen : styles.searchBarClosed,
-                        { width: searchWidth },
-                    ]}
-                >
-                    {!showSearch ? (
-                        <TouchableOpacity
-                            className="w-10 h-10 rounded-full justify-center items-center"
-                            onPress={() => setShowSearch(true)}
-                        >
-                            <Ionicons name="search" size={24} color={Theme.textPrimary} />
-                        </TouchableOpacity>
-                    ) : (
-                        <View className="flex-row items-center h-10 gap-2.5 px-3">
-                            <Ionicons name="search" size={16} color={Theme.textDisabled} />
-                            <Animated.View style={{ flex: 1, opacity: searchInputOpacity }}>
-                                <TextInput
-                                    className="text-txt-primary text-[15px]"
-                            placeholder="Search users, markets, events..."
-                                    placeholderTextColor={Theme.textDisabled}
-                                    value={searchQuery}
-                                    onChangeText={handleSearch}
-                                    autoFocus
-                                />
-                            </Animated.View>
-                    {(isSearching || isSearchingMarkets) && <ActivityIndicator size="small" color={Theme.accentSubtle} />}
-                    {(searchQuery.length > 0 || isSearching || isSearchingMarkets) && (
-                                <TouchableOpacity onPress={() => { setSearchQuery(""); setSearchResults([]); }}>
-                                    <Ionicons name="close-circle" size={18} color={Theme.textDisabled} />
-                                </TouchableOpacity>
-                            )}
+            <>
+                <View className="px-5 pt-14 pb-2 flex-row items-center justify-between bg-app-bg">
+                    <View className="flex-1" />
+                    <View className="absolute left-0 right-0 items-center">
+                        <View className="flex-row items-center gap-6 relative">
                             <TouchableOpacity
+                                className="relative pb-2"
                                 onPress={() => {
-                                    setShowSearch(false);
-                                    setSearchQuery("");
-                                    setSearchResults([]);
-                            setSearchMarketResults([]);
-                            setSearchTab('users');
+                                    if (modeRef.current !== 'global') {
+                                        triggerHaptic();
+                                    }
+                                    animateToMode('global');
+                                }}
+                                onLayout={(event) => {
+                                    const { x, width } = event.nativeEvent.layout;
+                                    setTabLayouts(prev => ({ ...prev, global: { x, width } }));
                                 }}
                             >
-                                <Ionicons name="close" size={18} color={Theme.textSecondary} />
+                                <Text className={`text-lg font-semibold ${isGlobalActive ? 'text-txt-primary' : 'text-txt-disabled'}`}>
+                                    For you
+                                </Text>
                             </TouchableOpacity>
+                            <TouchableOpacity
+                                className="relative pb-2"
+                                onPress={() => {
+                                    if (!backendUser) return;
+                                    if (modeRef.current !== 'following') {
+                                        triggerHaptic();
+                                    }
+                                    animateToMode('following');
+                                }}
+                                disabled={!backendUser}
+                                onLayout={(event) => {
+                                    const { x, width } = event.nativeEvent.layout;
+                                    setTabLayouts(prev => ({ ...prev, following: { x, width } }));
+                                }}
+                            >
+                                <Text
+                                    className={`text-lg font-semibold ${isFollowingActive && backendUser
+                                        ? 'text-txt-primary'
+                                        : 'text-txt-disabled'
+                                        }`}
+                                >
+                                    Following
+                                </Text>
+                            </TouchableOpacity>
+                            {underlineTranslateX && (
+                                <Animated.View
+                                    style={[
+                                        styles.tabUnderline,
+                                        { width: underlineWidth, transform: [{ translateX: underlineTranslateX }] },
+                                    ]}
+                                />
+                            )}
                         </View>
-                    )}
-                </Animated.View>
-            </View>
-            <View className="border-b border-border mt-4" />
-        </>
+                    </View>
+                    <Animated.View
+                        style={[
+                            styles.searchBarContainer,
+                            showSearch ? styles.searchBarOpen : styles.searchBarClosed,
+                            { width: searchWidth },
+                        ]}
+                    >
+                        {!showSearch ? (
+                            <TouchableOpacity
+                                className="w-10 h-10 rounded-full justify-center items-center"
+                                onPress={() => setShowSearch(true)}
+                            >
+                                <Ionicons name="search" size={24} color={Theme.textPrimary} />
+                            </TouchableOpacity>
+                        ) : (
+                            <View className="flex-row items-center h-10 gap-2.5 px-3">
+                                <Ionicons name="search" size={16} color={Theme.textDisabled} />
+                                <Animated.View style={{ flex: 1, opacity: searchInputOpacity }}>
+                                    <TextInput
+                                        className="text-txt-primary text-[15px]"
+                                        placeholder="Search users, markets, events..."
+                                        placeholderTextColor={Theme.textDisabled}
+                                        value={searchQuery}
+                                        onChangeText={handleSearch}
+                                        autoFocus
+                                    />
+                                </Animated.View>
+                                {(isSearching || isSearchingMarkets) && <ActivityIndicator size="small" color={Theme.accentSubtle} />}
+                                {(searchQuery.length > 0 || isSearching || isSearchingMarkets) && (
+                                    <TouchableOpacity onPress={() => { setSearchQuery(""); setSearchResults([]); }}>
+                                        <Ionicons name="close-circle" size={18} color={Theme.textDisabled} />
+                                    </TouchableOpacity>
+                                )}
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        setShowSearch(false);
+                                        setSearchQuery("");
+                                        setSearchResults([]);
+                                        setSearchMarketResults([]);
+                                        setSearchTab('users');
+                                    }}
+                                >
+                                    <Ionicons name="close" size={18} color={Theme.textSecondary} />
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                    </Animated.View>
+                </View>
+                <View className="border-b border-border mt-4" />
+            </>
         );
     };
 
@@ -837,36 +880,37 @@ export default function SocialScreen() {
                                     return (
                                         <View key={pageMode} style={styles.listPane}>
                                             {isLoadingFeed && items.length === 0 ? (
-                    <View className="flex-1 justify-center items-center gap-3">
-                        <ActivityIndicator size="large" color={Theme.accentSubtle} />
-                        <Text className="text-sm text-txt-secondary">Loading feed...</Text>
-                    </View>
-                ) : (
-                    <FlatList
+                                                <View className="flex-1 justify-center items-center gap-3">
+                                                    <ActivityIndicator size="large" color={Theme.accentSubtle} />
+                                                    <Text className="text-sm text-txt-secondary">Loading feed...</Text>
+                                                </View>
+                                            ) : (
+                                                <FlatList
                                                     data={items}
                                                     keyExtractor={(feedItem) => feedItem.id}
                                                     renderItem={({ item: feedItem }) => (
-                            <FeedCard
+                                                        <FeedCard
                                                             item={feedItem}
+                                                            candles={candlesMap[feedItem.marketTicker]}
                                                             onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: feedItem.marketTicker } })}
                                                             onUserPress={() => feedItem.user?.id && router.push({ pathname: '/user/[userId]', params: { userId: feedItem.user.id } })}
-                            />
-                        )}
-                        contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
-                        showsVerticalScrollIndicator={false}
-                        refreshing={refreshing}
+                                                        />
+                                                    )}
+                                                    contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
+                                                    showsVerticalScrollIndicator={false}
+                                                    refreshing={refreshing}
                                                     onRefresh={() => handleRefreshForMode(pageMode)}
                                                     onEndReached={() => handleLoadMoreForMode(pageMode)}
-                        onEndReachedThreshold={0.6}
+                                                    onEndReachedThreshold={0.6}
                                                     ListEmptyComponent={() => renderEmptyState(pageMode)}
-                        ListFooterComponent={
-                            isLoadingMore ? (
-                                <View className="py-4">
-                                    <ActivityIndicator size="small" color={Theme.accentSubtle} />
-                                </View>
-                            ) : null
-                        }
-                    />
+                                                    ListFooterComponent={
+                                                        isLoadingMore ? (
+                                                            <View className="py-4">
+                                                                <ActivityIndicator size="small" color={Theme.accentSubtle} />
+                                                            </View>
+                                                        ) : null
+                                                    }
+                                                />
                                             )}
                                         </View>
                                     );
