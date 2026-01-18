@@ -2,12 +2,13 @@ import CreditCard from "@/components/CreditCard";
 import SettingsSheet from "@/components/SettingsSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
-import { api, getMarketDetails } from "@/lib/api";
-import { Market, Trade, User } from "@/lib/types";
+import { api, getMarketDetails, marketsApi } from "@/lib/api";
+import { CandleData, Event, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { usePrivy } from "@privy-io/expo";
 import { useFundSolanaWallet } from "@privy-io/expo/ui";
 import { Connection, LAMPORTS_PER_SOL, PublicKey, clusterApiUrl } from "@solana/web3.js";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -29,35 +30,110 @@ const formatUnixTime = (timestamp?: number | null) => {
     });
 };
 
+const getPriceChange = (candles: CandleData[]) => {
+    if (!candles || candles.length < 2) return null;
+    const latest = candles[candles.length - 1];
+    const first = candles[0];
+    const change = latest.close - first.close;
+    const changePercent = first.close > 0 ? (change / first.close) * 100 : 0;
+    return {
+        change,
+        changePercent: changePercent.toFixed(1),
+        isPositive: change >= 0,
+        currentPrice: latest.close,
+    };
+};
+
+const getEntryPnl = (candles: CandleData[], entryTimestamp: number, isYes: boolean) => {
+    if (!candles || candles.length < 2) return null;
+    const latest = candles[candles.length - 1];
+    const entryIndex = candles.reduce((closestIndex, candle, index) => {
+        const closestDiff = Math.abs(candles[closestIndex].timestamp - entryTimestamp);
+        const currentDiff = Math.abs(candle.timestamp - entryTimestamp);
+        return currentDiff < closestDiff ? index : closestIndex;
+    }, 0);
+    const entryPrice = candles[entryIndex]?.close;
+    if (!Number.isFinite(entryPrice)) return null;
+    const rawChange = latest.close - entryPrice;
+    const adjustedChange = isYes ? rawChange : -rawChange;
+    const changePercent = entryPrice > 0 ? (adjustedChange / entryPrice) * 100 : 0;
+    return {
+        change: adjustedChange,
+        changePercent: changePercent.toFixed(1),
+        isPositive: adjustedChange >= 0,
+        currentPrice: latest.close,
+        entryPrice,
+    };
+};
+
+const formatBoughtTime = (createdAt: string) => {
+    const created = new Date(createdAt);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfCreated = new Date(created.getFullYear(), created.getMonth(), created.getDate());
+    const diffMs = startOfToday.getTime() - startOfCreated.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 0) {
+        return created.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    }
+    if (diffDays === 1) return '1 day ago';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 14) return 'week ago';
+    if (diffDays < 21) return '2 weeks ago';
+    if (diffDays < 30) return 'month ago';
+    const months = Math.round(diffDays / 30);
+    return months <= 1 ? 'month ago' : `${months} months ago`;
+};
+
+const formatShortDate = (createdAt: string) => {
+    const date = new Date(createdAt);
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
+};
+
 const TradeItem = ({
     trade,
     onPress,
     market,
+    event,
+    candles,
     showDetails = false,
 }: {
     trade: Trade;
     onPress: () => void;
     market?: Market | null;
+    event?: Event | null;
+    candles?: CandleData[] | null;
     showDetails?: boolean;
-}) => (
+}) => {
+    const isYes = trade.side === 'yes';
+    const entryTimestamp = Math.floor(new Date(trade.createdAt).getTime() / 1000);
+    const pnlInfo = candles ? (getEntryPnl(candles, entryTimestamp, isYes) || getPriceChange(candles)) : null;
+    const percentValue = pnlInfo ? Number(pnlInfo.changePercent) : NaN;
+    const amountValue = Number(trade.amount);
+    const pnlDollar = Number.isFinite(percentValue) && Number.isFinite(amountValue)
+        ? (amountValue * percentValue) / 100
+        : NaN;
+    const totalValue = Number.isFinite(pnlDollar) && Number.isFinite(amountValue)
+        ? Math.max(amountValue + pnlDollar, 0)
+        : amountValue;
+    const pnlText = pnlInfo && Number.isFinite(pnlDollar)
+        ? `${pnlInfo.isPositive ? '+' : ''}$${Math.abs(pnlDollar).toFixed(0)}`
+        : '—';
+    const pnlColor = pnlInfo ? (pnlInfo.isPositive ? '#22c55e' : '#ef4444') : Theme.textDisabled;
+    const gradientColors = pnlInfo
+        ? (pnlInfo.isPositive
+            ? ['#ECFDF5', '#F0FDF4', '#FFFFFF'] as const
+            : ['#FEF2F2', '#FFF1F2', '#FFFFFF'] as const)
+        : (['#F8FAFC', '#FFFFFF', '#FFFFFF'] as const);
+
+    return (
     <TouchableOpacity
-        className="flex-row items-center justify-between px-3.5 py-3 border-b border-border"
+            className="px-4 py-3"
         onPress={onPress}
         activeOpacity={0.7}
     >
-        <View className="flex-row items-start flex-1">
-            <View className={`px-2 py-1 rounded-md mr-2.5 ${trade.side === 'yes' ? 'bg-txt-primary' : 'bg-app-bg border-[1.5px] border-txt-primary'}`}>
-                <Text className={`text-[11px] font-bold ${trade.side === 'yes' ? 'text-txt-inverse' : 'text-txt-primary'}`}>
-                    {trade.side.toUpperCase()}
-                </Text>
-            </View>
-            <View className="flex-1">
-                <Text className="text-sm font-medium text-txt-primary mb-0.5" numberOfLines={1}>
-                    {trade.marketTicker}
-                </Text>
-                <Text className="text-xs text-txt-disabled">
-                    {new Date(trade.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </Text>
+            <View>
                 {showDetails && market === undefined && (
                     <Text className="text-[11px] text-txt-disabled mt-1">Loading market details...</Text>
                 )}
@@ -65,52 +141,57 @@ const TradeItem = ({
                     <Text className="text-[11px] text-txt-disabled mt-1">Market details unavailable</Text>
                 )}
                 {showDetails && market && (
-                    <View className="mt-2">
-                        <Text className="text-xs text-txt-secondary" numberOfLines={2}>
-                            {market.title}
+                    <LinearGradient
+                        colors={gradientColors}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={{ borderRadius: 18, padding: 14, borderWidth: 1, borderColor: Theme.border }}
+                    >
+                        <Text className="absolute right-4 top-3 text-xs text-txt-disabled">
+                            {formatBoughtTime(trade.createdAt)}
                         </Text>
-                        {market.subtitle ? (
-                            <Text className="text-xs text-txt-disabled" numberOfLines={2}>
-                                {market.subtitle}
+
+                        <View className="flex-row items-center justify-between mb-2">
+                            <Text className="text-2xl font-extrabold text-txt-primary">
+                                ${Number.isFinite(totalValue) ? totalValue.toFixed(2) : parseFloat(trade.amount).toFixed(2)}
                             </Text>
-                        ) : null}
-                        <View className="mt-1">
-                            <Text className="text-[11px] text-txt-disabled">
-                                Status: {market.status || '—'}
+                            <Text className={`text-2xl font-extrabold ${isYes ? 'text-green-500' : 'text-red-500'}`}>
+                                {isYes ? 'Yes' : 'No'}
+                </Text>
+            </View>
+
+                        <View className="flex-row items-center justify-between">
+                            <Text className="text-base font-semibold text-txt-primary flex-1 pr-3" numberOfLines={2}>
+                                {event?.title || market.title}
                             </Text>
-                            <Text className="text-[11px] text-txt-disabled">
-                                Resolution: {formatUnixTime(market.expirationTime ?? market.closeTime)}
-                            </Text>
-                            {market.openTime ? (
-                                <Text className="text-[11px] text-txt-disabled">
-                                    Open: {formatUnixTime(market.openTime)}
-                                </Text>
-                            ) : null}
-                            {market.eventTicker ? (
-                                <Text className="text-[11px] text-txt-disabled">
-                                    Event: {market.eventTicker}
-                                </Text>
-                            ) : null}
-                            {market.marketType ? (
-                                <Text className="text-[11px] text-txt-disabled">
-                                    Type: {market.marketType}
-                                </Text>
-                            ) : null}
-                            {market.result ? (
-                                <Text className="text-[11px] text-txt-disabled">
-                                    Result: {market.result}
-                                </Text>
-                            ) : null}
+                            <View className="w-10 h-10 rounded-md overflow-hidden border border-border">
+                                <Image
+                                    source={event?.imageUrl ? { uri: event.imageUrl } : defaultProfileImage}
+                                    className="w-full h-full"
+                                />
+                            </View>
                         </View>
-                    </View>
+
+                        {(trade.side === 'yes' ? market.yesSubTitle : market.noSubTitle) ? (
+                            <Text className="text-sm italic text-txt-secondary mt-1" numberOfLines={1}>
+                                on {trade.side === 'yes' ? market.yesSubTitle : market.noSubTitle}
+                </Text>
+                        ) : null}
+
+                        <View className="flex-row items-end justify-between mt-3">
+                <Text className="text-xs text-txt-disabled">
+                                {formatShortDate(trade.createdAt)}
+                            </Text>
+                            <Text className="text-xl font-bold" style={{ color: pnlColor }}>
+                                {pnlText}
+                </Text>
+                        </View>
+                    </LinearGradient>
                 )}
             </View>
-        </View>
-        <Text className="text-sm font-semibold text-txt-primary">
-            ${parseFloat(trade.amount).toFixed(2)}
-        </Text>
     </TouchableOpacity>
 );
+};
 
 export default function ProfileScreen() {
     const { user, logout } = usePrivy();
@@ -126,10 +207,14 @@ export default function ProfileScreen() {
     const [solUsdPrice, setSolUsdPrice] = useState<number | null>(null);
     const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
     const [marketDetailsByTicker, setMarketDetailsByTicker] = useState<Record<string, Market | null>>({});
+    const [eventDetailsByTicker, setEventDetailsByTicker] = useState<Record<string, Event | null>>({});
+    const [candlesByTicker, setCandlesByTicker] = useState<Record<string, CandleData[]>>({});
 
     const slideAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(0.6)).current;
     const loadedMarketTickers = useRef(new Set<string>());
+    const loadedEventTickers = useRef(new Set<string>());
+    const loadedCandleTickers = useRef(new Set<string>());
 
     const animateToTab = useCallback((tab: TradeTab) => {
         const toValue = tab === 'active' ? 0 : -SCREEN_WIDTH + 40;
@@ -265,6 +350,94 @@ export default function ProfileScreen() {
             cancelled = true;
         };
     }, [trades]);
+
+    useEffect(() => {
+        const eventTickers = Object.values(marketDetailsByTicker)
+            .map((market) => market?.eventTicker)
+            .filter((ticker): ticker is string => !!ticker);
+        const uniqueEventTickers = Array.from(new Set(eventTickers));
+        const tickersToFetch = uniqueEventTickers.filter((ticker) => !loadedEventTickers.current.has(ticker));
+        if (tickersToFetch.length === 0) return;
+
+        let cancelled = false;
+        const loadEvents = async () => {
+            const results = await Promise.all(
+                tickersToFetch.map(async (ticker) => ({
+                    ticker,
+                    event: await marketsApi.fetchEventDetails(ticker).catch(() => null),
+                }))
+            );
+            if (cancelled) return;
+            setEventDetailsByTicker((prev) => {
+                const next = { ...prev };
+                results.forEach(({ ticker, event }) => {
+                    loadedEventTickers.current.add(ticker);
+                    next[ticker] = event;
+                });
+                return next;
+            });
+        };
+        loadEvents();
+        return () => {
+            cancelled = true;
+        };
+    }, [marketDetailsByTicker]);
+
+    useEffect(() => {
+        const now = new Date();
+        const activeTradeTickers = trades
+            .filter((trade) => {
+                const tradeDate = new Date(trade.createdAt);
+                const hoursDiff = (now.getTime() - tradeDate.getTime()) / (1000 * 60 * 60);
+                return hoursDiff < 24;
+            })
+            .map((trade) => trade.marketTicker);
+        const uniqueTickers = Array.from(new Set(activeTradeTickers));
+        const tickersToFetch = uniqueTickers.filter((ticker) => !loadedCandleTickers.current.has(ticker));
+        if (tickersToFetch.length === 0) return;
+
+        let cancelled = false;
+        const loadCandles = async () => {
+            const endTs = Math.floor(Date.now() / 1000);
+            const startTs = endTs - 7 * 24 * 60 * 60;
+            const results = await Promise.all(
+                tickersToFetch.map(async (ticker) => {
+                    const market = marketDetailsByTicker[ticker];
+                    let marketMint = market?.yesMint;
+                    if (!marketMint && market?.accounts) {
+                        const accountValues = Object.values(market.accounts);
+                        for (const account of accountValues) {
+                            if (typeof account === 'object' && account?.yesMint) {
+                                marketMint = account.yesMint;
+                                break;
+                            }
+                        }
+                    }
+                    if (!marketMint) return { ticker, candles: [] as CandleData[] };
+                    try {
+                        const candles = await marketsApi.fetchCandlesticksByMint(marketMint, { startTs, endTs, periodInterval: 60 });
+                        return { ticker, candles: candles || [] };
+                    } catch (error) {
+                        console.error("Failed to fetch candles for", ticker, error);
+                        return { ticker, candles: [] as CandleData[] };
+                    }
+                })
+            );
+            if (cancelled) return;
+            setCandlesByTicker((prev) => {
+                const next = { ...prev };
+                results.forEach(({ ticker, candles }) => {
+                    loadedCandleTickers.current.add(ticker);
+                    next[ticker] = candles;
+                });
+                return next;
+            });
+        };
+        loadCandles();
+        return () => {
+            cancelled = true;
+        };
+    }, [trades, marketDetailsByTicker]);
 
     const handleLogout = async () => {
         await logout();
@@ -465,6 +638,10 @@ export default function ProfileScreen() {
                                                         key={trade.id}
                                                         trade={trade}
                                                         market={marketDetailsByTicker[trade.marketTicker]}
+                                                        event={marketDetailsByTicker[trade.marketTicker]?.eventTicker
+                                                            ? eventDetailsByTicker[marketDetailsByTicker[trade.marketTicker]!.eventTicker!]
+                                                            : undefined}
+                                                        candles={candlesByTicker[trade.marketTicker]}
                                                         showDetails
                                                         onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: trade.marketTicker } })}
                                                     />

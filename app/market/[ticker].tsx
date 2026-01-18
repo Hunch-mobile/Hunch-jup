@@ -1,4 +1,5 @@
 import TradeQuoteSheet from "@/components/TradeQuoteSheet";
+import CustomKeypad from "@/components/CustomKeypad";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, marketsApi } from "@/lib/api";
@@ -8,7 +9,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Keyboard, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function MarketDetailScreen() {
@@ -21,6 +22,7 @@ export default function MarketDetailScreen() {
   const [amount, setAmount] = useState('');
   const [isTrading, setIsTrading] = useState(false);
   const [tradeError, setTradeError] = useState<string | null>(null);
+  const [amountKeypadOpen, setAmountKeypadOpen] = useState(false);
   const [showQuoteSheet, setShowQuoteSheet] = useState(false);
   const [lastTradeId, setLastTradeId] = useState<string | null>(null);
 
@@ -240,14 +242,11 @@ export default function MarketDetailScreen() {
               <Text className="text-txt-secondary text-xs font-bold uppercase tracking-wide mb-2.5">Amount</Text>
               <View className="flex-row items-center bg-app-elevated rounded-[14px] border border-border px-4">
                 <Text className="text-txt-secondary text-2xl font-semibold">$</Text>
-                <TextInput
-                  className="flex-1 text-txt-primary text-[28px] font-bold py-3.5 pl-1.5"
-                  placeholder="0"
-                  placeholderTextColor={Theme.textDisabled}
-                  keyboardType="decimal-pad"
-                  value={amount}
-                  onChangeText={(t) => { setAmount(t.replace(',', '.')); setTradeError(null); }}
-                />
+                <Pressable className="flex-1" onPress={() => setAmountKeypadOpen(true)}>
+                  <Text className="text-txt-primary text-[28px] font-bold py-3.5 pl-1.5">
+                    {amount || "0"}
+                  </Text>
+                </Pressable>
               </View>
               <View className="flex-row gap-2 mt-3">
                 {['5', '10', '25', '50', '100'].map((value) => (
@@ -349,6 +348,12 @@ export default function MarketDetailScreen() {
         onSubmit={handleQuoteSubmit}
         onSkip={handleQuoteSkip}
         tradeInfo={{ side: selectedSide, amount: amount, marketTitle: market.title }}
+      />
+      <CustomKeypad
+        visible={amountKeypadOpen}
+        value={amount}
+        onChange={(next) => { setAmount(next.replace(',', '.')); setTradeError(null); }}
+        onClose={() => setAmountKeypadOpen(false)}
       />
     </View>
   );

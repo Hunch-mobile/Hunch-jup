@@ -2,7 +2,7 @@ import { Theme } from '@/constants/theme';
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { useEffect, useRef } from "react";
-import { Animated, Dimensions, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Dimensions, Modal, PanResponder, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function SettingsSheet({
@@ -19,6 +19,29 @@ export default function SettingsSheet({
     const insets = useSafeAreaInsets();
     const halfScreenHeight = Math.round(Dimensions.get("window").height * 0.5);
     const slideAnim = useRef(new Animated.Value(halfScreenHeight)).current;
+    const panResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 6,
+            onPanResponderMove: (_, gesture) => {
+                if (gesture.dy > 0) {
+                    slideAnim.setValue(gesture.dy);
+                }
+            },
+            onPanResponderRelease: (_, gesture) => {
+                if (gesture.dy > halfScreenHeight * 0.25) {
+                    onClose();
+                } else {
+                    Animated.spring(slideAnim, {
+                        toValue: 0,
+                        useNativeDriver: true,
+                        damping: 25,
+                        stiffness: 400,
+                    }).start();
+                }
+            },
+        })
+    ).current;
 
     useEffect(() => {
         if (visible) {
@@ -53,6 +76,9 @@ export default function SettingsSheet({
                     ]}
                 >
                     <Pressable onPress={(e) => e.stopPropagation()}>
+                        <View className="items-center py-2" {...panResponder.panHandlers}>
+                            <View className="w-12 h-1.5 rounded-full bg-border" />
+                        </View>
                         <View className="pb-4">
                             <Text className="text-3xl pt-4 px-3 font-bold text-txt-primary">Settings</Text>
                         </View>

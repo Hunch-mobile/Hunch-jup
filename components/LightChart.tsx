@@ -10,6 +10,10 @@ interface LightChartProps {
     isYes?: boolean; // true = green, false = red
     entryTimestamp?: number; // seconds
     entryAvatarUri?: string;
+    scrubIndex?: number | null;
+    showFill?: boolean;
+    showGlow?: boolean;
+    strokeWidth?: number;
 }
 
 /**
@@ -23,17 +27,21 @@ export const LightChart: React.FC<LightChartProps> = ({
     isYes = true,
     entryTimestamp,
     entryAvatarUri,
+    scrubIndex,
+    showFill = true,
+    showGlow = true,
+    strokeWidth = 2.5,
 }) => {
     // Process candle data - memoized for performance
     const chartData = useMemo(() => {
         if (!candles || candles.length === 0) {
-            return { path: '', areaPath: '', lastPoint: null, entryPoint: null, gridLines: [] };
+            return { path: '', areaPath: '', lastPoint: null, entryPoint: null, gridLines: [], points: [], stride: 1 };
         }
 
         const rawPrices = candles.map(c => c.close);
 
         if (rawPrices.length === 0) {
-            return { path: '', areaPath: '', lastPoint: null, entryPoint: null, gridLines: [] };
+            return { path: '', areaPath: '', lastPoint: null, entryPoint: null, gridLines: [], points: [], stride: 1 };
         }
 
         const entryIndex = typeof entryTimestamp === 'number'
@@ -112,8 +120,8 @@ export const LightChart: React.FC<LightChartProps> = ({
                 y: paddingY + chartHeight - ((entryPrice - minPadded) / priceRange) * chartHeight,
             }
             : null;
-        return { path, areaPath, lastPoint, gridLines, entryPoint };
-    }, [candles, width, height]);
+        return { path, areaPath, lastPoint, gridLines, entryPoint, points, stride };
+    }, [candles, width, height, entryTimestamp]);
 
     // Colors based on trade side
     const lineColor = isYes ? '#22c55e' : '#ef4444'; // green for YES, red for NO
@@ -135,51 +143,119 @@ export const LightChart: React.FC<LightChartProps> = ({
             <Svg width={width} height={height} style={styles.svg}>
                 <Defs>
                     <LinearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                        <Stop offset="0%" stopColor={lineColor} stopOpacity={0.25} />
+                        <Stop offset="0%" stopColor={lineColor} stopOpacity={0.12} />
                         <Stop offset="100%" stopColor={lineColor} stopOpacity={0} />
                     </LinearGradient>
                 </Defs>
 
-                {/* Grid lines */}
-                {chartData.gridLines?.map((y, index) => (
-                    <Line
-                        key={`grid-${index}`}
-                        x1={0}
-                        y1={y}
-                        x2={width}
-                        y2={y}
-                        stroke={lineColor}
-                        strokeOpacity={0.08}
-                        strokeWidth={1}
-                    />
-                ))}
+                {/* Grid lines removed */}
 
-                {/* Area fill */}
-                <Path
-                    d={chartData.areaPath}
-                    fill={`url(#${gradientId})`}
-                />
+                {/* Area fill - when scrubbing, only fill left of scrub line */}
+                {(() => {
+                    const isScrubbing = typeof scrubIndex === 'number' && chartData.points.length > 0;
+                    
+                    if (isScrubbing) {
+                        // Build area path only up to scrub position
+                        const scrubPointIndex = Math.min(
+                            chartData.points.length - 1,
+                            Math.max(0, Math.floor(scrubIndex / Math.max(chartData.stride, 1)))
+                        );
+                        const scrubPoints = chartData.points.slice(0, scrubPointIndex + 1);
+                        
+                        if (scrubPoints.length > 0) {
+                            const firstPoint = scrubPoints[0];
+                            const lastPoint = scrubPoints[scrubPoints.length - 1];
+                            let scrubAreaPath = `M ${firstPoint.x} ${firstPoint.y}`;
+                            for (let i = 1; i < scrubPoints.length; i++) {
+                                scrubAreaPath += ` L ${scrubPoints[i].x} ${scrubPoints[i].y}`;
+                            }
+                            // Close to bottom
+                            scrubAreaPath += ` L ${lastPoint.x} ${height} L ${firstPoint.x} ${height} Z`;
+                            
+                            return (
+                                <Path
+                                    d={scrubAreaPath}
+                                    fill={`url(#${gradientId})`}
+                                />
+                            );
+                        }
+                        return null;
+                    }
+                    
+                    // Normal area fill when not scrubbing
+                    if (showFill) {
+                        return (
+                            <Path
+                                d={chartData.areaPath}
+                                fill={`url(#${gradientId})`}
+                            />
+                        );
+                    }
+                    return null;
+                })()}
 
                 {/* Glow line */}
-                <Path
-                    d={chartData.path}
-                    stroke={lineColor}
-                    strokeWidth={4}
-                    opacity={0.18}
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                />
+                {showGlow && (
+                    <Path
+                        d={chartData.path}
+                        stroke={lineColor}
+                        strokeWidth={Math.max(strokeWidth + 1.5, 3)}
+                        opacity={0.18}
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    />
+                )}
 
                 {/* Main line */}
                 <Path
                     d={chartData.path}
                     stroke={lineColor}
-                    strokeWidth={2.5}
+                    strokeWidth={strokeWidth}
                     fill="none"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                 />
+
+                {/* Scrub marker */}
+                {typeof scrubIndex === 'number' && chartData.points.length > 0 && (
+                    (() => {
+                        const index = Math.min(
+                            chartData.points.length - 1,
+                            Math.max(0, Math.floor(scrubIndex / Math.max(chartData.stride, 1)))
+                        );
+                        const point = chartData.points[index];
+                        return (
+                            <>
+                                <Line
+                                    x1={point.x}
+                                    y1={0}
+                                    x2={point.x}
+                                    y2={height}
+                                    stroke="#9CA3AF"
+                                    strokeOpacity={0.7}
+                                    strokeWidth={1}
+                                    strokeDasharray="4,4"
+                                />
+                                {/* Glow */}
+                                <Circle
+                                    cx={point.x}
+                                    cy={point.y}
+                                    r={12}
+                                    fill={lineColor}
+                                    fillOpacity={0.25}
+                                />
+                                {/* Dot */}
+                                <Circle
+                                    cx={point.x}
+                                    cy={point.y}
+                                    r={5}
+                                    fill={lineColor}
+                                />
+                            </>
+                        );
+                    })()
+                )}
 
                 {/* Entry marker */}
                 {chartData.entryPoint && (
@@ -270,7 +346,6 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         borderRadius: 8,
         position: 'relative',
-        backgroundColor: 'rgba(0, 0, 0, 0.02)',
     },
     svg: {
         position: 'absolute',

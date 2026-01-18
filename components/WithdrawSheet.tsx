@@ -2,7 +2,8 @@ import { Theme } from '@/constants/theme';
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import CustomKeypad from "./CustomKeypad";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type WithdrawPayload = {
@@ -25,7 +26,32 @@ export default function WithdrawSheet({
   const [toAddress, setToAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [touched, setTouched] = useState(false);
+  const [amountKeypadOpen, setAmountKeypadOpen] = useState(false);
   const slideAnim = useRef(new Animated.Value(300)).current;
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 6,
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dy > 0) {
+          slideAnim.setValue(gesture.dy);
+        }
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy > 120) {
+          onClose();
+        } else {
+          Animated.spring(slideAnim, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 30,
+            stiffness: 500,
+            mass: 0.8,
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   useEffect(() => {
     if (visible) {
@@ -80,6 +106,9 @@ export default function WithdrawSheet({
             style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 20), transform: [{ translateY: slideAnim }] }]}
           >
             <Pressable onPress={(e) => e.stopPropagation()}>
+              <View className="items-center py-2" {...panResponder.panHandlers}>
+                <View className="w-12 h-1.5 rounded-full bg-border" />
+              </View>
               {/* Close Button */}
               <TouchableOpacity
                 className="absolute right-4 top-3 w-9 h-9 rounded-xl bg-app-card border border-border justify-center items-center z-10"
@@ -119,15 +148,11 @@ export default function WithdrawSheet({
                 <View className="gap-2">
                   <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide">Amount</Text>
                   <View className={`bg-app-card rounded-[14px] border px-3.5 h-[52px] justify-center ${errors.amount ? 'border-status-error' : 'border-border'}`}>
-                    <TextInput
-                      value={amount}
-                      onChangeText={(t) => setAmount(t.replace(",", "."))}
-                      onBlur={() => setTouched(true)}
-                      placeholder="0.00"
-                      placeholderTextColor={Theme.textDisabled}
-                      keyboardType={Platform.OS === "ios" ? "decimal-pad" : "numeric"}
-                      className="text-txt-primary text-base"
-                    />
+                    <Pressable onPress={() => setAmountKeypadOpen(true)}>
+                      <Text className="text-txt-primary text-base">
+                        {amount || "0.00"}
+                      </Text>
+                    </Pressable>
                   </View>
                   {errors.amount && <Text className="text-status-error text-xs mt-0.5">{errors.amount}</Text>}
                 </View>
@@ -160,6 +185,12 @@ export default function WithdrawSheet({
           </Animated.View>
         </KeyboardAvoidingView>
       </Pressable>
+      <CustomKeypad
+        visible={amountKeypadOpen}
+        value={amount}
+        onChange={(next) => setAmount(next.replace(",", "."))}
+        onClose={() => setAmountKeypadOpen(false)}
+      />
     </Modal>
   );
 }

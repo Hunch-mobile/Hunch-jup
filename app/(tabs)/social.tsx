@@ -1,11 +1,13 @@
+import CustomKeypad from '@/components/CustomKeypad';
 import LightChart from '@/components/LightChart';
+import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, getMarketDetails, marketsApi } from "@/lib/api";
 import { User as BackendUser, CandleData, Event, Market, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, FlatList, Image, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -153,7 +155,7 @@ const FeedCard = ({
     const subtitle = isYes ? market?.yesSubTitle : market?.noSubTitle;
     const hasQuote = item.quote && item.quote.trim().length > 0;
     const avatarUrl = item.user?.avatarUrl?.replace('_normal', '');
-    const totalValue = Number.parseFloat(item.amount || '0');
+    const totalBought = Number.parseFloat(item.amount || '0');
     const rawName = item.user?.displayName?.trim();
     const handle = rawName ? rawName.replace(/^@+/, '') : item.user?.walletAddress?.slice(0, 6) || 'anonymous';
 
@@ -162,6 +164,11 @@ const FeedCard = ({
     const priceChange = candles ? (getEntryPnl(candles, entryTimestamp, isYes) || getPriceChange(candles)) : null;
     const pnlText = priceChange ? `${priceChange.isPositive ? '+' : ''}${priceChange.changePercent}%` : (isYes ? '+0.0%' : '-0.0%');
     const pnlColor = priceChange ? (priceChange.isPositive ? '#22c55e' : '#ef4444') : (isYes ? '#22c55e' : '#ef4444');
+    const pnlPercentValue = priceChange ? Number(priceChange.changePercent) : NaN;
+    const pnlDollar = Number.isFinite(pnlPercentValue) && Number.isFinite(totalBought)
+        ? (totalBought * pnlPercentValue) / 100
+        : NaN;
+    const totalValue = Number.isFinite(pnlDollar) ? Math.max(totalBought + pnlDollar, 0) : totalBought;
 
     const formatValue = (value: number) => {
         if (!Number.isFinite(value)) return '0';
@@ -263,7 +270,7 @@ const FeedCard = ({
                             entryAvatarUri={avatarUrl || undefined}
                         />
                     ) : (
-                        <View className="flex-1 justify-center items-center gap-1.5 bg-gray-50">
+                        <View className="flex-1 justify-center items-center gap-1.5">
                             <ActivityIndicator size="small" color="#9ca3af" />
                             <Text className="text-[10px] text-gray-400">Loading chart...</Text>
                         </View>
@@ -272,9 +279,9 @@ const FeedCard = ({
 
                 <View className="flex-row items-center">
                     <View className="flex-1">
-                        <Text className="text-[11px] text-[#9ca3af] uppercase">Total Value</Text>
+                        <Text className="text-[11px] text-[#9ca3af] uppercase">Total Bought</Text>
                         <Text className="text-[16px] font-semibold text-[#111827]">
-                            ${formatValue(totalValue)}
+                            ${formatValue(totalBought)}
                         </Text>
                     </View>
                     <View className="flex-1">
@@ -284,7 +291,7 @@ const FeedCard = ({
                         </Text>
                     </View>
                     <View className="flex-1">
-                        <Text className="text-[11px] text-[#9ca3af] uppercase">Total Bought</Text>
+                        <Text className="text-[11px] text-[#9ca3af] uppercase">Total Value</Text>
                         <Text className="text-[16px] font-semibold text-[#111827]">
                             ${formatValue(totalValue)}
                         </Text>
@@ -296,6 +303,140 @@ const FeedCard = ({
 };
 
 const SHEET_CHART_HEIGHT = 180;
+const SWIPE_THRESHOLD = 0.7; // 70% of track width to trigger
+
+const SwipeToTrade = ({
+    onSwipeComplete,
+    isLoading,
+    disabled,
+}: {
+    onSwipeComplete: () => void;
+    isLoading: boolean;
+    disabled: boolean;
+}) => {
+    const translateX = useRef(new Animated.Value(0)).current;
+    const [trackWidth, setTrackWidth] = useState(0);
+    const thumbWidth = 56;
+    const startXRef = useRef(0);
+    const lastHapticRef = useRef(0);
+
+    const maxSwipe = Math.max(0, trackWidth - thumbWidth - 8);
+
+    const handleTouchStart = (e: any) => {
+        if (disabled || isLoading) return;
+        startXRef.current = e.nativeEvent.pageX;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    };
+
+    const handleTouchMove = (e: any) => {
+        if (disabled || isLoading || maxSwipe <= 0) return;
+        const dx = e.nativeEvent.pageX - startXRef.current;
+        const newX = Math.max(0, Math.min(dx, maxSwipe));
+        translateX.setValue(newX);
+
+        // Haptic feedback at intervals
+        const progress = newX / maxSwipe;
+        const now = Date.now();
+        if (now - lastHapticRef.current > 50 && progress > 0.1) {
+            Haptics.selectionAsync();
+            lastHapticRef.current = now;
+        }
+    };
+
+    const handleTouchEnd = (e: any) => {
+        if (disabled || isLoading || maxSwipe <= 0) {
+            translateX.setValue(0);
+            return;
+        }
+        const dx = e.nativeEvent.pageX - startXRef.current;
+        const progress = dx / maxSwipe;
+
+        if (progress >= SWIPE_THRESHOLD) {
+            // Success
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Animated.timing(translateX, {
+                toValue: maxSwipe,
+                duration: 100,
+                useNativeDriver: true,
+            }).start(() => {
+                onSwipeComplete();
+                setTimeout(() => {
+                    Animated.spring(translateX, {
+                        toValue: 0,
+                        useNativeDriver: true,
+                        tension: 50,
+                        friction: 8,
+                    }).start();
+                }, 500);
+            });
+        } else {
+            // Reset
+            Animated.spring(translateX, {
+                toValue: 0,
+                useNativeDriver: true,
+                tension: 80,
+                friction: 10,
+            }).start();
+        }
+    };
+
+    const textOpacity = translateX.interpolate({
+        inputRange: [0, Math.max(1, maxSwipe * 0.3), Math.max(1, maxSwipe)],
+        outputRange: [1, 0.3, 0],
+        extrapolate: 'clamp',
+    });
+
+    return (
+        <View
+            className={`mt-2 h-14 rounded-2xl overflow-hidden ${disabled ? 'opacity-50' : ''}`}
+            style={{ backgroundColor: '#000000' }}
+            onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+        >
+            {/* Label */}
+            <Animated.View
+                className="absolute inset-0 justify-center items-center"
+                style={{ opacity: textOpacity }}
+                pointerEvents="none"
+            >
+                <Text className="text-white text-base font-extrabold">
+                    {isLoading ? 'Placing...' : 'Place Bet'}
+                </Text>
+            </Animated.View>
+
+            {/* Swipe thumb */}
+            {!isLoading && (
+                <Animated.View
+                    style={[
+                        {
+                            position: 'absolute',
+                            left: 4,
+                            top: 4,
+                            width: thumbWidth,
+                            height: 48,
+                            borderRadius: 12,
+                            backgroundColor: '#FFFFFF',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            transform: [{ translateX }],
+                        },
+                    ]}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                >
+                    <Ionicons name="chevron-forward" size={24} color="#000000" />
+                </Animated.View>
+            )}
+
+            {/* Loading state */}
+            {isLoading && (
+                <View className="absolute inset-0 justify-center items-center">
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                </View>
+            )}
+        </View>
+    );
+};
 
 type TimeFilter = '24h' | '1w' | '1m' | 'all';
 
@@ -320,13 +461,39 @@ const MarketTradeSheet = ({
     backendUser: BackendUser | null;
 }) => {
     const insets = useSafeAreaInsets();
-    const sheetHeight = Math.round(Dimensions.get("window").height * 0.7);
+    const sheetHeight = Math.round(Dimensions.get("window").height * 0.82);
     const slideAnim = useRef(new Animated.Value(sheetHeight)).current;
+    const panResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => false,
+            onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+            onPanResponderMove: (_, gesture) => {
+                if (gesture.dy > 0) {
+                    slideAnim.setValue(gesture.dy);
+                }
+            },
+            onPanResponderRelease: (_, gesture) => {
+                if (gesture.dy > sheetHeight * 0.25) {
+                    onClose();
+                } else {
+                    Animated.spring(slideAnim, {
+                        toValue: 0,
+                        useNativeDriver: true,
+                        damping: 30,
+                        stiffness: 500,
+                    }).start();
+                }
+            },
+        })
+    ).current;
     const [selectedSide, setSelectedSide] = useState<'yes' | 'no'>('yes');
     const [amount, setAmount] = useState('');
-    const [quote, setQuote] = useState('');
     const [isTrading, setIsTrading] = useState(false);
     const [tradeError, setTradeError] = useState<string | null>(null);
+    const [amountKeypadOpen, setAmountKeypadOpen] = useState(false);
+    const [showQuoteSheet, setShowQuoteSheet] = useState(false);
+    const [lastTradeId, setLastTradeId] = useState<string | null>(null);
+    const [lastTradeInfo, setLastTradeInfo] = useState<{ side: 'yes' | 'no'; amount: string; marketTitle: string } | null>(null);
     const [timeFilter, setTimeFilter] = useState<TimeFilter>('1w');
     const [filteredCandles, setFilteredCandles] = useState<CandleData[]>([]);
     const [isLoadingCandles, setIsLoadingCandles] = useState(false);
@@ -377,7 +544,6 @@ const MarketTradeSheet = ({
         if (visible) {
             setSelectedSide(item?.side || 'yes');
             setAmount('');
-            setQuote('');
             setTradeError(null);
             setTimeFilter('1w');
             Animated.spring(slideAnim, {
@@ -407,14 +573,20 @@ const MarketTradeSheet = ({
         try {
             setIsTrading(true);
             setTradeError(null);
-            await api.createTrade({
+            const trade = await api.createTrade({
                 userId: backendUser.id,
                 marketTicker: item.marketTicker,
                 side: selectedSide,
                 amount: amount,
                 walletAddress: backendUser.walletAddress,
-                quote: quote.trim() ? quote.trim() : undefined,
             });
+            setLastTradeId(trade.id);
+            setLastTradeInfo({
+                side: selectedSide,
+                amount: amount,
+                marketTitle: market?.title || item.marketTicker,
+            });
+            setShowQuoteSheet(true);
             onClose();
         } catch (error: any) {
             setTradeError(error?.message || "Failed to place trade");
@@ -430,10 +602,70 @@ const MarketTradeSheet = ({
         : 50;
 
     const displayCandles = filteredCandles.length > 0 ? filteredCandles : (initialCandles || []);
+    const chartContainerRef = useRef<View>(null);
+    const chartLayoutRef = useRef({ x: 0, width: 1 });
+    const scrubStateRef = useRef({ lastIndex: -1, lastHaptic: 0 });
+    const [scrubPrice, setScrubPrice] = useState<number | null>(null);
+    const [scrubIndex, setScrubIndex] = useState<number | null>(null);
+    const [scrubTimestamp, setScrubTimestamp] = useState<number | null>(null);
+    const [isScrubbing, setIsScrubbing] = useState(false);
+
+    const updateChartLayout = () => {
+        chartContainerRef.current?.measureInWindow((x, _y, width) => {
+            chartLayoutRef.current = { x, width: Math.max(width, 1) };
+        });
+    };
+
+    const triggerScrubHaptic = (moveX: number) => {
+        const { x, width } = chartLayoutRef.current;
+        const length = displayCandles.length;
+        if (!length || width <= 0) return;
+        const localX = Math.min(Math.max(moveX - x, 0), width);
+        const index = Math.floor((localX / width) * length);
+        if (index !== scrubStateRef.current.lastIndex) {
+            const nextPrice = displayCandles[index]?.close;
+            if (typeof nextPrice === 'number') {
+                setScrubPrice(nextPrice);
+            }
+            setScrubIndex(index);
+            const nextTs = displayCandles[index]?.timestamp;
+            setScrubTimestamp(typeof nextTs === 'number' ? nextTs : null);
+            const now = Date.now();
+            if (now - scrubStateRef.current.lastHaptic > 35) {
+                Haptics.selectionAsync();
+                scrubStateRef.current.lastHaptic = now;
+            }
+            scrubStateRef.current.lastIndex = index;
+        }
+    };
+
+    const handleScrubStart = useCallback((moveX: number) => {
+        setIsScrubbing(true);
+        triggerScrubHaptic(moveX);
+    }, []);
+
+    const handleScrubEnd = useCallback(() => {
+        setIsScrubbing(false);
+        setScrubPrice(null);
+        setScrubIndex(null);
+        setScrubTimestamp(null);
+        scrubStateRef.current.lastIndex = -1;
+    }, []);
+
+    const formatScrubTime = (timestamp?: number | null) => {
+        if (!timestamp) return '—';
+        const date = new Date(timestamp * 1000);
+        if (timeFilter === '24h') {
+            return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        }
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <Pressable className="flex-1 bg-black/40 justify-end" onPress={onClose}>
+            <Pressable className="flex-1 justify-end" onPress={onClose}>
+                <BlurView intensity={20} tint="default" style={StyleSheet.absoluteFill} />
+                <View style={styles.backdropTint} />
                 <KeyboardAvoidingView
                     behavior={Platform.OS === "ios" ? "padding" : "height"}
                     keyboardVerticalOffset={Platform.OS === "ios" ? 16 : 0}
@@ -450,49 +682,69 @@ const MarketTradeSheet = ({
                         ]}
                     >
                         <Pressable onPress={(e) => e.stopPropagation()}>
-                            <View className="items-center py-2">
-                                <View className="w-12 h-1.5 rounded-full bg-border" />
-                            </View>
+                            {/* Drag handle area - swipe down here to close */}
+                            <View {...panResponder.panHandlers}>
+                                <View className="items-center py-2">
+                                    <View className="w-12 h-1.5 rounded-full bg-border" />
+                                </View>
 
-                            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
+                                <View className="flex-row gap-2 mb-4">
+                                    <TouchableOpacity
+                                        className="flex-1 py-3 rounded-xl"
+                                        onPress={() => { setSelectedSide('yes'); Haptics.selectionAsync(); }}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Text className={`text-center font-semibold ${selectedSide === 'yes' ? 'text-status-success' : 'text-txt-disabled'}`}>Yes</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        className="flex-1 py-3 rounded-xl"
+                                        onPress={() => { setSelectedSide('no'); Haptics.selectionAsync(); }}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Text className={`text-center font-semibold ${selectedSide === 'no' ? 'text-status-error' : 'text-txt-disabled'}`}>No</Text>
+                    </TouchableOpacity>
+                </View>
+
                                 <View className="mb-4">
-                                    <Text className="text-xl font-bold text-txt-primary mb-1" numberOfLines={2}>
+                                    <View className="flex-row items-start justify-between gap-3 mb-2">
+                                        <Text className="text-xl font-bold text-txt-primary flex-1" numberOfLines={2}>
                                         {market?.title || item?.marketTicker || 'Market'}
-                                    </Text>
-                                    <Text className="text-sm text-txt-secondary" numberOfLines={1}>
-                                        {market?.subtitle || market?.yesSubTitle || market?.noSubTitle || 'Market'}
-                                    </Text>
-                                    <View className="flex-row items-center gap-3 mt-2">
-                                        {market?.status && (
-                                            <Text className="text-[11px] uppercase tracking-wide text-txt-disabled">
-                                                {market.status}
-                                            </Text>
-                                        )}
-                                        {market?.closeTime && (
-                                            <Text className="text-[11px] text-txt-disabled">
-                                                Closes {new Date(market.closeTime * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                            </Text>
-                                        )}
+                                        </Text>
+                                        <Text className="text-sm font-semibold text-txt-secondary">
+                                            {(() => {
+                                                const price = scrubPrice ?? displayCandles[displayCandles.length - 1]?.close;
+                                                if (typeof price !== 'number') return '—';
+                                                return `${(price * 100).toFixed(1)}%`;
+                                            })()}
+                                        </Text>
+            </View>
+                                    <View className="rounded-full bg-yellow-200 px-3 py-1 self-start">
+                                        <Text className="text-sm font-semibold text-black" numberOfLines={1}>
+                                            {market?.subtitle || market?.yesSubTitle || market?.noSubTitle || 'Market'}
+                                        </Text>
                                     </View>
                                 </View>
+                            </View>
 
-                                {/* Time Filter Tabs */}
-                                <View className="flex-row gap-2 mb-3">
-                                    {TIME_FILTER_OPTIONS.map((option) => (
-                                        <TouchableOpacity
-                                            key={option.key}
-                                            className={`flex-1 py-2 rounded-lg items-center ${timeFilter === option.key ? 'bg-cyan-500/15 border border-cyan-500/40' : 'bg-app-elevated border border-border'}`}
-                                            onPress={() => { setTimeFilter(option.key); Haptics.selectionAsync(); }}
-                                            activeOpacity={0.8}
-                                        >
-                                            <Text className={`text-xs font-semibold ${timeFilter === option.key ? '' : 'text-txt-disabled'}`} style={timeFilter === option.key ? { color: Theme.accentSubtle } : {}}>
-                                                {option.label}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-
-                                <View className="h-[180px] rounded-2xl overflow-hidden border border-border mb-5 bg-app-card">
+                            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }} scrollEnabled={!isScrubbing}>
+                                <View
+                                    ref={chartContainerRef}
+                                    onLayout={updateChartLayout}
+                                    className="h-[180px] rounded-2xl overflow-hidden mb-5"
+                                    onStartShouldSetResponder={() => true}
+                                    onStartShouldSetResponderCapture={() => true}
+                                    onMoveShouldSetResponder={() => true}
+                                    onMoveShouldSetResponderCapture={() => true}
+                                    onResponderGrant={(e) => handleScrubStart(e.nativeEvent.pageX)}
+                                    onResponderMove={(e) => triggerScrubHaptic(e.nativeEvent.pageX)}
+                                    onResponderRelease={handleScrubEnd}
+                                    onResponderTerminate={handleScrubEnd}
+                                >
+                                    {scrubTimestamp && (
+                                        <View className="absolute top-2 left-0 right-0 items-center z-10" pointerEvents="none">
+                                            <Text className="text-xs text-txt-secondary">{formatScrubTime(scrubTimestamp)}</Text>
+                                        </View>
+                                    )}
                                     {isLoadingCandles ? (
                                         <View className="flex-1 justify-center items-center gap-2">
                                             <ActivityIndicator size="small" color={Theme.accentSubtle} />
@@ -504,6 +756,10 @@ const MarketTradeSheet = ({
                                             width={SCREEN_WIDTH - 40}
                                             height={SHEET_CHART_HEIGHT}
                                             isYes={selectedSide === 'yes'}
+                                            scrubIndex={scrubIndex}
+                                            showFill={true}
+                                            showGlow={false}
+                                            strokeWidth={3}
                                         />
                                     ) : (
                                         <View className="flex-1 justify-center items-center gap-2">
@@ -513,114 +769,71 @@ const MarketTradeSheet = ({
                                     )}
                                 </View>
 
-                                <View className="bg-app-card rounded-2xl p-4 border border-border mb-4">
-                                    <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">Side</Text>
-                                    <View className="flex-row gap-2 mb-4">
+                                <View className="flex-row items-center justify-center gap-2 mb-4">
+                                    {TIME_FILTER_OPTIONS.map((option) => (
                                         <TouchableOpacity
-                                            className={`flex-1 py-3 rounded-xl border ${selectedSide === 'yes' ? 'bg-green-500/10 border-green-500/40' : 'bg-app-elevated border-border'}`}
-                                            onPress={() => { setSelectedSide('yes'); Haptics.selectionAsync(); }}
+                                            key={option.key}
+                                            className="px-3 py-1.5 rounded-full"
+                                            onPress={() => { setTimeFilter(option.key); Haptics.selectionAsync(); }}
                                             activeOpacity={0.8}
                                         >
-                                            <Text className={`text-center font-semibold ${selectedSide === 'yes' ? 'text-status-success' : 'text-txt-disabled'}`}>Yes</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                            className={`flex-1 py-3 rounded-xl border ${selectedSide === 'no' ? 'bg-red-400/10 border-red-400/40' : 'bg-app-elevated border-border'}`}
-                                            onPress={() => { setSelectedSide('no'); Haptics.selectionAsync(); }}
-                                            activeOpacity={0.8}
-                                        >
-                                            <Text className={`text-center font-semibold ${selectedSide === 'no' ? 'text-status-error' : 'text-txt-disabled'}`}>No</Text>
-                                        </TouchableOpacity>
-                                    </View>
+                                            <Text className={`text-xs font-semibold ${timeFilter === option.key ? '' : 'text-txt-disabled'}`} style={timeFilter === option.key ? { color: Theme.accentSubtle } : {}}>
+                                                {option.label}
+                                            </Text>
+        </TouchableOpacity>
+                                    ))}
+                                </View>
 
+                                <View className="rounded-2xl px-4 mb-2">
                                     <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">Amount</Text>
-                                    <View className="flex-row items-center bg-app-elevated rounded-[14px] border border-border px-4">
+                                    <View className="flex-row items-center rounded-[14px] px-4">
                                         <Text className="text-txt-secondary text-2xl font-semibold">$</Text>
-                                        <TextInput
-                                            className="flex-1 text-txt-primary text-[24px] font-bold py-3 pl-1.5"
-                                            placeholder="0"
-                                            placeholderTextColor={Theme.textDisabled}
-                                            keyboardType="decimal-pad"
-                                            value={amount}
-                                            onChangeText={(t) => { setAmount(t.replace(',', '.')); setTradeError(null); }}
-                                        />
-                                    </View>
-                                    <View className="flex-row gap-2 mt-3">
-                                        {['5', '10', '25', '50', '100'].map((value) => (
-                                            <TouchableOpacity
-                                                key={value}
-                                                className={`flex-1 py-2.5 rounded-[10px] border items-center ${amount === value ? 'bg-cyan-500/10 border-cyan-500/30' : 'bg-app-elevated border-border'}`}
-                                                onPress={() => { setAmount(value); Haptics.selectionAsync(); }}
-                                            >
-                                                <Text className={`text-[13px] font-semibold ${amount === value ? '' : 'text-txt-secondary'}`} style={amount === value ? { color: Theme.accentSubtle } : {}}>
-                                                    ${value}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                    {betAmount > 0 && (
-                                        <View className="bg-cyan-500/10 rounded-xl p-3.5 mt-3 border border-cyan-500/15">
-                                            <View className="flex-row justify-between mb-1.5">
-                                                <Text className="text-txt-secondary text-[13px]">If you win</Text>
-                                                <Text className="text-txt-primary text-sm font-bold">
+                                        <Pressable className="flex-1" onPress={() => setAmountKeypadOpen(true)}>
+                                            <Text className="text-txt-primary text-[24px] font-bold py-2 pl-1.5">
+                                                {amount || "0"}
+                                            </Text>
+                                        </Pressable>
+                                        {betAmount > 0 && (
+                                            <View className="items-end">
+                                                <Text className="text-txt-secondary text-[10px] uppercase">To win</Text>
+                                                <Text className="text-[#22c55e] text-2xl font-extrabold">
                                                     ${(betAmount * (100 / estimatedProbability)).toFixed(2)}
                                                 </Text>
                                             </View>
-                                            <View className="flex-row justify-between">
-                                                <Text className="text-txt-secondary text-[13px]">Profit</Text>
-                                                <Text className="text-status-success text-sm font-bold">
-                                                    +${((betAmount * (100 / estimatedProbability)) - betAmount).toFixed(2)}
-                                                </Text>
-                                            </View>
-                                        </View>
-                                    )}
-                                    <View className="mt-4">
-                                        <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">Comment</Text>
-                                        <TextInput
-                                            className="bg-app-elevated rounded-[14px] border border-border p-4 text-txt-primary text-base min-h-[96px]"
-                                            placeholder="Share your reasoning... (optional)"
-                                            placeholderTextColor={Theme.textDisabled}
-                                            value={quote}
-                                            onChangeText={setQuote}
-                                            multiline
-                                            maxLength={280}
-                                            textAlignVertical="top"
-                                        />
-                                        {quote.length > 0 && (
-                                            <Text className="text-xs text-txt-disabled text-right mt-2 font-medium">{quote.length}/280</Text>
                                         )}
                                     </View>
                                     {tradeError && (
-                                        <Text className="text-status-error text-xs mt-2">{tradeError}</Text>
+                                        <Text className="text-status-error text-xs mt-1">{tradeError}</Text>
                                     )}
-
-                                    <TouchableOpacity
-                                        className={`mt-4 rounded-2xl overflow-hidden ${isTrading ? 'opacity-70' : ''}`}
-                                        onPress={handleTrade}
-                                        disabled={isTrading}
-                                        activeOpacity={0.85}
-                                    >
-                                        <LinearGradient
-                                            colors={[Theme.accentSubtle, '#00B8D4']}
-                                            start={{ x: 0, y: 0 }}
-                                            end={{ x: 1, y: 1 }}
-                                            style={styles.sheetCta}
-                                        >
-                                            {isTrading ? (
-                                                <ActivityIndicator size="small" color={Theme.bgMain} />
-                                            ) : (
-                                                <>
-                                                    <Ionicons name="flash" size={18} color={Theme.bgMain} />
-                                                    <Text className="text-app-bg text-base font-extrabold">Place Trade</Text>
-                                                </>
-                                            )}
-                                        </LinearGradient>
-                                    </TouchableOpacity>
+                                    <View className="mt-4">
+                                        <SwipeToTrade
+                                            onSwipeComplete={handleTrade}
+                                            isLoading={isTrading}
+                                            disabled={isTrading || !amount || Number(amount) <= 0}
+                                        />
+                                    </View>
                                 </View>
                             </ScrollView>
                         </Pressable>
                     </Animated.View>
                 </KeyboardAvoidingView>
             </Pressable>
+            <CustomKeypad
+                visible={amountKeypadOpen}
+                value={amount}
+                onChange={(next) => { setAmount(next.replace(',', '.')); setTradeError(null); }}
+                onClose={() => setAmountKeypadOpen(false)}
+            />
+            <TradeQuoteSheet
+                visible={showQuoteSheet && !!lastTradeInfo}
+                onClose={() => setShowQuoteSheet(false)}
+                onSubmit={async (quoteText) => {
+                    if (!lastTradeId) return;
+                    await api.updateTradeQuote(lastTradeId, quoteText);
+                }}
+                onSkip={() => setShowQuoteSheet(false)}
+                tradeInfo={lastTradeInfo || { side: 'yes', amount: '0', marketTitle: 'Market' }}
+            />
         </Modal>
     );
 };
@@ -1153,7 +1366,7 @@ export default function SocialScreen() {
                 {showSearch ? (
                     <>
                         {renderHeader()}
-                        <FlatList
+                            <FlatList
                             data={[
                                 ...searchMarketResults.map((item) => ({ type: 'marketResult' as const, item })),
                                 ...searchResults.map((item) => ({ type: 'userResult' as const, item })),
@@ -1175,8 +1388,8 @@ export default function SocialScreen() {
                                         canFollow={!!backendUser}
                                         onFollow={() => handleFollowUser(entry.item.id)}
                                         onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: entry.item.id } })}
-                                    />
-                                ) : (
+                            />
+                        ) : (
                                     <TouchableOpacity
                                         className="flex-row items-center py-3.5 px-5"
                                         onPress={() => {
@@ -1213,14 +1426,14 @@ export default function SocialScreen() {
                                     </TouchableOpacity>
                                 )
                             }
-                            contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
-                            showsVerticalScrollIndicator={false}
-                            ListEmptyComponent={() => (
-                                <View className="px-6 py-8">
+                                contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
+                                showsVerticalScrollIndicator={false}
+                                ListEmptyComponent={() => (
+                                    <View className="px-6 py-8">
                                     <Text className="text-sm text-txt-secondary">No results found.</Text>
-                                </View>
-                            )}
-                        />
+                                    </View>
+                                )}
+                            />
                     </>
                 ) : (
                     <>
@@ -1337,6 +1550,10 @@ const styles = StyleSheet.create({
         borderLeftWidth: 1,
         borderRightWidth: 1,
         borderColor: Theme.border,
+    },
+    backdropTint: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: "rgba(0, 0, 0, 0.25)",
     },
     sheetCta: {
         height: 52,
