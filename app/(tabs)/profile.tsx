@@ -107,10 +107,39 @@ const TradeItem = ({
     showDetails?: boolean;
 }) => {
     const isYes = trade.side === 'yes';
-    const entryTimestamp = Math.floor(new Date(trade.createdAt).getTime() / 1000);
-    const pnlInfo = candles ? (getEntryPnl(candles, entryTimestamp, isYes) || getPriceChange(candles)) : null;
-    const percentValue = pnlInfo ? Number(pnlInfo.changePercent) : NaN;
     const amountValue = Number(trade.amount);
+
+    // Calculate PnL using market prices and trade quote
+    let pnlInfo: { changePercent: string; isPositive: boolean } | null = null;
+
+    // Get entry price from trade quote (in cents, 0-100)
+    const entryPriceCents = trade.quote ? Number(trade.quote) : null;
+
+    // Get current price from market (in cents, 0-100)
+    const currentPriceCents = market
+        ? (isYes ? Number(market.yesAsk || 0) : Number(market.noAsk || 0))
+        : null;
+
+    if (entryPriceCents && currentPriceCents && entryPriceCents > 0) {
+        const priceDiff = currentPriceCents - entryPriceCents;
+        const changePercent = (priceDiff / entryPriceCents) * 100;
+        pnlInfo = {
+            changePercent: changePercent.toFixed(1),
+            isPositive: changePercent >= 0,
+        };
+    } else if (candles && candles.length >= 2) {
+        // Fallback to candle-based calculation
+        const entryTimestamp = Math.floor(new Date(trade.createdAt).getTime() / 1000);
+        const candlePnl = getEntryPnl(candles, entryTimestamp, isYes) || getPriceChange(candles);
+        if (candlePnl) {
+            pnlInfo = {
+                changePercent: candlePnl.changePercent,
+                isPositive: candlePnl.isPositive,
+            };
+        }
+    }
+
+    const percentValue = pnlInfo ? Number(pnlInfo.changePercent) : NaN;
     const pnlDollar = Number.isFinite(percentValue) && Number.isFinite(amountValue)
         ? (amountValue * percentValue) / 100
         : NaN;
@@ -128,11 +157,11 @@ const TradeItem = ({
         : (['#F8FAFC', '#FFFFFF', '#FFFFFF'] as const);
 
     return (
-    <TouchableOpacity
+        <TouchableOpacity
             className="px-4 py-3"
-        onPress={onPress}
-        activeOpacity={0.7}
-    >
+            onPress={onPress}
+            activeOpacity={0.7}
+        >
             <View>
                 {showDetails && market === undefined && (
                     <Text className="text-[11px] text-txt-disabled mt-1">Loading market details...</Text>
@@ -157,8 +186,8 @@ const TradeItem = ({
                             </Text>
                             <Text className={`text-2xl font-extrabold ${isYes ? 'text-green-500' : 'text-red-500'}`}>
                                 {isYes ? 'Yes' : 'No'}
-                </Text>
-            </View>
+                            </Text>
+                        </View>
 
                         <View className="flex-row items-center justify-between">
                             <Text className="text-base font-semibold text-txt-primary flex-1 pr-3" numberOfLines={2}>
@@ -175,22 +204,22 @@ const TradeItem = ({
                         {(trade.side === 'yes' ? market.yesSubTitle : market.noSubTitle) ? (
                             <Text className="text-sm italic text-txt-secondary mt-1" numberOfLines={1}>
                                 on {trade.side === 'yes' ? market.yesSubTitle : market.noSubTitle}
-                </Text>
+                            </Text>
                         ) : null}
 
                         <View className="flex-row items-end justify-between mt-3">
-                <Text className="text-xs text-txt-disabled">
+                            <Text className="text-xs text-txt-disabled">
                                 {formatShortDate(trade.createdAt)}
                             </Text>
                             <Text className="text-xl font-bold" style={{ color: pnlColor }}>
                                 {pnlText}
-                </Text>
+                            </Text>
                         </View>
                     </LinearGradient>
                 )}
             </View>
-    </TouchableOpacity>
-);
+        </TouchableOpacity>
+    );
 };
 
 export default function ProfileScreen() {
@@ -384,12 +413,14 @@ export default function ProfileScreen() {
     }, [marketDetailsByTicker]);
 
     useEffect(() => {
-        const now = new Date();
+        // Load candles for all trades with active markets (not closed/resolved)
         const activeTradeTickers = trades
             .filter((trade) => {
-                const tradeDate = new Date(trade.createdAt);
-                const hoursDiff = (now.getTime() - tradeDate.getTime()) / (1000 * 60 * 60);
-                return hoursDiff < 24;
+                const market = marketDetailsByTicker[trade.marketTicker];
+                // If market details not yet loaded, skip (will load when market details arrive)
+                if (!market) return false;
+                // Only load candles for active markets
+                return market.status === 'active';
             })
             .map((trade) => trade.marketTicker);
         const uniqueTickers = Array.from(new Set(activeTradeTickers));
@@ -463,16 +494,19 @@ export default function ProfileScreen() {
     const usdBalance = solBalance !== null && solUsdPrice !== null ? solBalance * solUsdPrice : null;
     const cashBalance = usdcBalance ?? usdBalance ?? 0;
 
-    const now = new Date();
+    // Filter trades based on market status - active markets = open positions, closed/resolved = previous
     const activeTrades = trades.filter(trade => {
-        const tradeDate = new Date(trade.createdAt);
-        const hoursDiff = (now.getTime() - tradeDate.getTime()) / (1000 * 60 * 60);
-        return hoursDiff < 24;
+        const market = marketDetailsByTicker[trade.marketTicker];
+        // If market details not yet loaded, assume active (will re-render when loaded)
+        if (!market) return true;
+        // Active if market is still open
+        return market.status === 'active';
     });
     const previousTrades = trades.filter(trade => {
-        const tradeDate = new Date(trade.createdAt);
-        const hoursDiff = (now.getTime() - tradeDate.getTime()) / (1000 * 60 * 60);
-        return hoursDiff >= 24;
+        const market = marketDetailsByTicker[trade.marketTicker];
+        // Only show in previous if we know the market is closed/resolved/finalized
+        if (!market) return false;
+        return market.status === 'finalized' || market.status === 'resolved' || market.status === 'closed';
     });
 
     if (isLoading) {
@@ -503,7 +537,7 @@ export default function ProfileScreen() {
                                 className="justify-center items-center"
                                 onPress={() => setSettingsVisible(true)}
                             >
-                            <Ionicons name="menu-outline" size={30} color={Theme.textSecondary} />
+                                <Ionicons name="menu-outline" size={30} color={Theme.textSecondary} />
                             </TouchableOpacity>
                         </View>
 
@@ -519,11 +553,11 @@ export default function ProfileScreen() {
                                 </View>
                             </View>
 
-                            {/* Profile Info */} 
+                            {/* Profile Info */}
                             <View className="flex-1 pt-1">
                                 <View className="flex-row items-center mb-3">
                                     <Text className="text-xl font-bold text-txt-primary">{username}</Text>
-                                   
+
                                     <TouchableOpacity
                                         className="flex-row ml-20 items-center gap-1.5 px-3.5 py-[7px]  rounded-md  bg-slate-200 "
                                         onPress={() => {
