@@ -166,3 +166,25 @@ export interface CandlesticksByMintResponse {
     candlesticks: CandleData[];
     ticker: string;
 }
+
+// Event Evidence Types (News/Signals)
+export interface EventEvidence {
+    id: string;
+    eventTicker: string;
+    marketTicker: string;
+    marketQuestion: string;
+    evidenceSentence: string;
+    highlightScore: number;
+    classification: 'CONFIRMATION' | 'REQUIREMENT' | 'DELAY' | 'RISK' | 'NONE';
+    headline?: string | null;
+    explanation?: string | null;
+    sourceUrls: string[];  // Array of source URLs
+    sourceTitle?: string | null;
+    sourcePublishedAt?: string | null;
+    createdAt: string;
+    updatedAt?: string;
+}
+
+export interface EvidenceResponse {
+    evidence: EventEvidence[];
+}

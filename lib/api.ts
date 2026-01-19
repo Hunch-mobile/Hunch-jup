@@ -1,4 +1,4 @@
-import { CandleData, CreateTradeRequest, Event, EventsResponse, Follow, Market, MarketsResponse, SyncUserRequest, Trade, User } from './types';
+import { CandleData, CreateTradeRequest, Event, EventEvidence, EventsResponse, EvidenceResponse, Follow, Market, MarketsResponse, SyncUserRequest, Trade, User } from './types';
 
 const API_BASE_URL = 'https://hunchdotrun-roan.vercel.app';
 const METADATA_API_BASE_URL = 'https://a.prediction-markets-api.dflow.net';
@@ -156,6 +156,18 @@ export const api = {
             throw new Error(error.error || 'Failed to get feed');
         }
         return response.json();
+    },
+
+    // Fetch event evidence (news signals)
+    fetchEvidence: async (eventTickers: string[]): Promise<EventEvidence[]> => {
+        const tickersParam = eventTickers.join(',');
+        const response = await fetch(`${API_BASE_URL}/api/events/evidence?eventTickers=${encodeURIComponent(tickersParam)}`);
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to fetch evidence');
+        }
+        const data: EvidenceResponse = await response.json();
+        return data.evidence || [];
     },
 };
 

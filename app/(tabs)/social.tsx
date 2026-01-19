@@ -1,10 +1,11 @@
 import CustomKeypad from '@/components/CustomKeypad';
 import LightChart from '@/components/LightChart';
+import NewsCard from '@/components/NewsCard';
 import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, getMarketDetails, marketsApi } from "@/lib/api";
-import { User as BackendUser, CandleData, Event, Market, Trade } from "@/lib/types";
+import { User as BackendUser, CandleData, Event, EventEvidence, Market, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
@@ -22,6 +23,14 @@ interface FeedItem extends Trade {
 type SearchMarketItem =
     | { type: 'event'; event: Event }
     | { type: 'market'; market: Market; event?: Event };
+
+// Mixed feed type for trades and news
+type FeedEntry =
+    | { type: 'trade'; data: FeedItem }
+    | { type: 'news'; data: EventEvidence };
+
+// Event tickers to fetch evidence for
+const EVIDENCE_TICKERS = ['KXFEDCHAIRNOM-29'];
 
 const defaultProfileImage = require("@/assets/default.jpeg");
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -702,13 +711,13 @@ const MarketTradeSheet = ({
                                         activeOpacity={0.8}
                                     >
                                         <Text className={`text-center font-semibold ${selectedSide === 'no' ? 'text-status-error' : 'text-txt-disabled'}`}>No</Text>
-                    </TouchableOpacity>
-                </View>
+                                    </TouchableOpacity>
+                                </View>
 
                                 <View className="mb-4">
                                     <View className="flex-row items-start justify-between gap-3 mb-2">
                                         <Text className="text-xl font-bold text-txt-primary flex-1" numberOfLines={2}>
-                                        {market?.title || item?.marketTicker || 'Market'}
+                                            {market?.title || item?.marketTicker || 'Market'}
                                         </Text>
                                         <Text className="text-sm font-semibold text-txt-secondary">
                                             {(() => {
@@ -717,7 +726,7 @@ const MarketTradeSheet = ({
                                                 return `${(price * 100).toFixed(1)}%`;
                                             })()}
                                         </Text>
-            </View>
+                                    </View>
                                     <View className="rounded-full bg-yellow-200 px-3 py-1 self-start">
                                         <Text className="text-sm font-semibold text-black" numberOfLines={1}>
                                             {market?.subtitle || market?.yesSubTitle || market?.noSubTitle || 'Market'}
@@ -780,7 +789,7 @@ const MarketTradeSheet = ({
                                             <Text className={`text-xs font-semibold ${timeFilter === option.key ? '' : 'text-txt-disabled'}`} style={timeFilter === option.key ? { color: Theme.accentSubtle } : {}}>
                                                 {option.label}
                                             </Text>
-        </TouchableOpacity>
+                                        </TouchableOpacity>
                                     ))}
                                 </View>
 
@@ -875,6 +884,24 @@ export default function SocialScreen() {
     const hasUserRef = useRef(!!backendUser);
     const [tradeSheetVisible, setTradeSheetVisible] = useState(false);
     const [tradeSheetItem, setTradeSheetItem] = useState<FeedItem | null>(null);
+    const [evidenceItems, setEvidenceItems] = useState<EventEvidence[]>([]);
+    const [isLoadingEvidence, setIsLoadingEvidence] = useState(false);
+
+    // Load evidence on mount
+    useEffect(() => {
+        const loadEvidence = async () => {
+            setIsLoadingEvidence(true);
+            try {
+                const evidence = await api.fetchEvidence(EVIDENCE_TICKERS);
+                setEvidenceItems(evidence);
+            } catch (error) {
+                console.error('Failed to load evidence:', error);
+            } finally {
+                setIsLoadingEvidence(false);
+            }
+        };
+        loadEvidence();
+    }, []);
 
     useEffect(() => {
         if (backendUser) {
@@ -1366,7 +1393,7 @@ export default function SocialScreen() {
                 {showSearch ? (
                     <>
                         {renderHeader()}
-                            <FlatList
+                        <FlatList
                             data={[
                                 ...searchMarketResults.map((item) => ({ type: 'marketResult' as const, item })),
                                 ...searchResults.map((item) => ({ type: 'userResult' as const, item })),
@@ -1388,8 +1415,8 @@ export default function SocialScreen() {
                                         canFollow={!!backendUser}
                                         onFollow={() => handleFollowUser(entry.item.id)}
                                         onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: entry.item.id } })}
-                            />
-                        ) : (
+                                    />
+                                ) : (
                                     <TouchableOpacity
                                         className="flex-row items-center py-3.5 px-5"
                                         onPress={() => {
@@ -1426,14 +1453,14 @@ export default function SocialScreen() {
                                     </TouchableOpacity>
                                 )
                             }
-                                contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
-                                showsVerticalScrollIndicator={false}
-                                ListEmptyComponent={() => (
-                                    <View className="px-6 py-8">
+                            contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
+                            showsVerticalScrollIndicator={false}
+                            ListEmptyComponent={() => (
+                                <View className="px-6 py-8">
                                     <Text className="text-sm text-txt-secondary">No results found.</Text>
-                                    </View>
-                                )}
-                            />
+                                </View>
+                            )}
+                        />
                     </>
                 ) : (
                     <>
@@ -1441,30 +1468,57 @@ export default function SocialScreen() {
                         <View style={styles.listContainer} {...(showSearch ? {} : panResponder.panHandlers)}>
                             <Animated.View style={[styles.slidingContainer, { transform: [{ translateX: slideAnim }] }]}>
                                 {(['global', 'following'] as const).map((pageMode) => {
-                                    const items = feedItemsByMode[pageMode];
+                                    const tradeItems = feedItemsByMode[pageMode];
                                     const isLoadingFeed = isLoadingFeedByMode[pageMode];
                                     const isLoadingMore = isLoadingMoreByMode[pageMode];
                                     const refreshing = refreshingByMode[pageMode];
+
+                                    // Create mixed feed: news items at TOP, then trades
+                                    const mixedFeed: FeedEntry[] = [];
+                                    if (pageMode === 'global') {
+                                        // Add all news items first at the top
+                                        evidenceItems.forEach(news => {
+                                            mixedFeed.push({ type: 'news', data: news });
+                                        });
+                                        // Then add all trades
+                                        tradeItems.forEach(trade => {
+                                            mixedFeed.push({ type: 'trade', data: trade });
+                                        });
+                                    } else {
+                                        // Following feed: just trades
+                                        tradeItems.forEach(trade => {
+                                            mixedFeed.push({ type: 'trade', data: trade });
+                                        });
+                                    }
+
                                     return (
                                         <View key={pageMode} style={styles.listPane}>
-                                            {isLoadingFeed && items.length === 0 ? (
+                                            {isLoadingFeed && tradeItems.length === 0 ? (
                                                 <View className="flex-1 justify-center items-center gap-3">
                                                     <ActivityIndicator size="large" color={Theme.accentSubtle} />
                                                     <Text className="text-sm text-txt-secondary">Loading feed...</Text>
                                                 </View>
                                             ) : (
                                                 <FlatList
-                                                    data={items}
-                                                    keyExtractor={(feedItem) => feedItem.id}
-                                                    renderItem={({ item: feedItem }) => (
-                                                        <FeedCard
-                                                            item={feedItem}
-                                                            candles={candlesMap[feedItem.marketTicker]}
-                                                            onPress={() => handleOpenTradeSheet(feedItem)}
-                                                            onUserPress={() => feedItem.user?.id && router.push({ pathname: '/user/[userId]', params: { userId: feedItem.user.id } })}
-                                                            onChartPress={() => handleOpenTradeSheet(feedItem)}
-                                                        />
-                                                    )}
+                                                    data={mixedFeed}
+                                                    keyExtractor={(entry) =>
+                                                        entry.type === 'trade'
+                                                            ? `trade-${entry.data.id}`
+                                                            : `news-${entry.data.id}`
+                                                    }
+                                                    renderItem={({ item: entry }) =>
+                                                        entry.type === 'trade' ? (
+                                                            <FeedCard
+                                                                item={entry.data}
+                                                                candles={candlesMap[entry.data.marketTicker]}
+                                                                onPress={() => handleOpenTradeSheet(entry.data)}
+                                                                onUserPress={() => entry.data.user?.id && router.push({ pathname: '/user/[userId]', params: { userId: entry.data.user.id } })}
+                                                                onChartPress={() => handleOpenTradeSheet(entry.data)}
+                                                            />
+                                                        ) : (
+                                                            <NewsCard item={entry.data} />
+                                                        )
+                                                    }
                                                     contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
                                                     showsVerticalScrollIndicator={false}
                                                     refreshing={refreshing}
