@@ -5,12 +5,15 @@ import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, getMarketDetails, marketsApi } from "@/lib/api";
+import { executeTrade, fromRawAmount, toRawAmount, USDC_MINT } from "@/lib/tradeService";
 import { User as BackendUser, CandleData, Event, EventEvidence, Market, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
+import { useEmbeddedSolanaWallet } from "@privy-io/expo";
+import { clusterApiUrl, Connection } from "@solana/web3.js";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, FlatList, Image, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -459,15 +462,21 @@ const TIME_FILTER_OPTIONS: { key: TimeFilter; label: string; seconds: number }[]
 const MarketTradeSheet = ({
     visible,
     onClose,
+    onTradeSuccess,
     item,
     candles: initialCandles,
     backendUser,
+    walletProvider,
+    connection,
 }: {
     visible: boolean;
     onClose: () => void;
+    onTradeSuccess: (tradeData: any, displayInfo: any) => void;
     item: FeedItem | null;
     candles?: CandleData[];
     backendUser: BackendUser | null;
+    walletProvider: any;
+    connection: Connection;
 }) => {
     const insets = useSafeAreaInsets();
     const sheetHeight = Math.round(Dimensions.get("window").height * 0.82);
@@ -575,29 +584,88 @@ const MarketTradeSheet = ({
             setTradeError("Sign in to trade");
             return;
         }
+        if (!walletProvider) {
+            setTradeError("Wallet not connected");
+            return;
+        }
         if (!amount || Number(amount) <= 0) {
             setTradeError("Enter a valid amount");
             return;
         }
+
+        const market = item.marketDetails;
+        if (!market) {
+            setTradeError("Market data not available");
+            return;
+        }
+
+        // Get the outcome mint based on selected side
+        let outcomeMint: string | undefined;
+        if (market.accounts) {
+            const usdcAccount = market.accounts[USDC_MINT];
+            if (usdcAccount) {
+                outcomeMint = selectedSide === 'yes' ? usdcAccount.yesMint : usdcAccount.noMint;
+            }
+        }
+        if (!outcomeMint) {
+            outcomeMint = selectedSide === 'yes' ? market.yesMint : market.noMint;
+        }
+
+        if (!outcomeMint) {
+            setTradeError("Market mints not available");
+            return;
+        }
+
         try {
             setIsTrading(true);
             setTradeError(null);
-            const trade = await api.createTrade({
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+            // Convert USDC amount to raw (6 decimals)
+            const rawAmount = toRawAmount(Number(amount), 6);
+
+            // Execute trade via DFlow + Privy
+            const { signature, order } = await executeTrade({
+                provider: walletProvider,
+                connection,
+                userPublicKey: backendUser.walletAddress,
+                inputMint: USDC_MINT,
+                outputMint: outcomeMint,
+                amount: rawAmount,
+                slippageBps: 100,
+            });
+
+            // Calculate human-readable values
+            const estimatedSpendUsdc = fromRawAmount(order.inAmount, 6).toFixed(2);
+            const estimatedTokens = fromRawAmount(order.outAmount, 6);
+            const entryPrice = estimatedTokens > 0 ? (Number(estimatedSpendUsdc) / estimatedTokens).toFixed(4) : '0';
+            // Prepare trade data for deferred save
+            const tradeData = {
                 userId: backendUser.id,
                 marketTicker: item.marketTicker,
+                eventTicker: market.eventTicker,
                 side: selectedSide,
-                amount: amount,
+                action: 'BUY',
+                amount: estimatedSpendUsdc,
                 walletAddress: backendUser.walletAddress,
-            });
-            setLastTradeId(trade.id);
-            setLastTradeInfo({
+                transactionSig: signature,
+                executedInAmount: order.inAmount,
+                executedOutAmount: order.outAmount,
+                isDummy: false,
+            };
+
+            const displayInfo = {
                 side: selectedSide,
-                amount: amount,
+                amount: estimatedSpendUsdc,
                 marketTitle: market?.title || item.marketTicker,
-            });
-            setShowQuoteSheet(true);
+            };
+
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            onTradeSuccess(tradeData, displayInfo);
             onClose();
         } catch (error: any) {
+            console.error('Trade error:', error);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             setTradeError(error?.message || "Failed to place trade");
         } finally {
             setIsTrading(false);
@@ -850,6 +918,55 @@ const MarketTradeSheet = ({
 
 export default function SocialScreen() {
     const { backendUser } = useUser();
+    const { wallets } = useEmbeddedSolanaWallet();
+
+    // Solana connection for trading
+    const connection = useMemo(() => {
+        const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
+        return new Connection(rpcUrl, 'confirmed');
+    }, []);
+    const solanaWallet = wallets?.[0];
+    const [walletProvider, setWalletProvider] = useState<any>(null);
+
+    // Get wallet provider
+    useEffect(() => {
+        const getProvider = async () => {
+            if (solanaWallet) {
+                try {
+                    const provider = await solanaWallet.getProvider();
+                    setWalletProvider(provider);
+                } catch (e) {
+                    console.error('Failed to get wallet provider:', e);
+                }
+            }
+        };
+        getProvider();
+    }, [solanaWallet]);
+
+    // Trade state
+    const [pendingTrade, setPendingTrade] = useState<any>(null);
+    const [lastTradeId, setLastTradeId] = useState<string | null>(null);
+    const [lastTradeInfo, setLastTradeInfo] = useState<{ side: 'yes' | 'no'; amount: string; marketTitle: string } | null>(null);
+
+    const finalizeTrade = async (quote?: string) => {
+        if (!pendingTrade) return;
+
+        try {
+            // Save trade to backend with real data (and optional quote)
+            await api.createTrade({
+                ...pendingTrade,
+                quote,
+            });
+            setPendingTrade(null);
+        } catch (error) {
+            console.error('Failed to save trade:', error);
+            // Even if save fails, we don't want to block the UI, but maybe alert user?
+            // For now just log it as the trade is already on chain
+        }
+    };
+
+    const [showQuoteSheet, setShowQuoteSheet] = useState(false);
+
     const [feedItemsByMode, setFeedItemsByMode] = useState<{ global: FeedItem[]; following: FeedItem[] }>({
         global: [],
         following: [],
@@ -1047,7 +1164,7 @@ export default function SocialScreen() {
         setIsSearchingMarkets(true);
         const normalizedQuery = query.trim().toLowerCase();
         try {
-            const [results, events] = await Promise.all([
+            const [results, { events }] = await Promise.all([
                 api.searchUsers(query),
                 marketsApi.fetchEvents(80, { status: 'active', withNestedMarkets: true }),
             ]);
@@ -1473,19 +1590,32 @@ export default function SocialScreen() {
                                     const isLoadingMore = isLoadingMoreByMode[pageMode];
                                     const refreshing = refreshingByMode[pageMode];
 
-                                    // Create mixed feed: news items at TOP, then trades
+                                    // Create mixed feed: combine news and trades, sorted by time (most recent first)
                                     const mixedFeed: FeedEntry[] = [];
                                     if (pageMode === 'global') {
-                                        // Add all news items first at the top
+                                        // Add all news items
                                         evidenceItems.forEach(news => {
                                             mixedFeed.push({ type: 'news', data: news });
                                         });
-                                        // Then add all trades
+                                        // Add all trades
                                         tradeItems.forEach(trade => {
                                             mixedFeed.push({ type: 'trade', data: trade });
                                         });
+                                        // Sort by time (most recent first)
+                                        mixedFeed.sort((a, b) => {
+                                            const getTime = (entry: FeedEntry): number => {
+                                                if (entry.type === 'trade') {
+                                                    return new Date(entry.data.createdAt).getTime();
+                                                } else {
+                                                    // News: use sourcePublishedAt or createdAt
+                                                    const newsDate = entry.data.sourcePublishedAt || entry.data.createdAt;
+                                                    return new Date(newsDate).getTime();
+                                                }
+                                            };
+                                            return getTime(b) - getTime(a); // Descending (newest first)
+                                        });
                                     } else {
-                                        // Following feed: just trades
+                                        // Following feed: just trades (already sorted by API)
                                         tradeItems.forEach(trade => {
                                             mixedFeed.push({ type: 'trade', data: trade });
                                         });
@@ -1547,9 +1677,16 @@ export default function SocialScreen() {
             <MarketTradeSheet
                 visible={tradeSheetVisible}
                 onClose={handleCloseTradeSheet}
+                onTradeSuccess={(tradeData, displayInfo) => {
+                    setPendingTrade(tradeData);
+                    setLastTradeInfo(displayInfo);
+                    setShowQuoteSheet(true);
+                }}
                 item={tradeSheetItem}
                 candles={tradeSheetItem ? candlesMap[tradeSheetItem.marketTicker] : undefined}
                 backendUser={backendUser || null}
+                walletProvider={walletProvider}
+                connection={connection}
             />
         </View>
     );

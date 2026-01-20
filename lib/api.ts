@@ -1,4 +1,4 @@
-import { CandleData, CreateTradeRequest, Event, EventEvidence, EventsResponse, EvidenceResponse, Follow, Market, MarketsResponse, SyncUserRequest, Trade, User } from './types';
+import { CandleData, CreateTradeRequest, Event, EventEvidence, EventsResponse, EvidenceResponse, Follow, Market, MarketsResponse, PositionsResponse, Series, SeriesResponse, SyncUserRequest, TagsResponse, Trade, User } from './types';
 
 const API_BASE_URL = 'https://hunchdotrun-roan.vercel.app';
 const METADATA_API_BASE_URL = 'https://a.prediction-markets-api.dflow.net';
@@ -112,6 +112,15 @@ export const api = {
         return response.json();
     },
 
+    getPositions: async (userId: string): Promise<PositionsResponse> => {
+        const response = await fetch(`${API_BASE_URL}/api/positions?userId=${userId}&includeStats=true`);
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to get positions');
+        }
+        return response.json();
+    },
+
     updateTradeQuote: async (tradeId: string, quote: string): Promise<Trade> => {
         const response = await fetch(`${API_BASE_URL}/api/trades/${tradeId}/quote`, {
             method: 'PATCH',
@@ -175,12 +184,11 @@ export const marketsApi = {
     // Fetch all markets
     fetchMarkets: async (limit: number = 200): Promise<Market[]> => {
         const response = await fetch(
-            `${METADATA_API_BASE_URL}/api/v1/markets?limit=${limit}`,
+            `${API_BASE_URL}/api/dflow/markets?limit=${limit}`,
             {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-api-key': DFLOW_API_KEY,
                 },
             }
         );
@@ -193,14 +201,70 @@ export const marketsApi = {
         return data.markets || [];
     },
 
-    // Fetch events with nested markets
+    // Fetch tags for category filtering
+    fetchTags: async (): Promise<TagsResponse> => {
+        const response = await fetch(
+            `${API_BASE_URL}/api/dflow/tags`,
+            {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch tags: ${response.statusText}`);
+        }
+
+        return await response.json();
+    },
+
+    // Fetch series for a specific category
+    fetchSeries: async (
+        category: string,
+        options?: {
+            isInitialized?: boolean;
+            status?: string;
+        }
+    ): Promise<Series[]> => {
+        const queryParams = new URLSearchParams();
+        queryParams.append('category', category);
+
+        if (options?.isInitialized !== undefined) {
+            queryParams.append('isInitialized', options.isInitialized.toString());
+        }
+        if (options?.status) {
+            queryParams.append('status', options.status);
+        }
+
+        const response = await fetch(
+            `${API_BASE_URL}/api/dflow/series?${queryParams.toString()}`,
+            {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch series: ${response.statusText}`);
+        }
+
+        const data: SeriesResponse = await response.json();
+        return data.series || [];
+    },
+
+    // Fetch events with nested markets (supports pagination via cursor)
     fetchEvents: async (
         limit: number = 200,
         options?: {
             status?: string;
             withNestedMarkets?: boolean;
+            cursor?: string;
         }
-    ): Promise<Event[]> => {
+    ): Promise<{ events: Event[]; cursor?: string }> => {
         const queryParams = new URLSearchParams();
         queryParams.append('limit', limit.toString());
 
@@ -210,14 +274,16 @@ export const marketsApi = {
         if (options?.withNestedMarkets) {
             queryParams.append('withNestedMarkets', 'true');
         }
+        if (options?.cursor) {
+            queryParams.append('cursor', options.cursor);
+        }
 
         const response = await fetch(
-            `${METADATA_API_BASE_URL}/api/v1/events?${queryParams.toString()}`,
+            `${API_BASE_URL}/api/dflow/events?${queryParams.toString()}`,
             {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-api-key': DFLOW_API_KEY,
                 },
             }
         );
@@ -234,18 +300,17 @@ export const marketsApi = {
         }
 
         const data: EventsResponse = await response.json();
-        return data.events || [];
+        return { events: data.events || [], cursor: data.cursor ? String(data.cursor) : undefined };
     },
 
     // Fetch event details
     fetchEventDetails: async (eventTicker: string): Promise<Event> => {
         const response = await fetch(
-            `${METADATA_API_BASE_URL}/api/v1/event/${eventTicker}?withNestedMarkets=true`,
+            `${API_BASE_URL}/api/dflow/event/${eventTicker}?withNestedMarkets=true`,
             {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-api-key': DFLOW_API_KEY,
                 },
             }
         );
@@ -280,12 +345,11 @@ export const marketsApi = {
     // Fetch markets batch
     fetchMarketsBatch: async (mints: string[]): Promise<Market[]> => {
         const response = await fetch(
-            `${METADATA_API_BASE_URL}/api/v1/markets/batch`,
+            `${API_BASE_URL}/api/dflow/markets/batch`,
             {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-api-key': DFLOW_API_KEY,
                 },
                 body: JSON.stringify({ mints }),
             }
@@ -324,12 +388,11 @@ export const marketsApi = {
         }
 
         const response = await fetch(
-            `${METADATA_API_BASE_URL}/api/v1/events?${queryParams.toString()}`,
+            `${API_BASE_URL}/api/dflow/events?${queryParams.toString()}`,
             {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-api-key': DFLOW_API_KEY,
                 },
             }
         );
@@ -345,12 +408,11 @@ export const marketsApi = {
     // Filter outcome mints
     filterOutcomeMints: async (addresses: string[]): Promise<string[]> => {
         const response = await fetch(
-            `${METADATA_API_BASE_URL}/api/v1/filter_outcome_mints`,
+            `${API_BASE_URL}/api/dflow/filter-outcome-mints`,
             {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-api-key': DFLOW_API_KEY,
                 },
                 body: JSON.stringify({ addresses }),
             }
@@ -367,12 +429,11 @@ export const marketsApi = {
     // Fetch market details by ticker
     fetchMarketDetails: async (ticker: string): Promise<Market> => {
         const response = await fetch(
-            `${METADATA_API_BASE_URL}/api/v1/market/${ticker}`,
+            `${API_BASE_URL}/api/dflow/market/${ticker}`,
             {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-api-key': DFLOW_API_KEY,
                 },
             }
         );

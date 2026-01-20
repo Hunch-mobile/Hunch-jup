@@ -1,16 +1,19 @@
 import CreditCard from "@/components/CreditCard";
+import SellPositionSheet from "@/components/SellPositionSheet";
 import SettingsSheet from "@/components/SettingsSheet";
+import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
-import { api, getMarketDetails, marketsApi } from "@/lib/api";
-import { CandleData, Event, Market, Trade, User } from "@/lib/types";
+import { api, marketsApi } from "@/lib/api";
+import { executeTrade, toRawAmount, USDC_MINT } from "@/lib/tradeService";
+import { AggregatedPosition, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
-import { usePrivy } from "@privy-io/expo";
+import { useEmbeddedSolanaWallet, usePrivy } from "@privy-io/expo";
 import { useFundSolanaWallet } from "@privy-io/expo/ui";
-import { Connection, LAMPORTS_PER_SOL, PublicKey, clusterApiUrl } from "@solana/web3.js";
-import { LinearGradient } from "expo-linear-gradient";
+import { clusterApiUrl, Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -19,203 +22,131 @@ const defaultProfileImage = require("@/assets/default.jpeg");
 
 type TradeTab = 'active' | 'previous';
 
-// Trade item component
-const formatUnixTime = (timestamp?: number | null) => {
-    if (!timestamp) return '—';
-    return new Date(timestamp * 1000).toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-    });
+const formatCurrency = (value: number | null | undefined, fractionDigits = 2) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+    return `$${value.toFixed(fractionDigits)}`;
 };
 
-const getPriceChange = (candles: CandleData[]) => {
-    if (!candles || candles.length < 2) return null;
-    const latest = candles[candles.length - 1];
-    const first = candles[0];
-    const change = latest.close - first.close;
-    const changePercent = first.close > 0 ? (change / first.close) * 100 : 0;
-    return {
-        change,
-        changePercent: changePercent.toFixed(1),
-        isPositive: change >= 0,
-        currentPrice: latest.close,
-    };
+const formatPercent = (value: number | null | undefined) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+    return `${value.toFixed(1)}%`;
 };
 
-const getEntryPnl = (candles: CandleData[], entryTimestamp: number, isYes: boolean) => {
-    if (!candles || candles.length < 2) return null;
-    const latest = candles[candles.length - 1];
-    const entryIndex = candles.reduce((closestIndex, candle, index) => {
-        const closestDiff = Math.abs(candles[closestIndex].timestamp - entryTimestamp);
-        const currentDiff = Math.abs(candle.timestamp - entryTimestamp);
-        return currentDiff < closestDiff ? index : closestIndex;
-    }, 0);
-    const entryPrice = candles[entryIndex]?.close;
-    if (!Number.isFinite(entryPrice)) return null;
-    const rawChange = latest.close - entryPrice;
-    const adjustedChange = isYes ? rawChange : -rawChange;
-    const changePercent = entryPrice > 0 ? (adjustedChange / entryPrice) * 100 : 0;
-    return {
-        change: adjustedChange,
-        changePercent: changePercent.toFixed(1),
-        isPositive: adjustedChange >= 0,
-        currentPrice: latest.close,
-        entryPrice,
-    };
-};
-
-const formatBoughtTime = (createdAt: string) => {
-    const created = new Date(createdAt);
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfCreated = new Date(created.getFullYear(), created.getMonth(), created.getDate());
-    const diffMs = startOfToday.getTime() - startOfCreated.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays <= 0) {
-        return created.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    }
-    if (diffDays === 1) return '1 day ago';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 14) return 'week ago';
-    if (diffDays < 21) return '2 weeks ago';
-    if (diffDays < 30) return 'month ago';
-    const months = Math.round(diffDays / 30);
-    return months <= 1 ? 'month ago' : `${months} months ago`;
-};
-
-const formatShortDate = (createdAt: string) => {
-    const date = new Date(createdAt);
-    return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
-};
-
-const TradeItem = ({
-    trade,
+const PositionItem = ({
+    position,
+    isPrevious = false,
     onPress,
-    market,
-    event,
-    candles,
-    showDetails = false,
+    onSell,
 }: {
-    trade: Trade;
+    position: AggregatedPosition;
+    isPrevious?: boolean;
     onPress: () => void;
-    market?: Market | null;
-    event?: Event | null;
-    candles?: CandleData[] | null;
-    showDetails?: boolean;
+    onSell?: () => void;
 }) => {
-    const isYes = trade.side === 'yes';
-    const amountValue = Number(trade.amount);
-
-    // Calculate PnL using market prices and trade quote
-    let pnlInfo: { changePercent: string; isPositive: boolean } | null = null;
-
-    // Get entry price from trade quote (in cents, 0-100)
-    const entryPriceCents = trade.quote ? Number(trade.quote) : null;
-
-    // Get current price from market (in cents, 0-100)
-    const currentPriceCents = market
-        ? (isYes ? Number(market.yesAsk || 0) : Number(market.noAsk || 0))
-        : null;
-
-    if (entryPriceCents && currentPriceCents && entryPriceCents > 0) {
-        const priceDiff = currentPriceCents - entryPriceCents;
-        const changePercent = (priceDiff / entryPriceCents) * 100;
-        pnlInfo = {
-            changePercent: changePercent.toFixed(1),
-            isPositive: changePercent >= 0,
-        };
-    } else if (candles && candles.length >= 2) {
-        // Fallback to candle-based calculation
-        const entryTimestamp = Math.floor(new Date(trade.createdAt).getTime() / 1000);
-        const candlePnl = getEntryPnl(candles, entryTimestamp, isYes) || getPriceChange(candles);
-        if (candlePnl) {
-            pnlInfo = {
-                changePercent: candlePnl.changePercent,
-                isPositive: candlePnl.isPositive,
-            };
-        }
-    }
-
-    const percentValue = pnlInfo ? Number(pnlInfo.changePercent) : NaN;
-    const pnlDollar = Number.isFinite(percentValue) && Number.isFinite(amountValue)
-        ? (amountValue * percentValue) / 100
-        : NaN;
-    const totalValue = Number.isFinite(pnlDollar) && Number.isFinite(amountValue)
-        ? Math.max(amountValue + pnlDollar, 0)
-        : amountValue;
-    const pnlText = pnlInfo && Number.isFinite(pnlDollar)
-        ? `${pnlInfo.isPositive ? '+' : ''}$${Math.abs(pnlDollar).toFixed(0)}`
+    const isYes = position.side === 'yes';
+    const marketTitle = position.market?.title || position.marketTicker;
+    const subtitle = isYes ? position.market?.yesSubTitle : position.market?.noSubTitle;
+    const pnlValue = position.totalPnL ?? position.profitLoss ?? position.unrealizedPnL ?? position.realizedPnL ?? null;
+    const pnlPercent = position.profitLossPercentage ?? (
+        pnlValue !== null && position.totalCostBasis > 0
+            ? (pnlValue / position.totalCostBasis) * 100
+            : null
+    );
+    const pnlColor = pnlValue !== null ? (pnlValue >= 0 ? '#22c55e' : '#ef4444') : Theme.textDisabled;
+    const pnlText = pnlValue !== null
+        ? `${pnlValue >= 0 ? '+' : '-'}${formatCurrency(Math.abs(pnlValue))}`
         : '—';
-    const pnlColor = pnlInfo ? (pnlInfo.isPositive ? '#22c55e' : '#ef4444') : Theme.textDisabled;
-    const gradientColors = pnlInfo
-        ? (pnlInfo.isPositive
-            ? ['#ECFDF5', '#F0FDF4', '#FFFFFF'] as const
-            : ['#FEF2F2', '#FFF1F2', '#FFFFFF'] as const)
-        : (['#F8FAFC', '#FFFFFF', '#FFFFFF'] as const);
+    const hasTokens = position.totalTokenAmount > 0.001 || (position.totalTokensBought - position.totalTokensSold) > 0.001;
 
     return (
         <TouchableOpacity
-            className="px-4 py-3"
+            className="px-4 py-4"
             onPress={onPress}
             activeOpacity={0.7}
         >
-            <View>
-                {showDetails && market === undefined && (
-                    <Text className="text-[11px] text-txt-disabled mt-1">Loading market details...</Text>
-                )}
-                {showDetails && market === null && (
-                    <Text className="text-[11px] text-txt-disabled mt-1">Market details unavailable</Text>
-                )}
-                {showDetails && market && (
-                    <LinearGradient
-                        colors={gradientColors}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={{ borderRadius: 18, padding: 14, borderWidth: 1, borderColor: Theme.border }}
-                    >
-                        <Text className="absolute right-4 top-3 text-xs text-txt-disabled">
-                            {formatBoughtTime(trade.createdAt)}
+            <View className="bg-app-card rounded-2xl p-4 border border-border">
+                <View className="flex-row items-center gap-3 mb-3">
+                    <View className="w-12 h-12 rounded-xl overflow-hidden border border-border bg-app-elevated">
+                        <Image
+                            source={position.eventImageUrl ? { uri: position.eventImageUrl } : defaultProfileImage}
+                            className="w-full h-full"
+                        />
+                    </View>
+                    <View className="flex-1">
+                        <Text className="text-base font-semibold text-txt-primary" numberOfLines={2}>
+                            {marketTitle}
                         </Text>
+                        <Text className="text-xs text-txt-secondary" numberOfLines={1}>
+                            {subtitle || position.market?.subtitle || 'Market'}
+                        </Text>
+                    </View>
+                    <View className={`px-2.5 py-1 rounded-md ${isYes ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                        <Text className={`text-xs font-bold ${isYes ? 'text-green-500' : 'text-red-500'}`}>
+                            {isYes ? 'YES' : 'NO'}
+                        </Text>
+                    </View>
+                </View>
 
-                        <View className="flex-row items-center justify-between mb-2">
-                            <Text className="text-2xl font-extrabold text-txt-primary">
-                                ${Number.isFinite(totalValue) ? totalValue.toFixed(2) : parseFloat(trade.amount).toFixed(2)}
-                            </Text>
-                            <Text className={`text-2xl font-extrabold ${isYes ? 'text-green-500' : 'text-red-500'}`}>
-                                {isYes ? 'Yes' : 'No'}
+                <View className="flex-row items-center justify-between mb-2">
+                    <View className="flex-1">
+                        <Text className="text-[11px] text-txt-disabled uppercase">Cost</Text>
+                        <Text className="text-base font-semibold text-txt-primary">
+                            {formatCurrency(position.totalCostBasis)}
+                        </Text>
+                    </View>
+                    {!isPrevious && (
+                        <View className="flex-1">
+                            <Text className="text-[11px] text-txt-disabled uppercase">Value</Text>
+                            <Text className="text-base font-semibold text-txt-primary">
+                                {formatCurrency(position.currentValue)}
                             </Text>
                         </View>
+                    )}
+                    <View className="flex-1">
+                        <Text className="text-[11px] text-txt-disabled uppercase">PnL</Text>
+                        <Text className="text-base font-semibold" style={{ color: pnlColor }}>
+                            {pnlText}
+                        </Text>
+                        <Text className="text-[11px] font-medium" style={{ color: pnlColor }}>
+                            {pnlPercent === null ? '—' : `${pnlPercent >= 0 ? '+' : ''}${formatPercent(pnlPercent)}`}
+                        </Text>
+                    </View>
+                </View>
 
-                        <View className="flex-row items-center justify-between">
-                            <Text className="text-base font-semibold text-txt-primary flex-1 pr-3" numberOfLines={2}>
-                                {event?.title || market.title}
-                            </Text>
-                            <View className="w-10 h-10 rounded-md overflow-hidden border border-border">
-                                <Image
-                                    source={event?.imageUrl ? { uri: event.imageUrl } : defaultProfileImage}
-                                    className="w-full h-full"
-                                />
-                            </View>
-                        </View>
+                <View className="flex-row items-center justify-between">
+                    <View className="flex-1">
+                        <Text className="text-[11px] text-txt-disabled uppercase">Entry</Text>
+                        <Text className="text-sm font-medium text-txt-primary">
+                            {formatCurrency(position.averageEntryPrice)}
+                        </Text>
+                    </View>
+                    <View className="flex-1">
+                        <Text className="text-[11px] text-txt-disabled uppercase">Current</Text>
+                        <Text className="text-sm font-medium text-txt-primary">
+                            {formatCurrency(position.currentPrice)}
+                        </Text>
+                    </View>
+                    <View className="flex-1">
+                        <Text className="text-[11px] text-txt-disabled uppercase">Trades</Text>
+                        <Text className="text-sm font-medium text-txt-primary">
+                            {position.tradeCount}
+                        </Text>
+                    </View>
+                </View>
 
-                        {(trade.side === 'yes' ? market.yesSubTitle : market.noSubTitle) ? (
-                            <Text className="text-sm italic text-txt-secondary mt-1" numberOfLines={1}>
-                                on {trade.side === 'yes' ? market.yesSubTitle : market.noSubTitle}
-                            </Text>
-                        ) : null}
-
-                        <View className="flex-row items-end justify-between mt-3">
-                            <Text className="text-xs text-txt-disabled">
-                                {formatShortDate(trade.createdAt)}
-                            </Text>
-                            <Text className="text-xl font-bold" style={{ color: pnlColor }}>
-                                {pnlText}
-                            </Text>
-                        </View>
-                    </LinearGradient>
+                {/* Sell Button for active positions with tokens */}
+                {!isPrevious && hasTokens && onSell && (
+                    <TouchableOpacity
+                        className="mt-3 bg-red-500/10 rounded-xl py-2.5 flex-row items-center justify-center gap-2 border border-red-500/20"
+                        onPress={(e) => {
+                            e.stopPropagation();
+                            onSell();
+                        }}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons name="trending-down" size={16} color="#ef4444" />
+                        <Text className="text-red-500 font-semibold text-sm">Sell Position</Text>
+                    </TouchableOpacity>
                 )}
             </View>
         </TouchableOpacity>
@@ -225,6 +156,7 @@ const TradeItem = ({
 export default function ProfileScreen() {
     const { user, logout } = usePrivy();
     const { backendUser, setBackendUser } = useUser();
+    const { wallets } = useEmbeddedSolanaWallet();
     const router = useRouter();
     const { fundWallet } = useFundSolanaWallet();
     const [profileData, setProfileData] = useState<User | null>(null);
@@ -235,15 +167,50 @@ export default function ProfileScreen() {
     const [solBalance, setSolBalance] = useState<number | null>(null);
     const [solUsdPrice, setSolUsdPrice] = useState<number | null>(null);
     const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
-    const [marketDetailsByTicker, setMarketDetailsByTicker] = useState<Record<string, Market | null>>({});
-    const [eventDetailsByTicker, setEventDetailsByTicker] = useState<Record<string, Event | null>>({});
-    const [candlesByTicker, setCandlesByTicker] = useState<Record<string, CandleData[]>>({});
+    const [positions, setPositions] = useState<{ active: AggregatedPosition[]; previous: AggregatedPosition[] }>({
+        active: [],
+        previous: [],
+    });
+    const [isLoadingPositions, setIsLoadingPositions] = useState(true);
+
+    // Sell position state
+    const [sellSheetVisible, setSellSheetVisible] = useState(false);
+    const [selectedPosition, setSelectedPosition] = useState<AggregatedPosition | null>(null);
+    const [isSelling, setIsSelling] = useState(false);
+
+    // Quote sheet state
+    const [showQuoteSheet, setShowQuoteSheet] = useState(false);
+    const [lastTradeInfo, setLastTradeInfo] = useState<{ side: 'yes' | 'no'; amount: string; marketTitle: string } | null>(null);
+    const [pendingTrade, setPendingTrade] = useState<any>(null);
+
+    const finalizeTrade = async (quote?: string) => {
+        if (!pendingTrade) return;
+
+        try {
+            // Save trade to backend with real data (and optional quote)
+            await api.createTrade({
+                ...pendingTrade,
+                quote,
+            });
+            setPendingTrade(null);
+
+            // Reload positions and balances after save
+            loadPositions();
+            loadUsdcBalance();
+        } catch (error) {
+            console.error('Failed to save trade:', error);
+        }
+    };
 
     const slideAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(0.6)).current;
-    const loadedMarketTickers = useRef(new Set<string>());
-    const loadedEventTickers = useRef(new Set<string>());
-    const loadedCandleTickers = useRef(new Set<string>());
+
+    // Solana connection for trading
+    const connection = useMemo(() => {
+        const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
+        return new Connection(rpcUrl, 'confirmed');
+    }, []);
+    const solanaWallet = wallets?.[0];
 
     const animateToTab = useCallback((tab: TradeTab) => {
         const toValue = tab === 'active' ? 0 : -SCREEN_WIDTH + 40;
@@ -259,6 +226,7 @@ export default function ProfileScreen() {
     useEffect(() => {
         loadProfile();
         loadTrades();
+        loadPositions();
     }, [backendUser]);
 
     useEffect(() => {
@@ -294,6 +262,22 @@ export default function ProfileScreen() {
             setTrades(data);
         } catch (error) {
             console.error("Failed to load trades:", error);
+        }
+    };
+
+    const loadPositions = async () => {
+        if (!backendUser) {
+            setIsLoadingPositions(false);
+            return;
+        }
+        try {
+            setIsLoadingPositions(true);
+            const data = await api.getPositions(backendUser.id);
+            setPositions(data.positions);
+        } catch (error) {
+            console.error("Failed to load positions:", error);
+        } finally {
+            setIsLoadingPositions(false);
         }
     };
 
@@ -351,129 +335,131 @@ export default function ProfileScreen() {
         loadUsdcBalance();
     }, [loadSolBalance, loadUsdcBalance]);
 
-    useEffect(() => {
-        const uniqueTickers = Array.from(new Set(trades.map((trade) => trade.marketTicker)));
-        const tickersToFetch = uniqueTickers.filter((ticker) => !loadedMarketTickers.current.has(ticker));
-        if (tickersToFetch.length === 0) return;
-
-        let cancelled = false;
-        const loadMarkets = async () => {
-            const results = await Promise.all(
-                tickersToFetch.map(async (ticker) => ({
-                    ticker,
-                    market: await getMarketDetails(ticker),
-                }))
-            );
-            if (cancelled) return;
-            setMarketDetailsByTicker((prev) => {
-                const next = { ...prev };
-                results.forEach(({ ticker, market }) => {
-                    loadedMarketTickers.current.add(ticker);
-                    next[ticker] = market;
-                });
-                return next;
-            });
-        };
-        loadMarkets();
-        return () => {
-            cancelled = true;
-        };
-    }, [trades]);
-
-    useEffect(() => {
-        const eventTickers = Object.values(marketDetailsByTicker)
-            .map((market) => market?.eventTicker)
-            .filter((ticker): ticker is string => !!ticker);
-        const uniqueEventTickers = Array.from(new Set(eventTickers));
-        const tickersToFetch = uniqueEventTickers.filter((ticker) => !loadedEventTickers.current.has(ticker));
-        if (tickersToFetch.length === 0) return;
-
-        let cancelled = false;
-        const loadEvents = async () => {
-            const results = await Promise.all(
-                tickersToFetch.map(async (ticker) => ({
-                    ticker,
-                    event: await marketsApi.fetchEventDetails(ticker).catch(() => null),
-                }))
-            );
-            if (cancelled) return;
-            setEventDetailsByTicker((prev) => {
-                const next = { ...prev };
-                results.forEach(({ ticker, event }) => {
-                    loadedEventTickers.current.add(ticker);
-                    next[ticker] = event;
-                });
-                return next;
-            });
-        };
-        loadEvents();
-        return () => {
-            cancelled = true;
-        };
-    }, [marketDetailsByTicker]);
-
-    useEffect(() => {
-        // Load candles for all trades with active markets (not closed/resolved)
-        const activeTradeTickers = trades
-            .filter((trade) => {
-                const market = marketDetailsByTicker[trade.marketTicker];
-                // If market details not yet loaded, skip (will load when market details arrive)
-                if (!market) return false;
-                // Only load candles for active markets
-                return market.status === 'active';
-            })
-            .map((trade) => trade.marketTicker);
-        const uniqueTickers = Array.from(new Set(activeTradeTickers));
-        const tickersToFetch = uniqueTickers.filter((ticker) => !loadedCandleTickers.current.has(ticker));
-        if (tickersToFetch.length === 0) return;
-
-        let cancelled = false;
-        const loadCandles = async () => {
-            const endTs = Math.floor(Date.now() / 1000);
-            const startTs = endTs - 7 * 24 * 60 * 60;
-            const results = await Promise.all(
-                tickersToFetch.map(async (ticker) => {
-                    const market = marketDetailsByTicker[ticker];
-                    let marketMint = market?.yesMint;
-                    if (!marketMint && market?.accounts) {
-                        const accountValues = Object.values(market.accounts);
-                        for (const account of accountValues) {
-                            if (typeof account === 'object' && account?.yesMint) {
-                                marketMint = account.yesMint;
-                                break;
-                            }
-                        }
-                    }
-                    if (!marketMint) return { ticker, candles: [] as CandleData[] };
-                    try {
-                        const candles = await marketsApi.fetchCandlesticksByMint(marketMint, { startTs, endTs, periodInterval: 60 });
-                        return { ticker, candles: candles || [] };
-                    } catch (error) {
-                        console.error("Failed to fetch candles for", ticker, error);
-                        return { ticker, candles: [] as CandleData[] };
-                    }
-                })
-            );
-            if (cancelled) return;
-            setCandlesByTicker((prev) => {
-                const next = { ...prev };
-                results.forEach(({ ticker, candles }) => {
-                    loadedCandleTickers.current.add(ticker);
-                    next[ticker] = candles;
-                });
-                return next;
-            });
-        };
-        loadCandles();
-        return () => {
-            cancelled = true;
-        };
-    }, [trades, marketDetailsByTicker]);
+    const activePositions = positions.active;
+    const previousPositions = positions.previous;
 
     const handleLogout = async () => {
         await logout();
         setBackendUser(null);
         router.replace("/login");
+    };
+
+    // Handle opening sell sheet
+    const handleOpenSell = (position: AggregatedPosition) => {
+        setSelectedPosition(position);
+        setSellSheetVisible(true);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    };
+
+    // Handle sell trade execution - sells all tokens for this position
+    const handleSell = async () => {
+        if (!selectedPosition || !backendUser || !solanaWallet) {
+            throw new Error('Missing required data for sell');
+        }
+
+        setIsSelling(true);
+        try {
+            const market = selectedPosition.market;
+
+            // Get the outcome mint based on position side
+            // First check direct fields, then check accounts
+            let outcomeMint: string | undefined;
+
+            if (selectedPosition.side === 'yes') {
+                outcomeMint = market?.yesMint;
+                // If not found, check in accounts (under USDC key)
+                if (!outcomeMint && market?.accounts) {
+                    const usdcAccount = market.accounts[USDC_MINT];
+                    outcomeMint = usdcAccount?.yesMint;
+                }
+            } else {
+                outcomeMint = market?.noMint;
+                if (!outcomeMint && market?.accounts) {
+                    const usdcAccount = market.accounts[USDC_MINT];
+                    outcomeMint = usdcAccount?.noMint;
+                }
+            }
+
+            if (!outcomeMint) {
+                // If still not found, try to fetch market details
+                console.log('[Sell] Mint not found locally, fetching market details...');
+                const marketDetails = await marketsApi.fetchMarketDetails(selectedPosition.marketTicker);
+                outcomeMint = selectedPosition.side === 'yes'
+                    ? marketDetails.yesMint || marketDetails.accounts?.[USDC_MINT]?.yesMint
+                    : marketDetails.noMint || marketDetails.accounts?.[USDC_MINT]?.noMint;
+            }
+
+            if (!outcomeMint) {
+                throw new Error('No outcome mint found for this position');
+            }
+
+            // Sell ALL tokens (totalTokensBought - totalTokensSold)
+            const tokensToSell = selectedPosition.totalTokensBought - selectedPosition.totalTokensSold;
+            if (tokensToSell <= 0) {
+                throw new Error('No tokens to sell');
+            }
+
+            console.log(`[Sell] Selling ${tokensToSell} tokens of ${outcomeMint}`);
+
+            // Convert token amount to raw (6 decimals)
+            const rawAmount = toRawAmount(tokensToSell, 6);
+
+            // Get wallet provider
+            const provider = await solanaWallet.getProvider();
+
+            // Execute the sell trade
+            const { signature, order } = await executeTrade({
+                provider,
+                connection,
+                userPublicKey: backendUser.walletAddress,
+                inputMint: outcomeMint,
+                outputMint: USDC_MINT,
+                amount: rawAmount,
+                slippageBps: 50,
+            });
+
+            // Calculate USDC received for display
+            const usdcReceived = (parseInt(order.outAmount) / 1_000_000).toFixed(2);
+
+            // Prepare trade data for deferred save
+            const tradeData = {
+                userId: backendUser.id,
+                marketTicker: selectedPosition.marketTicker,
+                eventTicker: selectedPosition.eventTicker || undefined,
+                side: selectedPosition.side,
+                action: 'SELL',
+                amount: usdcReceived,
+                walletAddress: backendUser.walletAddress,
+                transactionSig: signature,
+                executedInAmount: order.inAmount,
+                executedOutAmount: order.outAmount,
+                isDummy: false,
+            };
+
+            setPendingTrade(tradeData);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setSellSheetVisible(false);
+
+            // Show quote sheet
+            setLastTradeInfo({
+                side: selectedPosition.side,
+                amount: usdcReceived,
+                marketTitle: selectedPosition.market?.title || selectedPosition.marketTicker,
+            });
+            setShowQuoteSheet(true);
+
+            setSelectedPosition(null);
+
+            // Reload positions and balances
+            loadPositions();
+            loadUsdcBalance();
+        } catch (err: any) {
+            console.error('Sell error:', err);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            throw err;
+        } finally {
+            setIsSelling(false);
+        }
     };
 
     const twitterAccount = user?.linked_accounts?.find((a: any) => a.type === 'twitter_oauth');
@@ -494,20 +480,6 @@ export default function ProfileScreen() {
     const usdBalance = solBalance !== null && solUsdPrice !== null ? solBalance * solUsdPrice : null;
     const cashBalance = usdcBalance ?? usdBalance ?? 0;
 
-    // Filter trades based on market status - active markets = open positions, closed/resolved = previous
-    const activeTrades = trades.filter(trade => {
-        const market = marketDetailsByTicker[trade.marketTicker];
-        // If market details not yet loaded, assume active (will re-render when loaded)
-        if (!market) return true;
-        // Active if market is still open
-        return market.status === 'active';
-    });
-    const previousTrades = trades.filter(trade => {
-        const market = marketDetailsByTicker[trade.marketTicker];
-        // Only show in previous if we know the market is closed/resolved/finalized
-        if (!market) return false;
-        return market.status === 'finalized' || market.status === 'resolved' || market.status === 'closed';
-    });
 
     if (isLoading) {
         return (
@@ -638,7 +610,7 @@ export default function ProfileScreen() {
                                         }}
                                     />
                                     <Text className={`text-lg font-bold ${activeTab === 'active' ? ' text-txt-primary' : 'font-medium text-txt-secondary'}`}>
-                                        ACTIVE ({activeTrades.length})
+                                        ACTIVE ({activePositions.length})
                                     </Text>
                                 </View>
                                 {activeTab === 'active' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-txt-primary" />}
@@ -648,7 +620,7 @@ export default function ProfileScreen() {
                                 onPress={() => animateToTab('previous')}
                             >
                                 <Text className={`text-lg font-bold ${activeTab === 'previous' ? ' text-red-500' : 'font-medium text-txt-secondary'}`}>
-                                    PREVIOUS ({previousTrades.length})
+                                    PREVIOUS ({previousPositions.length})
                                 </Text>
                                 {activeTab === 'previous' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-500" />}
                             </TouchableOpacity>
@@ -660,24 +632,24 @@ export default function ProfileScreen() {
                                 {/* Active Trades */}
                                 <View style={styles.listPane}>
                                     <View className="pb-10">
-                                        {activeTrades.length === 0 ? (
+                                        {isLoadingPositions ? (
+                                            <View className="p-10 items-center gap-3">
+                                                <ActivityIndicator size="small" color={Theme.textPrimary} />
+                                                <Text className="text-sm text-txt-disabled">Loading positions...</Text>
+                                            </View>
+                                        ) : activePositions.length === 0 ? (
                                             <View className="p-10 items-center gap-3">
                                                 <Ionicons name="bar-chart-outline" size={32} color={Theme.textDisabled} />
-                                                <Text className="text-sm text-txt-disabled">No trades</Text>
+                                                <Text className="text-sm text-txt-disabled">No positions</Text>
                                             </View>
                                         ) : (
                                             <View className="bg-app-card rounded-xl overflow-hidden border border-border">
-                                                {activeTrades.map((trade) => (
-                                                    <TradeItem
-                                                        key={trade.id}
-                                                        trade={trade}
-                                                        market={marketDetailsByTicker[trade.marketTicker]}
-                                                        event={marketDetailsByTicker[trade.marketTicker]?.eventTicker
-                                                            ? eventDetailsByTicker[marketDetailsByTicker[trade.marketTicker]!.eventTicker!]
-                                                            : undefined}
-                                                        candles={candlesByTicker[trade.marketTicker]}
-                                                        showDetails
-                                                        onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: trade.marketTicker } })}
+                                                {activePositions.map((position) => (
+                                                    <PositionItem
+                                                        key={`${position.marketTicker}-${position.side}`}
+                                                        position={position}
+                                                        onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })}
+                                                        onSell={() => handleOpenSell(position)}
                                                     />
                                                 ))}
                                             </View>
@@ -688,18 +660,24 @@ export default function ProfileScreen() {
                                 {/* Previous Trades */}
                                 <View style={styles.listPane}>
                                     <View className="pb-10">
-                                        {previousTrades.length === 0 ? (
+                                        {isLoadingPositions ? (
+                                            <View className="p-10 items-center gap-3">
+                                                <ActivityIndicator size="small" color={Theme.textPrimary} />
+                                                <Text className="text-sm text-txt-disabled">Loading positions...</Text>
+                                            </View>
+                                        ) : previousPositions.length === 0 ? (
                                             <View className="p-10 items-center gap-3">
                                                 <Ionicons name="time-outline" size={32} color={Theme.textDisabled} />
-                                                <Text className="text-sm text-txt-disabled">No trades</Text>
+                                                <Text className="text-sm text-txt-disabled">No positions</Text>
                                             </View>
                                         ) : (
                                             <View className="bg-app-card rounded-xl overflow-hidden border border-border">
-                                                {previousTrades.map((trade) => (
-                                                    <TradeItem
-                                                        key={trade.id}
-                                                        trade={trade}
-                                                        onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: trade.marketTicker } })}
+                                                {previousPositions.map((position) => (
+                                                    <PositionItem
+                                                        key={`${position.marketTicker}-${position.side}`}
+                                                        position={position}
+                                                        isPrevious
+                                                        onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })}
                                                     />
                                                 ))}
                                             </View>
@@ -717,6 +695,31 @@ export default function ProfileScreen() {
                 onClose={() => setSettingsVisible(false)}
                 onSwitchTheme={() => console.log("Switch theme clicked")}
                 onLogout={handleLogout}
+            />
+
+            <SellPositionSheet
+                visible={sellSheetVisible}
+                onClose={() => {
+                    setSellSheetVisible(false);
+                    setSelectedPosition(null);
+                }}
+                onSell={handleSell}
+                submitting={isSelling}
+                position={selectedPosition}
+            />
+
+            <TradeQuoteSheet
+                visible={showQuoteSheet && !!lastTradeInfo}
+                onClose={() => setShowQuoteSheet(false)}
+                onSubmit={async (quoteText: string) => {
+                    await finalizeTrade(quoteText);
+                    setShowQuoteSheet(false);
+                }}
+                onSkip={async () => {
+                    await finalizeTrade();
+                    setShowQuoteSheet(false);
+                }}
+                tradeInfo={lastTradeInfo || { side: 'yes', amount: '0', marketTitle: 'Market' }}
             />
         </View>
     );

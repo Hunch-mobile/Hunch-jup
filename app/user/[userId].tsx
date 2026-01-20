@@ -15,6 +15,7 @@ const defaultProfileImage = require("@/assets/default.jpeg");
 
 type TabType = 'active' | 'previous';
 
+
 interface TradeWithMarket extends Trade {
     marketDetails?: Market;
 }

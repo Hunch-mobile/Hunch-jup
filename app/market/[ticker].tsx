@@ -1,20 +1,24 @@
-import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import CustomKeypad from "@/components/CustomKeypad";
+import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, marketsApi } from "@/lib/api";
+import { USDC_MINT, executeTrade, toRawAmount } from "@/lib/tradeService";
 import { Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
+import { useEmbeddedSolanaWallet } from "@privy-io/expo";
+import { Connection, clusterApiUrl } from "@solana/web3.js";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Keyboard, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function MarketDetailScreen() {
   const { ticker } = useLocalSearchParams<{ ticker: string }>();
   const { backendUser } = useUser();
+  const { wallets } = useEmbeddedSolanaWallet();
   const [market, setMarket] = useState<Market | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +29,14 @@ export default function MarketDetailScreen() {
   const [amountKeypadOpen, setAmountKeypadOpen] = useState(false);
   const [showQuoteSheet, setShowQuoteSheet] = useState(false);
   const [lastTradeId, setLastTradeId] = useState<string | null>(null);
+
+  // Get Solana connection and wallet provider
+  const connection = useMemo(() => {
+    const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
+    return new Connection(rpcUrl, 'confirmed');
+  }, []);
+
+  const solanaWallet = wallets?.[0];
 
   useEffect(() => {
     if (ticker) loadMarketDetails();
@@ -46,31 +58,75 @@ export default function MarketDetailScreen() {
 
   const handleTrade = async () => {
     if (!market || !backendUser || !amount || parseFloat(amount) <= 0) return;
+    if (!solanaWallet) {
+      setTradeError("Wallet not connected");
+      return;
+    }
+
     Keyboard.dismiss();
     setIsTrading(true);
     setTradeError(null);
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      // Get the outcome mint based on selected side
+      const outcomeMint = selectedSide === 'yes' ? market.yesMint : market.noMint;
+      if (!outcomeMint) {
+        throw new Error(`No ${selectedSide} mint found for this market`);
+      }
+
+      // Convert USDC amount to raw (6 decimals)
+      const rawAmount = toRawAmount(parseFloat(amount), 6);
+
+      // Get wallet provider
+      const provider = await solanaWallet.getProvider();
+
+      // Execute the trade: get quote, sign, send, wait for confirmation
+      const { signature, order } = await executeTrade({
+        provider,
+        connection,
+        userPublicKey: backendUser.walletAddress,
+        inputMint: USDC_MINT,
+        outputMint: outcomeMint,
+        amount: rawAmount,
+        slippageBps: 100,
+      });
+
+      // Save trade to backend with real transaction signature
       const trade = await api.createTrade({
         userId: backendUser.id,
         marketTicker: market.ticker,
         eventTicker: market.eventTicker,
         side: selectedSide,
+        action: 'BUY',
         amount: amount,
         walletAddress: backendUser.walletAddress,
-        transactionSig: 'dummy_transaction_' + Date.now(),
-        isDummy: true,
+        transactionSig: signature,
+        executedInAmount: order.inAmount,
+        executedOutAmount: order.outAmount,
+        isDummy: false,
       });
+
       setLastTradeId(trade.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowQuoteSheet(true);
     } catch (err: any) {
       console.error("Trade placement error:", err);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+
       let errorMessage = "Failed to place trade";
-      if (err.message?.includes("insufficient")) errorMessage = "Insufficient balance";
-      else if (err.message?.includes("market")) errorMessage = "Market not available";
+      if (err.message?.includes("insufficient") || err.message?.includes("balance")) {
+        errorMessage = "Insufficient balance";
+      } else if (err.message?.includes("rejected") || err.message?.includes("cancelled") || err.message?.includes("denied")) {
+        errorMessage = "Transaction cancelled";
+      } else if (err.message?.includes("market")) {
+        errorMessage = "Market not available";
+      } else if (err.message?.includes("timeout")) {
+        errorMessage = "Transaction timeout - check your wallet";
+      } else if (err.message) {
+        errorMessage = err.message.length > 50 ? err.message.slice(0, 50) + '...' : err.message;
+      }
       setTradeError(errorMessage);
     } finally {
       setIsTrading(false);
@@ -78,7 +134,14 @@ export default function MarketDetailScreen() {
   };
 
   const handleQuoteSubmit = async (quote: string) => {
-    console.log("Quote submitted:", quote, "for trade:", lastTradeId);
+    // Update the trade with the quote
+    if (lastTradeId) {
+      try {
+        await api.updateTradeQuote(lastTradeId, quote);
+      } catch (err) {
+        console.error("Failed to update quote:", err);
+      }
+    }
     setShowQuoteSheet(false);
     setAmount('');
     router.back();

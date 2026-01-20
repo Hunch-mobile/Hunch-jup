@@ -34,6 +34,48 @@ export interface Trade {
     };
 }
 
+export interface TradeWithDetails extends Trade {
+    market?: Market | null;
+    event?: Event | null;
+}
+
+export interface AggregatedPosition {
+    marketTicker: string;
+    eventTicker: string | null;
+    side: 'yes' | 'no';
+    totalTokenAmount: number;
+    totalUsdcAmount: number;
+    averageEntryPrice: number;
+    currentPrice: number | null;
+    currentValue: number | null;
+    profitLoss: number | null;
+    profitLossPercentage: number | null;
+    tradeCount: number;
+    market: Market | null;
+    eventImageUrl: string | null;
+    trades: TradeWithDetails[];
+    totalCostBasis: number;
+    totalTokensBought: number;
+    totalTokensSold: number;
+    totalSellProceeds: number;
+    realizedPnL: number;
+    unrealizedPnL: number | null;
+    totalPnL: number | null;
+    positionStatus: 'OPEN' | 'CLOSED' | 'PARTIALLY_CLOSED';
+}
+
+export interface PositionStats {
+    [key: string]: number | null;
+}
+
+export interface PositionsResponse {
+    positions: {
+        active: AggregatedPosition[];
+        previous: AggregatedPosition[];
+    };
+    stats: PositionStats | null;
+}
+
 export interface Follow {
     id: string;
     followerId: string;
@@ -65,10 +107,13 @@ export interface CreateTradeRequest {
     marketTicker: string;
     eventTicker?: string;
     side: 'yes' | 'no';
+    action?: 'BUY' | 'SELL';
     amount: string;
     quote?: string;
     walletAddress?: string;
     transactionSig?: string;
+    executedInAmount?: string;  // Raw amount of tokens/USDC sent
+    executedOutAmount?: string; // Raw amount of tokens/USDC received
     isDummy?: boolean;
 }
 
@@ -187,4 +232,21 @@ export interface EventEvidence {
 
 export interface EvidenceResponse {
     evidence: EventEvidence[];
+}
+
+// Tags and Series Types (for category filtering)
+export interface TagsResponse {
+    tagsByCategories: Record<string, string[]>;
+}
+
+export interface Series {
+    ticker: string;
+    title: string;
+    category: string;
+    tags?: string[];
+    status?: string;
+}
+
+export interface SeriesResponse {
+    series: Series[];
 }

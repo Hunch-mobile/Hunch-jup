@@ -184,7 +184,7 @@ export const MarketRail = () => {
     const loadRailData = async () => {
         try {
             setLoading(true);
-            const events = await marketsApi.fetchEvents(100, { status: 'active', withNestedMarkets: true });
+            const { events } = await marketsApi.fetchEvents(100, { status: 'active', withNestedMarkets: true });
             const scoredItems = getScoredEventsForRail(events, 7);
             setRailItems(scoredItems);
             fetchAllCandles(scoredItems);
