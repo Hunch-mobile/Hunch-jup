@@ -181,24 +181,35 @@ export default function ProfileScreen() {
     // Quote sheet state
     const [showQuoteSheet, setShowQuoteSheet] = useState(false);
     const [lastTradeInfo, setLastTradeInfo] = useState<{ side: 'yes' | 'no'; amount: string; marketTitle: string } | null>(null);
-    const [pendingTrade, setPendingTrade] = useState<any>(null);
+    const [lastTradeId, setLastTradeId] = useState<string | null>(null);
 
     const finalizeTrade = async (quote?: string) => {
-        if (!pendingTrade) return;
-
-        try {
-            // Save trade to backend with real data (and optional quote)
-            await api.createTrade({
-                ...pendingTrade,
-                quote,
-            });
-            setPendingTrade(null);
-
-            // Reload positions and balances after save
+        if (!lastTradeId) {
+            setShowQuoteSheet(false);
+            setLastTradeId(null);
             loadPositions();
             loadUsdcBalance();
+            return;
+        }
+
+        if (!quote) {
+            setShowQuoteSheet(false);
+            setLastTradeId(null);
+            loadPositions();
+            loadUsdcBalance();
+            return;
+        }
+
+        try {
+            // Update the existing trade with the quote
+            await api.updateTradeQuote(lastTradeId, quote);
         } catch (error) {
-            console.error('Failed to save trade:', error);
+            console.error('Failed to update quote:', error);
+        } finally {
+            setShowQuoteSheet(false);
+            setLastTradeId(null);
+            loadPositions();
+            loadUsdcBalance();
         }
     };
 
@@ -393,13 +404,20 @@ export default function ProfileScreen() {
                 throw new Error('No outcome mint found for this position');
             }
 
-            // Sell ALL tokens (totalTokensBought - totalTokensSold)
-            const tokensToSell = selectedPosition.totalTokensBought - selectedPosition.totalTokensSold;
+            // Use totalTokenAmount first (this is the actual available tokens), fallback to calculation
+            const tokensToSell = selectedPosition.totalTokenAmount > 0
+                ? selectedPosition.totalTokenAmount
+                : selectedPosition.totalTokensBought - selectedPosition.totalTokensSold;
+            
             if (tokensToSell <= 0) {
                 throw new Error('No tokens to sell');
             }
 
-            console.log(`[Sell] Selling ${tokensToSell} tokens of ${outcomeMint}`);
+            console.log(`[Sell] Selling ${tokensToSell} tokens of ${outcomeMint}`, {
+                totalTokenAmount: selectedPosition.totalTokenAmount,
+                totalTokensBought: selectedPosition.totalTokensBought,
+                totalTokensSold: selectedPosition.totalTokensSold,
+            });
 
             // Convert token amount to raw (6 decimals)
             const rawAmount = toRawAmount(tokensToSell, 6);
@@ -421,13 +439,13 @@ export default function ProfileScreen() {
             // Calculate USDC received for display
             const usdcReceived = (parseInt(order.outAmount) / 1_000_000).toFixed(2);
 
-            // Prepare trade data for deferred save
+            // Prepare trade data for immediate save
             const tradeData = {
                 userId: backendUser.id,
                 marketTicker: selectedPosition.marketTicker,
                 eventTicker: selectedPosition.eventTicker || undefined,
                 side: selectedPosition.side,
-                action: 'SELL',
+                action: 'SELL' as const,
                 amount: usdcReceived,
                 walletAddress: backendUser.walletAddress,
                 transactionSig: signature,
@@ -436,11 +454,14 @@ export default function ProfileScreen() {
                 isDummy: false,
             };
 
-            setPendingTrade(tradeData);
+            // Save trade to backend immediately to get the trade ID
+            const savedTrade = await api.createTrade(tradeData);
+
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             setSellSheetVisible(false);
 
-            // Show quote sheet
+            // Show quote sheet with the saved trade ID
+            setLastTradeId(savedTrade.id);
             setLastTradeInfo({
                 side: selectedPosition.side,
                 amount: usdcReceived,
@@ -710,14 +731,20 @@ export default function ProfileScreen() {
 
             <TradeQuoteSheet
                 visible={showQuoteSheet && !!lastTradeInfo}
-                onClose={() => setShowQuoteSheet(false)}
+                onClose={() => {
+                    setShowQuoteSheet(false);
+                    setLastTradeId(null);
+                    loadPositions();
+                    loadUsdcBalance();
+                }}
                 onSubmit={async (quoteText: string) => {
                     await finalizeTrade(quoteText);
-                    setShowQuoteSheet(false);
                 }}
-                onSkip={async () => {
-                    await finalizeTrade();
+                onSkip={() => {
                     setShowQuoteSheet(false);
+                    setLastTradeId(null);
+                    loadPositions();
+                    loadUsdcBalance();
                 }}
                 tradeInfo={lastTradeInfo || { side: 'yes', amount: '0', marketTitle: 'Market' }}
             />

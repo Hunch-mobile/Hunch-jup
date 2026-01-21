@@ -72,7 +72,17 @@ export default function SellPositionSheet({
     // Calculate tokens available to sell
     const tokensToSell = useMemo(() => {
         if (!position) return 0;
-        return Math.max(0, position.totalTokensBought - position.totalTokensSold);
+        // Use totalTokenAmount first (this is the actual available tokens), fallback to calculation
+        const tokens = position.totalTokenAmount > 0 
+            ? position.totalTokenAmount 
+            : Math.max(0, position.totalTokensBought - position.totalTokensSold);
+        console.log('[SellSheet] Tokens calculation:', {
+            totalTokenAmount: position.totalTokenAmount,
+            totalTokensBought: position.totalTokensBought,
+            totalTokensSold: position.totalTokensSold,
+            finalTokens: tokens,
+        });
+        return tokens;
     }, [position]);
 
     // Estimated value based on current price

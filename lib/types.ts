@@ -21,6 +21,7 @@ export interface Trade {
     marketTicker: string;
     eventTicker?: string | null;
     side: 'yes' | 'no';
+    action?: 'BUY' | 'SELL';
     amount: string;
     transactionSig: string;
     quote?: string | null;

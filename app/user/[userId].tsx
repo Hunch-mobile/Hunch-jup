@@ -1,12 +1,18 @@
+import SellPositionSheet from "@/components/SellPositionSheet";
+import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, getMarketDetails, marketsApi } from "@/lib/api";
-import { CandleData, Event, Market, Trade, User } from "@/lib/types";
+import { executeTrade, toRawAmount, USDC_MINT } from "@/lib/tradeService";
+import { AggregatedPosition, CandleData, Event, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
+import { useEmbeddedSolanaWallet } from "@privy-io/expo";
+import { clusterApiUrl, Connection } from "@solana/web3.js";
+import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -15,10 +21,143 @@ const defaultProfileImage = require("@/assets/default.jpeg");
 
 type TabType = 'active' | 'previous';
 
+const formatCurrency = (value: number | null | undefined, fractionDigits = 2) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+    return `$${value.toFixed(fractionDigits)}`;
+};
+
+const formatPercent = (value: number | null | undefined) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+    return `${value.toFixed(1)}%`;
+};
+
 
 interface TradeWithMarket extends Trade {
     marketDetails?: Market;
 }
+
+// Position item component for displaying aggregated positions
+const PositionItem = ({
+    position,
+    isPrevious = false,
+    onPress,
+    onSell,
+}: {
+    position: AggregatedPosition;
+    isPrevious?: boolean;
+    onPress: () => void;
+    onSell?: () => void;
+}) => {
+    const isYes = position.side === 'yes';
+    const marketTitle = position.market?.title || position.marketTicker;
+    const subtitle = isYes ? position.market?.yesSubTitle : position.market?.noSubTitle;
+    const pnlValue = position.totalPnL ?? position.profitLoss ?? position.unrealizedPnL ?? position.realizedPnL ?? null;
+    const pnlPercent = position.profitLossPercentage ?? (
+        pnlValue !== null && position.totalCostBasis > 0
+            ? (pnlValue / position.totalCostBasis) * 100
+            : null
+    );
+    const pnlColor = pnlValue !== null ? (pnlValue >= 0 ? '#22c55e' : '#ef4444') : Theme.textDisabled;
+    const pnlText = pnlValue !== null
+        ? `${pnlValue >= 0 ? '+' : '-'}${formatCurrency(Math.abs(pnlValue))}`
+        : '—';
+    const hasTokens = position.totalTokenAmount > 0.001 || (position.totalTokensBought - position.totalTokensSold) > 0.001;
+
+    return (
+        <TouchableOpacity
+            className="px-4 py-4"
+            onPress={onPress}
+            activeOpacity={0.7}
+        >
+            <View className="bg-app-card rounded-2xl p-4 border border-border">
+                <View className="flex-row items-center gap-3 mb-3">
+                    <View className="w-12 h-12 rounded-xl overflow-hidden border border-border bg-app-elevated">
+                        <Image
+                            source={position.eventImageUrl ? { uri: position.eventImageUrl } : defaultProfileImage}
+                            style={{ width: '100%', height: '100%' }}
+                            contentFit="cover"
+                        />
+                    </View>
+                    <View className="flex-1">
+                        <Text className="text-base font-semibold text-txt-primary" numberOfLines={2}>
+                            {marketTitle}
+                        </Text>
+                        <Text className="text-xs text-txt-secondary" numberOfLines={1}>
+                            {subtitle || position.market?.subtitle || 'Market'}
+                        </Text>
+                    </View>
+                    <View className={`px-2.5 py-1 rounded-md ${isYes ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                        <Text className={`text-xs font-bold ${isYes ? 'text-green-500' : 'text-red-500'}`}>
+                            {isYes ? 'YES' : 'NO'}
+                        </Text>
+                    </View>
+                </View>
+
+                <View className="flex-row items-center justify-between mb-2">
+                    <View className="flex-1">
+                        <Text className="text-[11px] text-txt-disabled uppercase">Cost</Text>
+                        <Text className="text-base font-semibold text-txt-primary">
+                            {formatCurrency(position.totalCostBasis)}
+                        </Text>
+                    </View>
+                    {!isPrevious && (
+                        <View className="flex-1">
+                            <Text className="text-[11px] text-txt-disabled uppercase">Value</Text>
+                            <Text className="text-base font-semibold text-txt-primary">
+                                {formatCurrency(position.currentValue)}
+                            </Text>
+                        </View>
+                    )}
+                    <View className="flex-1">
+                        <Text className="text-[11px] text-txt-disabled uppercase">PnL</Text>
+                        <Text className="text-base font-semibold" style={{ color: pnlColor }}>
+                            {pnlText}
+                        </Text>
+                        <Text className="text-[11px] font-medium" style={{ color: pnlColor }}>
+                            {pnlPercent === null ? '—' : `${pnlPercent >= 0 ? '+' : ''}${formatPercent(pnlPercent)}`}
+                        </Text>
+                    </View>
+                </View>
+
+                <View className="flex-row items-center justify-between">
+                    <View className="flex-1">
+                        <Text className="text-[11px] text-txt-disabled uppercase">Entry</Text>
+                        <Text className="text-sm font-medium text-txt-primary">
+                            {formatCurrency(position.averageEntryPrice)}
+                        </Text>
+                    </View>
+                    <View className="flex-1">
+                        <Text className="text-[11px] text-txt-disabled uppercase">Current</Text>
+                        <Text className="text-sm font-medium text-txt-primary">
+                            {formatCurrency(position.currentPrice)}
+                        </Text>
+                    </View>
+                    <View className="flex-1">
+                        <Text className="text-[11px] text-txt-disabled uppercase">Trades</Text>
+                        <Text className="text-sm font-medium text-txt-primary">
+                            {position.tradeCount}
+                        </Text>
+                    </View>
+                </View>
+
+                {/* Sell Button for active positions with tokens */}
+                {!isPrevious && hasTokens && onSell && (
+                    <TouchableOpacity
+                        className="mt-3 bg-red-500/10 rounded-xl py-2.5 flex-row items-center justify-center gap-2 border border-red-500/20"
+                        onPress={(e) => {
+                            e.stopPropagation();
+                            onSell();
+                        }}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons name="trending-down" size={16} color="#ef4444" />
+                        <Text className="text-red-500 font-semibold text-sm">Sell Position</Text>
+                    </TouchableOpacity>
+                )}
+            </View>
+        </TouchableOpacity>
+    );
+};
 
 // Helper functions for PnL calculations
 const getPriceChange = (candles: CandleData[]) => {
@@ -90,6 +229,8 @@ const TradeItem = ({
     event,
     candles,
     showDetails = false,
+    onSell,
+    showSellButton = false,
 }: {
     trade: TradeWithMarket;
     onPress: () => void;
@@ -97,6 +238,8 @@ const TradeItem = ({
     event?: Event | null;
     candles?: CandleData[] | null;
     showDetails?: boolean;
+    onSell?: () => void;
+    showSellButton?: boolean;
 }) => {
     const isYes = trade.side === 'yes';
     const amountValue = Number(trade.amount);
@@ -208,6 +351,21 @@ const TradeItem = ({
                                 {pnlText}
                             </Text>
                         </View>
+
+                        {/* Sell Button for own profile's active positions */}
+                        {showSellButton && onSell && market && (
+                            <TouchableOpacity
+                                className="mt-3 bg-red-500/10 rounded-xl py-2.5 flex-row items-center justify-center gap-2 border border-red-500/20"
+                                onPress={(e) => {
+                                    e.stopPropagation();
+                                    onSell();
+                                }}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons name="trending-down" size={16} color="#ef4444" />
+                                <Text className="text-red-500 font-semibold text-sm">Sell Position</Text>
+                            </TouchableOpacity>
+                        )}
                     </LinearGradient>
                 )}
             </View>
@@ -218,11 +376,17 @@ const TradeItem = ({
 export default function UserProfileScreen() {
     const { userId } = useLocalSearchParams<{ userId: string }>();
     const { backendUser: currentUser } = useUser();
+    const { wallets } = useEmbeddedSolanaWallet();
 
     const [profile, setProfile] = useState<User | null>(null);
     const [trades, setTrades] = useState<TradeWithMarket[]>([]);
+    const [positions, setPositions] = useState<{ active: AggregatedPosition[]; previous: AggregatedPosition[] }>({
+        active: [],
+        previous: [],
+    });
     const [loading, setLoading] = useState(true);
     const [tradesLoading, setTradesLoading] = useState(false);
+    const [isLoadingPositions, setIsLoadingPositions] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isFollowing, setIsFollowing] = useState(false);
     const [followLoading, setFollowLoading] = useState(false);
@@ -230,9 +394,26 @@ export default function UserProfileScreen() {
     const [eventDetailsByTicker, setEventDetailsByTicker] = useState<Record<string, Event | null>>({});
     const [candlesByTicker, setCandlesByTicker] = useState<Record<string, CandleData[]>>({});
 
+    // Sell position state
+    const [sellSheetVisible, setSellSheetVisible] = useState(false);
+    const [selectedPosition, setSelectedPosition] = useState<AggregatedPosition | null>(null);
+    const [isSelling, setIsSelling] = useState(false);
+
+    // Quote sheet state
+    const [showQuoteSheet, setShowQuoteSheet] = useState(false);
+    const [lastTradeInfo, setLastTradeInfo] = useState<{ side: 'yes' | 'no'; amount: string; marketTitle: string } | null>(null);
+    const [lastTradeId, setLastTradeId] = useState<string | null>(null);
+
     const slideAnim = useRef(new Animated.Value(0)).current;
     const loadedEventTickers = useRef(new Set<string>());
     const loadedCandleTickers = useRef(new Set<string>());
+
+    // Solana connection for trading
+    const connection = useMemo(() => {
+        const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
+        return new Connection(rpcUrl, 'confirmed');
+    }, []);
+    const solanaWallet = wallets?.[0];
 
     const animateToTab = useCallback((tab: TabType) => {
         Animated.spring(slideAnim, {
@@ -246,10 +427,40 @@ export default function UserProfileScreen() {
 
     const isOwnProfile = currentUser?.id === userId;
 
+    const finalizeTrade = async (quote?: string) => {
+        if (!lastTradeId) {
+            setShowQuoteSheet(false);
+            setLastTradeId(null);
+            loadTrades();
+            loadPositions();
+            return;
+        }
+
+        if (!quote) {
+            setShowQuoteSheet(false);
+            setLastTradeId(null);
+            loadTrades();
+            loadPositions();
+            return;
+        }
+
+        try {
+            await api.updateTradeQuote(lastTradeId, quote);
+        } catch (error) {
+            console.error('Failed to update quote:', error);
+        } finally {
+            setShowQuoteSheet(false);
+            setLastTradeId(null);
+            loadTrades();
+            loadPositions();
+        }
+    };
+
     useEffect(() => {
         if (userId) {
             loadProfile();
             loadTrades();
+            loadPositions();
             if (currentUser && !isOwnProfile) checkFollowStatus();
         }
     }, [userId, currentUser]);
@@ -290,6 +501,18 @@ export default function UserProfileScreen() {
         }
     };
 
+    const loadPositions = async () => {
+        try {
+            setIsLoadingPositions(true);
+            const data = await api.getPositions(userId as string);
+            setPositions(data.positions);
+        } catch (err) {
+            console.error("Failed to fetch positions:", err);
+        } finally {
+            setIsLoadingPositions(false);
+        }
+    };
+
     const checkFollowStatus = async () => {
         if (!currentUser) return;
         try {
@@ -318,6 +541,130 @@ export default function UserProfileScreen() {
             setIsFollowing(wasFollowing);
         } finally {
             setFollowLoading(false);
+        }
+    };
+
+    // Handle opening sell sheet
+    const handleOpenSell = (position: AggregatedPosition) => {
+        console.log('[DEBUG] Opening sell sheet for position:', {
+            marketTicker: position.marketTicker,
+            side: position.side,
+            totalTokensBought: position.totalTokensBought,
+            totalTokensSold: position.totalTokensSold,
+            totalTokenAmount: position.totalTokenAmount,
+            currentPrice: position.currentPrice,
+            market: position.market ? 'loaded' : 'null',
+        });
+        setSelectedPosition(position);
+        setSellSheetVisible(true);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    };
+
+    // Handle sell trade execution - sells all tokens for this position
+    const handleSell = async () => {
+        if (!selectedPosition || !currentUser || !solanaWallet) {
+            throw new Error('Missing required data for sell');
+        }
+
+        setIsSelling(true);
+        try {
+            const market = selectedPosition.market;
+
+            // Get the outcome mint based on position side
+            let outcomeMint: string | undefined;
+
+            if (selectedPosition.side === 'yes') {
+                outcomeMint = market?.yesMint;
+                if (!outcomeMint && market?.accounts) {
+                    const usdcAccount = market.accounts[USDC_MINT];
+                    outcomeMint = usdcAccount?.yesMint;
+                }
+            } else {
+                outcomeMint = market?.noMint;
+                if (!outcomeMint && market?.accounts) {
+                    const usdcAccount = market.accounts[USDC_MINT];
+                    outcomeMint = usdcAccount?.noMint;
+                }
+            }
+
+            if (!outcomeMint) {
+                console.log('[Sell] Mint not found locally, fetching market details...');
+                const marketDetails = await marketsApi.fetchMarketDetails(selectedPosition.marketTicker);
+                outcomeMint = selectedPosition.side === 'yes'
+                    ? marketDetails.yesMint || marketDetails.accounts?.[USDC_MINT]?.yesMint
+                    : marketDetails.noMint || marketDetails.accounts?.[USDC_MINT]?.noMint;
+            }
+
+            if (!outcomeMint) {
+                throw new Error('No outcome mint found for this position');
+            }
+
+            // Use totalTokenAmount first (this is the actual available tokens), fallback to calculation
+            const tokensToSell = selectedPosition.totalTokenAmount > 0
+                ? selectedPosition.totalTokenAmount
+                : selectedPosition.totalTokensBought - selectedPosition.totalTokensSold;
+            
+            if (tokensToSell <= 0) {
+                throw new Error('No tokens to sell');
+            }
+
+            console.log(`[Sell] Selling ${tokensToSell} tokens of ${outcomeMint}`, {
+                totalTokenAmount: selectedPosition.totalTokenAmount,
+                totalTokensBought: selectedPosition.totalTokensBought,
+                totalTokensSold: selectedPosition.totalTokensSold,
+            });
+
+            const rawAmount = toRawAmount(tokensToSell, 6);
+            const provider = await solanaWallet.getProvider();
+
+            const { signature, order } = await executeTrade({
+                provider,
+                connection,
+                userPublicKey: currentUser.walletAddress,
+                inputMint: outcomeMint,
+                outputMint: USDC_MINT,
+                amount: rawAmount,
+                slippageBps: 50,
+            });
+
+            const usdcReceived = (parseInt(order.outAmount) / 1_000_000).toFixed(2);
+
+            const tradeData = {
+                userId: currentUser.id,
+                marketTicker: selectedPosition.marketTicker,
+                eventTicker: selectedPosition.eventTicker || undefined,
+                side: selectedPosition.side,
+                action: 'SELL' as const,
+                amount: usdcReceived,
+                walletAddress: currentUser.walletAddress,
+                transactionSig: signature,
+                executedInAmount: order.inAmount,
+                executedOutAmount: order.outAmount,
+                isDummy: false,
+            };
+
+            const savedTrade = await api.createTrade(tradeData);
+
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setSellSheetVisible(false);
+
+            setLastTradeId(savedTrade.id);
+            setLastTradeInfo({
+                side: selectedPosition.side,
+                amount: usdcReceived,
+                marketTitle: selectedPosition.market?.title || selectedPosition.marketTicker,
+            });
+            setShowQuoteSheet(true);
+
+            setSelectedPosition(null);
+            loadTrades();
+            loadPositions();
+        } catch (err: any) {
+            console.error('Sell error:', err);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            throw err;
+        } finally {
+            setIsSelling(false);
         }
     };
 
@@ -445,20 +792,9 @@ export default function UserProfileScreen() {
     const username = displayName;
     const profileImageUrl = profile.avatarUrl?.replace('_normal', '');
 
-    // Filter trades based on market status - active markets = open positions, closed/resolved = previous
-    const activeTrades = trades.filter(trade => {
-        const market = trade.marketDetails;
-        // If market details not yet loaded, assume active (will re-render when loaded)
-        if (!market) return true;
-        // Active if market is still open
-        return market.status === 'active';
-    });
-    const historyTrades = trades.filter(trade => {
-        const market = trade.marketDetails;
-        // Only show in previous if we know the market is closed/resolved/finalized
-        if (!market) return false;
-        return market.status === 'finalized' || market.status === 'resolved' || market.status === 'closed';
-    });
+    // Use positions from API
+    const activePositions = positions.active;
+    const previousPositions = positions.previous;
 
     return (
         <View className="flex-1 bg-app-bg">
@@ -534,13 +870,13 @@ export default function UserProfileScreen() {
                         <View className="flex-row mb-4 border-b border-border">
                             <TouchableOpacity className="flex-1 items-center py-3 relative" onPress={() => animateToTab('active')}>
                                 <Text className={`text-sm ${activeTab === 'active' ? 'font-semibold text-txt-primary' : 'font-medium text-txt-secondary'}`}>
-                                    Active ({activeTrades.length})
+                                    Active ({activePositions.length})
                                 </Text>
                                 {activeTab === 'active' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-txt-primary" />}
                             </TouchableOpacity>
                             <TouchableOpacity className="flex-1 items-center py-3 relative" onPress={() => animateToTab('previous')}>
                                 <Text className={`text-sm ${activeTab === 'previous' ? 'font-semibold text-txt-primary' : 'font-medium text-txt-secondary'}`}>
-                                    Previous ({historyTrades.length})
+                                    Previous ({previousPositions.length})
                                 </Text>
                                 {activeTab === 'previous' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-txt-primary" />}
                             </TouchableOpacity>
@@ -551,28 +887,23 @@ export default function UserProfileScreen() {
                             <Animated.View style={[styles.slidingContainer, { transform: [{ translateX: slideAnim }] }]}>
                                 {/* Active */}
                                 <View style={styles.listPane}>
-                                    {tradesLoading ? (
+                                    {isLoadingPositions ? (
                                         <View className="py-10 items-center">
                                             <ActivityIndicator size="small" color={Theme.accentSubtle} />
                                         </View>
-                                    ) : activeTrades.length === 0 ? (
+                                    ) : activePositions.length === 0 ? (
                                         <View className="p-10 items-center gap-3">
                                             <Ionicons name="bar-chart-outline" size={32} color={Theme.textDisabled} />
-                                            <Text className="text-sm text-txt-disabled">No active trades</Text>
+                                            <Text className="text-sm text-txt-disabled">No active positions</Text>
                                         </View>
                                     ) : (
                                         <View className="bg-app-card rounded-xl overflow-hidden border border-border">
-                                            {activeTrades.map((trade) => (
-                                                <TradeItem
-                                                    key={trade.id}
-                                                    trade={trade}
-                                                    market={trade.marketDetails}
-                                                    event={trade.marketDetails?.eventTicker
-                                                        ? eventDetailsByTicker[trade.marketDetails.eventTicker]
-                                                        : undefined}
-                                                    candles={candlesByTicker[trade.marketTicker]}
-                                                    showDetails
-                                                    onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: trade.marketTicker } })}
+                                            {activePositions.map((position) => (
+                                                <PositionItem
+                                                    key={`${position.marketTicker}-${position.side}`}
+                                                    position={position}
+                                                    onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })}
+                                                    onSell={isOwnProfile ? () => handleOpenSell(position) : undefined}
                                                 />
                                             ))}
                                         </View>
@@ -581,27 +912,23 @@ export default function UserProfileScreen() {
 
                                 {/* Previous */}
                                 <View style={styles.listPane}>
-                                    {tradesLoading ? (
+                                    {isLoadingPositions ? (
                                         <View className="py-10 items-center">
                                             <ActivityIndicator size="small" color={Theme.accentSubtle} />
                                         </View>
-                                    ) : historyTrades.length === 0 ? (
+                                    ) : previousPositions.length === 0 ? (
                                         <View className="p-10 items-center gap-3">
                                             <Ionicons name="time-outline" size={32} color={Theme.textDisabled} />
-                                            <Text className="text-sm text-txt-disabled">No previous trades</Text>
+                                            <Text className="text-sm text-txt-disabled">No previous positions</Text>
                                         </View>
                                     ) : (
                                         <View className="bg-app-card rounded-xl overflow-hidden border border-border">
-                                            {historyTrades.map((trade) => (
-                                                <TradeItem
-                                                    key={trade.id}
-                                                    trade={trade}
-                                                    market={trade.marketDetails}
-                                                    event={trade.marketDetails?.eventTicker
-                                                        ? eventDetailsByTicker[trade.marketDetails.eventTicker]
-                                                        : undefined}
-                                                    showDetails
-                                                    onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: trade.marketTicker } })}
+                                            {previousPositions.map((position) => (
+                                                <PositionItem
+                                                    key={`${position.marketTicker}-${position.side}`}
+                                                    position={position}
+                                                    isPrevious
+                                                    onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })}
                                                 />
                                             ))}
                                         </View>
@@ -614,6 +941,35 @@ export default function UserProfileScreen() {
                     <View className="h-20" />
                 </ScrollView>
             </SafeAreaView>
+
+            <SellPositionSheet
+                visible={sellSheetVisible}
+                onClose={() => {
+                    setSellSheetVisible(false);
+                    setSelectedPosition(null);
+                }}
+                onSell={handleSell}
+                submitting={isSelling}
+                position={selectedPosition}
+            />
+
+            <TradeQuoteSheet
+                visible={showQuoteSheet && !!lastTradeInfo}
+                onClose={() => {
+                    setShowQuoteSheet(false);
+                    setLastTradeId(null);
+                    loadTrades();
+                }}
+                onSubmit={async (quoteText) => {
+                    await finalizeTrade(quoteText);
+                }}
+                onSkip={() => {
+                    setShowQuoteSheet(false);
+                    setLastTradeId(null);
+                    loadTrades();
+                }}
+                tradeInfo={lastTradeInfo || { side: 'yes', amount: '0', marketTitle: 'Market' }}
+            />
         </View>
     );
 }

@@ -144,6 +144,15 @@ const getEntryPnl = (candles: CandleData[], entryTimestamp: number, isYes: boole
     };
 };
 
+const transformNoCandles = (candles: CandleData[] = []) => {
+    if (candles.length === 0) return candles;
+    return candles.map((candle) => {
+        if (typeof candle.close !== 'number') return candle;
+        const nextClose = 1 - candle.close;
+        return nextClose === candle.close ? candle : { ...candle, close: nextClose };
+    });
+};
+
 // Chart dimensions for FeedCard
 const FEED_CARD_CHART_WIDTH = SCREEN_WIDTH - 40 - 28; // mx-5 (40) + p-3.5 (28)
 const FEED_CARD_CHART_HEIGHT = 72;
@@ -170,10 +179,16 @@ const FeedCard = ({
     const totalBought = Number.parseFloat(item.amount || '0');
     const rawName = item.user?.displayName?.trim();
     const handle = rawName ? rawName.replace(/^@+/, '') : item.user?.walletAddress?.slice(0, 6) || 'anonymous';
+    const isSell = item.action === 'SELL';
+    const actionLabel = isSell ? 'Sell' : 'Buy';
 
     // Price change calculation from candles
     const entryTimestamp = Math.floor(new Date(item.createdAt).getTime() / 1000);
     const priceChange = candles ? (getEntryPnl(candles, entryTimestamp, isYes) || getPriceChange(candles)) : null;
+    const chartCandles = useMemo(
+        () => (isYes ? (candles || []) : transformNoCandles(candles || [])),
+        [candles, isYes]
+    );
     const pnlText = priceChange ? `${priceChange.isPositive ? '+' : ''}${priceChange.changePercent}%` : (isYes ? '+0.0%' : '-0.0%');
     const pnlColor = priceChange ? (priceChange.isPositive ? '#22c55e' : '#ef4444') : (isYes ? '#22c55e' : '#ef4444');
     const pnlPercentValue = priceChange ? Number(priceChange.changePercent) : NaN;
@@ -253,6 +268,14 @@ const FeedCard = ({
                     <Text className={`text-[32px] font-black ${isYes ? 'text-[#41d93b]' : 'text-[#ef4444]'}`}>
                         {isYes ? 'YES' : 'NO'}
                     </Text>
+                    <View
+                        className="px-2 py-1 rounded-md"
+                        style={{ backgroundColor: isSell ? '#FEE2E2' : '#DCFCE7' }}
+                    >
+                        <Text className="text-[11px] font-bold" style={{ color: isSell ? '#991B1B' : '#166534' }}>
+                            {actionLabel}
+                        </Text>
+                    </View>
                     <Text className="text-[14px] text-txt-disabled">on</Text>
                     <View className="flex-1 border border-[#E6E6E6] rounded-xl px-2.5 py-2">
                         <Text className="text-[15px] font-semibold text-[#111827]" numberOfLines={1}>
@@ -272,9 +295,9 @@ const FeedCard = ({
                         onChartPress();
                     }}
                 >
-                    {candles && candles.length > 0 ? (
+                    {chartCandles && chartCandles.length > 0 ? (
                         <LightChart
-                            candles={candles}
+                            candles={chartCandles}
                             width={FEED_CARD_CHART_WIDTH}
                             height={FEED_CARD_CHART_HEIGHT}
                             isYes={isYes}
@@ -463,6 +486,7 @@ const MarketTradeSheet = ({
     visible,
     onClose,
     onTradeSuccess,
+    onRefreshFeed,
     item,
     candles: initialCandles,
     backendUser,
@@ -471,7 +495,8 @@ const MarketTradeSheet = ({
 }: {
     visible: boolean;
     onClose: () => void;
-    onTradeSuccess: (tradeData: any, displayInfo: any) => void;
+    onTradeSuccess: (tradeData: any, displayInfo: any, tradeId: string) => void;
+    onRefreshFeed?: () => void;
     item: FeedItem | null;
     candles?: CandleData[];
     backendUser: BackendUser | null;
@@ -515,6 +540,33 @@ const MarketTradeSheet = ({
     const [timeFilter, setTimeFilter] = useState<TimeFilter>('1w');
     const [filteredCandles, setFilteredCandles] = useState<CandleData[]>([]);
     const [isLoadingCandles, setIsLoadingCandles] = useState(false);
+
+    const finalizeTrade = async (quote?: string) => {
+        if (!lastTradeId) {
+            setShowQuoteSheet(false);
+            setLastTradeId(null);
+            if (onRefreshFeed) onRefreshFeed();
+            return;
+        }
+
+        if (!quote) {
+            setShowQuoteSheet(false);
+            setLastTradeId(null);
+            if (onRefreshFeed) onRefreshFeed();
+            return;
+        }
+
+        try {
+            // Update the existing trade with the quote
+            await api.updateTradeQuote(lastTradeId, quote);
+        } catch (error) {
+            console.error('Failed to update quote:', error);
+        } finally {
+            setShowQuoteSheet(false);
+            setLastTradeId(null);
+            if (onRefreshFeed) onRefreshFeed();
+        }
+    };
 
     // Fetch candles based on time filter
     useEffect(() => {
@@ -639,13 +691,13 @@ const MarketTradeSheet = ({
             const estimatedSpendUsdc = fromRawAmount(order.inAmount, 6).toFixed(2);
             const estimatedTokens = fromRawAmount(order.outAmount, 6);
             const entryPrice = estimatedTokens > 0 ? (Number(estimatedSpendUsdc) / estimatedTokens).toFixed(4) : '0';
-            // Prepare trade data for deferred save
+            // Save trade to backend immediately and get ID back
             const tradeData = {
                 userId: backendUser.id,
                 marketTicker: item.marketTicker,
                 eventTicker: market.eventTicker,
                 side: selectedSide,
-                action: 'BUY',
+                action: 'BUY' as const,
                 amount: estimatedSpendUsdc,
                 walletAddress: backendUser.walletAddress,
                 transactionSig: signature,
@@ -654,6 +706,9 @@ const MarketTradeSheet = ({
                 isDummy: false,
             };
 
+            // Save trade to backend immediately to get the trade ID
+            const savedTrade = await api.createTrade(tradeData);
+
             const displayInfo = {
                 side: selectedSide,
                 amount: estimatedSpendUsdc,
@@ -661,7 +716,13 @@ const MarketTradeSheet = ({
             };
 
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            onTradeSuccess(tradeData, displayInfo);
+            
+            // Set quote sheet state to show after trade
+            setLastTradeId(savedTrade.id);
+            setLastTradeInfo(displayInfo);
+            setShowQuoteSheet(true);
+            
+            onTradeSuccess(tradeData, displayInfo, savedTrade.id);
             onClose();
         } catch (error: any) {
             console.error('Trade error:', error);
@@ -679,6 +740,10 @@ const MarketTradeSheet = ({
         : 50;
 
     const displayCandles = filteredCandles.length > 0 ? filteredCandles : (initialCandles || []);
+    const chartCandles = useMemo(
+        () => (selectedSide === 'no' ? transformNoCandles(displayCandles) : displayCandles),
+        [displayCandles, selectedSide]
+    );
     const chartContainerRef = useRef<View>(null);
     const chartLayoutRef = useRef({ x: 0, width: 1 });
     const scrubStateRef = useRef({ lastIndex: -1, lastHaptic: 0 });
@@ -695,17 +760,17 @@ const MarketTradeSheet = ({
 
     const triggerScrubHaptic = (moveX: number) => {
         const { x, width } = chartLayoutRef.current;
-        const length = displayCandles.length;
+        const length = chartCandles.length;
         if (!length || width <= 0) return;
         const localX = Math.min(Math.max(moveX - x, 0), width);
         const index = Math.floor((localX / width) * length);
         if (index !== scrubStateRef.current.lastIndex) {
-            const nextPrice = displayCandles[index]?.close;
+            const nextPrice = chartCandles[index]?.close;
             if (typeof nextPrice === 'number') {
                 setScrubPrice(nextPrice);
             }
             setScrubIndex(index);
-            const nextTs = displayCandles[index]?.timestamp;
+            const nextTs = chartCandles[index]?.timestamp;
             setScrubTimestamp(typeof nextTs === 'number' ? nextTs : null);
             const now = Date.now();
             if (now - scrubStateRef.current.lastHaptic > 35) {
@@ -789,7 +854,7 @@ const MarketTradeSheet = ({
                                         </Text>
                                         <Text className="text-sm font-semibold text-txt-secondary">
                                             {(() => {
-                                                const price = scrubPrice ?? displayCandles[displayCandles.length - 1]?.close;
+                                                const price = scrubPrice ?? chartCandles[chartCandles.length - 1]?.close;
                                                 if (typeof price !== 'number') return '—';
                                                 return `${(price * 100).toFixed(1)}%`;
                                             })()}
@@ -827,9 +892,9 @@ const MarketTradeSheet = ({
                                             <ActivityIndicator size="small" color={Theme.accentSubtle} />
                                             <Text className="text-xs text-txt-disabled">Loading chart...</Text>
                                         </View>
-                                    ) : displayCandles.length > 0 ? (
+                                    ) : chartCandles.length > 0 ? (
                                         <LightChart
-                                            candles={displayCandles}
+                                            candles={chartCandles}
                                             width={SCREEN_WIDTH - 40}
                                             height={SHEET_CHART_HEIGHT}
                                             isYes={selectedSide === 'yes'}
@@ -903,12 +968,19 @@ const MarketTradeSheet = ({
             />
             <TradeQuoteSheet
                 visible={showQuoteSheet && !!lastTradeInfo}
-                onClose={() => setShowQuoteSheet(false)}
-                onSubmit={async (quoteText) => {
-                    if (!lastTradeId) return;
-                    await api.updateTradeQuote(lastTradeId, quoteText);
+                onClose={() => {
+                    setShowQuoteSheet(false);
+                    setLastTradeId(null);
+                    if (onRefreshFeed) onRefreshFeed();
                 }}
-                onSkip={() => setShowQuoteSheet(false)}
+                onSubmit={async (quoteText) => {
+                    await finalizeTrade(quoteText);
+                }}
+                onSkip={() => {
+                    setShowQuoteSheet(false);
+                    setLastTradeId(null);
+                    if (onRefreshFeed) onRefreshFeed();
+                }}
                 tradeInfo={lastTradeInfo || { side: 'yes', amount: '0', marketTitle: 'Market' }}
             />
         </Modal>
@@ -942,30 +1014,6 @@ export default function SocialScreen() {
         };
         getProvider();
     }, [solanaWallet]);
-
-    // Trade state
-    const [pendingTrade, setPendingTrade] = useState<any>(null);
-    const [lastTradeId, setLastTradeId] = useState<string | null>(null);
-    const [lastTradeInfo, setLastTradeInfo] = useState<{ side: 'yes' | 'no'; amount: string; marketTitle: string } | null>(null);
-
-    const finalizeTrade = async (quote?: string) => {
-        if (!pendingTrade) return;
-
-        try {
-            // Save trade to backend with real data (and optional quote)
-            await api.createTrade({
-                ...pendingTrade,
-                quote,
-            });
-            setPendingTrade(null);
-        } catch (error) {
-            console.error('Failed to save trade:', error);
-            // Even if save fails, we don't want to block the UI, but maybe alert user?
-            // For now just log it as the trade is already on chain
-        }
-    };
-
-    const [showQuoteSheet, setShowQuoteSheet] = useState(false);
 
     const [feedItemsByMode, setFeedItemsByMode] = useState<{ global: FeedItem[]; following: FeedItem[] }>({
         global: [],
@@ -1677,11 +1725,10 @@ export default function SocialScreen() {
             <MarketTradeSheet
                 visible={tradeSheetVisible}
                 onClose={handleCloseTradeSheet}
-                onTradeSuccess={(tradeData, displayInfo) => {
-                    setPendingTrade(tradeData);
-                    setLastTradeInfo(displayInfo);
-                    setShowQuoteSheet(true);
+                onTradeSuccess={(tradeData, displayInfo, tradeId) => {
+                    // Trade saved successfully, quote sheet will show from within MarketTradeSheet
                 }}
+                onRefreshFeed={() => loadFeed({ targetMode: mode, reset: true })}
                 item={tradeSheetItem}
                 candles={tradeSheetItem ? candlesMap[tradeSheetItem.marketTicker] : undefined}
                 backendUser={backendUser || null}
