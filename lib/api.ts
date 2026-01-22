@@ -35,6 +35,30 @@ export const api = {
         return response.json();
     },
 
+    savePreferences: async (userId: string, preferences: { interests?: string[]; habits?: string[]; hasCompletedOnboarding: boolean }): Promise<void> => {
+        const response = await fetch(`${API_BASE_URL}/api/users/${userId}/preferences`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(preferences),
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to save preferences');
+        }
+    },
+
+    getUserPreferences: async (userId: string): Promise<{ interests?: string[]; habits?: string[]; hasCompletedOnboarding?: boolean } | null> => {
+        const response = await fetch(`${API_BASE_URL}/api/users/${userId}/preferences`);
+        if (!response.ok) {
+            if (response.status === 404) {
+                return null;
+            }
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to get preferences');
+        }
+        return response.json();
+    },
+
     searchUsers: async (query: string): Promise<User[]> => {
         const response = await fetch(`${API_BASE_URL}/api/users/search?q=${encodeURIComponent(query)}`);
         if (!response.ok) {

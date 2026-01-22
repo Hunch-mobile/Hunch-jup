@@ -417,6 +417,8 @@ export default function MarketDetailScreen() {
         value={amount}
         onChange={(next) => { setAmount(next.replace(',', '.')); setTradeError(null); }}
         onClose={() => setAmountKeypadOpen(false)}
+        probability={market?.yesBid && market?.yesAsk ? ((parseFloat(market.yesBid) + parseFloat(market.yesAsk)) / 2 * 100) : undefined}
+        selectedSide={selectedSide}
       />
     </View>
   );

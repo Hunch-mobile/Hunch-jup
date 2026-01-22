@@ -173,6 +173,9 @@ export async function signAndSendWithPrivy(
             transaction,
             connection,
         },
+        options: {
+            sponsor: true,
+        }
     });
 
     if (!result?.signature) {

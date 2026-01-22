@@ -609,6 +609,8 @@ export default function EventDetailScreen() {
         value={amount}
         onChange={(next) => { setAmount(next.replace(',', '.')); setTradeError(null); }}
         onClose={() => setAmountKeypadOpen(false)}
+        probability={selectedMarket ? getProbability(selectedMarket) : undefined}
+        selectedSide={selectedSide}
       />
     </View>
   );

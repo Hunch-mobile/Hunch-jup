@@ -3,11 +3,19 @@ import { User } from '@/lib/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 
+export interface UserPreferences {
+    interests?: string[];
+    habits?: string[]; // Keep for backwards compatibility
+    hasCompletedOnboarding?: boolean;
+}
+
 interface UserContextType {
     backendUser: User | null;
     setBackendUser: (user: User | null) => void;
     syncUserWithBackend: (privyId: string, walletAddress: string, displayName?: string) => Promise<void>;
     isLoading: boolean;
+    preferences: UserPreferences | null;
+    loadPreferences: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -15,11 +23,21 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 export function UserProvider({ children }: { children: ReactNode }) {
     const [backendUser, setBackendUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [preferences, setPreferences] = useState<UserPreferences | null>(null);
 
     // Load user from AsyncStorage on mount
     useEffect(() => {
         loadUser();
     }, []);
+
+    // Load preferences when user changes
+    useEffect(() => {
+        if (backendUser) {
+            loadPreferences();
+        } else {
+            setPreferences(null);
+        }
+    }, [backendUser]);
 
     const loadUser = async () => {
         try {
@@ -52,12 +70,36 @@ export function UserProvider({ children }: { children: ReactNode }) {
         }
     };
 
+    const loadPreferences = async () => {
+        if (!backendUser) return;
+        try {
+            const prefs = await api.getUserPreferences(backendUser.id);
+            setPreferences(prefs);
+            if (prefs) {
+                await AsyncStorage.setItem('userPreferences', JSON.stringify(prefs));
+            }
+        } catch (error) {
+            console.error('Failed to load preferences:', error);
+            // Try to load from AsyncStorage as fallback
+            try {
+                const prefsJson = await AsyncStorage.getItem('userPreferences');
+                if (prefsJson) {
+                    setPreferences(JSON.parse(prefsJson));
+                }
+            } catch (err) {
+                console.error('Failed to load preferences from storage:', err);
+            }
+        }
+    };
+
     const handleSetBackendUser = async (user: User | null) => {
         setBackendUser(user);
         if (user) {
             await AsyncStorage.setItem('backendUser', JSON.stringify(user));
         } else {
             await AsyncStorage.removeItem('backendUser');
+            await AsyncStorage.removeItem('userPreferences');
+            setPreferences(null);
         }
     };
 
@@ -68,6 +110,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
                 setBackendUser: handleSetBackendUser,
                 syncUserWithBackend,
                 isLoading,
+                preferences,
+                loadPreferences,
             }}
         >
             {children}

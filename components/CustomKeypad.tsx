@@ -10,6 +10,8 @@ type CustomKeypadProps = {
   allowDecimal?: boolean;
   maxDecimals?: number;
   label?: string;
+  probability?: number; // Probability percentage (0-100) for calculating "to win"
+  selectedSide?: 'yes' | 'no'; // Selected side for the bet
 };
 
 const KeyButton = ({
@@ -46,9 +48,21 @@ export default function CustomKeypad({
   allowDecimal = true,
   maxDecimals = 2,
   label = "Amount",
+  probability,
+  selectedSide,
 }: CustomKeypadProps) {
   const insets = useSafeAreaInsets();
-  const sheetHeight = Math.min(420, Math.round(Dimensions.get("window").height * 0.5));
+  // Increase height to accommodate "to win" display, positioned higher on screen
+  const sheetHeight = Math.min(520, Math.round(Dimensions.get("window").height * 0.7));
+  
+  // Calculate "to win" amount
+  const calculateToWin = (): string => {
+    if (!probability || !value || parseFloat(value) <= 0) return "0.00";
+    const amount = parseFloat(value);
+    const prob = selectedSide === 'yes' ? probability : (100 - probability);
+    const toWin = amount * (100 / prob);
+    return toWin.toFixed(2);
+  };
 
   const appendDigit = (digit: string) => {
     let next = value || "";
@@ -79,24 +93,58 @@ export default function CustomKeypad({
       <Pressable className="flex-1 justify-end" onPress={onClose}>
         <View
           className="bg-app-bg rounded-t-3xl px-4 pt-4"
-          style={{ paddingBottom: Math.max(insets.bottom, 16), height: sheetHeight }}
+          style={{ 
+            paddingBottom: Math.max(insets.bottom, 16), 
+            height: sheetHeight,
+            marginBottom: 0, // Position higher by removing bottom margin
+          }}
         >
-          <View className="items-center mb-4">
+          <View className="items-center mb-3">
             <View className="w-12 h-1.5 rounded-full bg-border" />
           </View>
 
-          <View className="mb-3">
-            <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">
-              {label}
-            </Text>
-            <View className="bg-app-card rounded-2xl px-4 py-3 border border-border">
-              <Text className="text-2xl font-bold text-txt-primary">
-                {value || (allowDecimal ? "0.00" : "0")}
-              </Text>
-            </View>
-          </View>
+          {/* Amount Input and To Win - Side by side when both are shown */}
+          {probability !== undefined && selectedSide ? (
+            <View className="flex-row gap-3 mb-3">
+              {/* Amount Input */}
+              <View className="flex-1">
+                <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">
+                  {label}
+                </Text>
+                <View className="bg-app-card rounded-2xl px-4 py-3 border border-border">
+                  <Text className="text-2xl font-bold text-txt-primary">
+                    ${value || (allowDecimal ? "0.00" : "0")}
+                  </Text>
+                </View>
+              </View>
 
-          <View className="gap-3">
+              {/* To Win Amount */}
+              <View className="flex-1">
+                <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">
+                  To Win
+                </Text>
+                <View className="bg-app-card rounded-2xl px-4 py-3 border border-border">
+                  <Text className="text-2xl font-bold text-txt-primary">
+                    ${calculateToWin()}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            /* Amount Input only */
+            <View className="mb-3">
+              <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">
+                {label}
+              </Text>
+              <View className="bg-app-card rounded-2xl px-4 py-3 border border-border">
+                <Text className="text-2xl font-bold text-txt-primary">
+                  ${value || (allowDecimal ? "0.00" : "0")}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <View className="gap-2.5">
             {[
               ["1", "2", "3"],
               ["4", "5", "6"],

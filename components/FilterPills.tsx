@@ -7,10 +7,20 @@ interface FilterPillsProps {
     categories: string[];
     selectedCategory: string;
     onCategoryChange: (category: string) => void;
+    preferredCategories?: string[];
 }
 
-export const FilterPills = ({ categories, selectedCategory, onCategoryChange }: FilterPillsProps) => {
+export const FilterPills = ({ categories, selectedCategory, onCategoryChange, preferredCategories = [] }: FilterPillsProps) => {
     const flatListRef = useRef<FlatList>(null);
+
+    // Sort categories to show preferred ones first
+    const sortedCategories = [...categories].sort((a, b) => {
+        const aIsPreferred = preferredCategories.includes(a);
+        const bIsPreferred = preferredCategories.includes(b);
+        if (aIsPreferred && !bIsPreferred) return -1;
+        if (!aIsPreferred && bIsPreferred) return 1;
+        return 0;
+    });
 
     const handlePress = useCallback((category: string, index: number) => {
         if (category !== selectedCategory) {
@@ -53,7 +63,7 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange }: 
             <FlatList
                 ref={flatListRef}
                 horizontal
-                data={categories}
+                data={sortedCategories}
                 keyExtractor={(item) => item}
                 renderItem={renderPill}
                 showsHorizontalScrollIndicator={false}

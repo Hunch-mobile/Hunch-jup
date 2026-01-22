@@ -2,6 +2,7 @@ import { FilterPills } from "@/components/FilterPills";
 import { MarketRail } from "@/components/MarketRail";
 import { MiniNewsCarousel } from "@/components/MiniNewsCarousel";
 import { Theme } from '@/constants/theme';
+import { useUser } from "@/contexts/UserContext";
 import { api, marketsApi } from "@/lib/api";
 import { formatPercent, getTopMarkets } from "@/lib/marketUtils";
 import { Event, EventEvidence, Market } from "@/lib/types";
@@ -126,6 +127,7 @@ type FeedItem =
   | { type: 'news'; data: EventEvidence[] };
 
 export default function HomeScreen() {
+  const { preferences } = useUser();
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [events, setEvents] = useState<Event[]>([]);
@@ -138,22 +140,77 @@ export default function HomeScreen() {
 
   const isLoadingRef = useRef(false);
 
+  // Get preferred categories from user interests
+  const getPreferredCategories = (): string[] => {
+    if (!preferences?.interests && !preferences?.habits) {
+      return [];
+    }
+    
+    // Use interests if available, otherwise fall back to habits mapping (backwards compatibility)
+    if (preferences.interests && preferences.interests.length > 0) {
+      return preferences.interests.filter(int => categories.includes(int));
+    }
+    
+    // Legacy habits mapping (for backwards compatibility)
+    const habitToCategories: Record<string, string[]> = {
+      'Exercise': ['Sports', 'Transportation'],
+      'Meditate': ['Social', 'Entertainment'],
+      'Read books': ['Science and Technology', 'Entertainment'],
+      'Plan a day': [],
+      'Do yoga': ['Sports'],
+      'Write in journal': ['Social'],
+      'Healthy breakfast': ['Companies', 'Economics'],
+    };
+    
+    const relevantCategories = new Set<string>();
+    (preferences.habits || []).forEach(habit => {
+      const cats = habitToCategories[habit] || [];
+      cats.forEach(cat => relevantCategories.add(cat));
+    });
+    
+    return Array.from(relevantCategories);
+  };
+
   // Load categories and news on mount
   useEffect(() => {
     loadCategories();
-    loadNews();
   }, []);
+
+  // Reload news when preferences change
+  useEffect(() => {
+    loadNews();
+  }, [preferences]);
+
+  // Set default category based on preferences when they're loaded
+  useEffect(() => {
+    if (categories.length > 1) {
+      const preferredCategories = getPreferredCategories();
+      if (preferredCategories.length > 0) {
+        // Prioritize first preferred category
+        setSelectedCategory(preferredCategories[0]);
+      }
+    }
+  }, [preferences, categories]);
 
   // Load events when category changes
   useEffect(() => {
     loadEventsForCategory(selectedCategory, true);
   }, [selectedCategory]);
 
-  // Load news evidence
+  // Load news evidence - filter by preferences if available
   const loadNews = async () => {
     try {
       const evidence = await api.fetchEvidence(NEWS_EVENT_TICKERS);
-      setNewsItems(evidence);
+      
+      // Filter news by preferred categories if user has preferences
+      const preferredCategories = getPreferredCategories();
+      if (preferredCategories.length > 0) {
+        // For now, we show all news, but this could be enhanced to filter by event categories
+        // when the evidence includes category information
+        setNewsItems(evidence);
+      } else {
+        setNewsItems(evidence);
+      }
     } catch (err) {
       console.error('Failed to load news:', err);
     }
@@ -329,11 +386,12 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Filter Pills - Fixed at top */}
+        {/* Filter Pills - Fixed at top, prioritized by preferences */}
         <FilterPills
           categories={categories}
           selectedCategory={selectedCategory}
           onCategoryChange={handleCategoryChange}
+          preferredCategories={getPreferredCategories()}
         />
 
         {/* Scrollable content: MarketRail + Events + News */}
