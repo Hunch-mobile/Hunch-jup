@@ -1,3 +1,5 @@
+import CopyTradeSheet from "@/components/CopyTradeSheet";
+import PositionCard from "@/components/PositionCard";
 import SellPositionSheet from "@/components/SellPositionSheet";
 import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
@@ -7,13 +9,13 @@ import { executeTrade, toRawAmount, USDC_MINT } from "@/lib/tradeService";
 import { AggregatedPosition, CandleData, Event, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
-import { clusterApiUrl, Connection } from "@solana/web3.js";
+import { clusterApiUrl, Connection, PublicKey } from "@solana/web3.js";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -36,128 +38,7 @@ interface TradeWithMarket extends Trade {
     marketDetails?: Market;
 }
 
-// Position item component for displaying aggregated positions
-const PositionItem = ({
-    position,
-    isPrevious = false,
-    onPress,
-    onSell,
-}: {
-    position: AggregatedPosition;
-    isPrevious?: boolean;
-    onPress: () => void;
-    onSell?: () => void;
-}) => {
-    const isYes = position.side === 'yes';
-    const marketTitle = position.market?.title || position.marketTicker;
-    const subtitle = isYes ? position.market?.yesSubTitle : position.market?.noSubTitle;
-    const pnlValue = position.totalPnL ?? position.profitLoss ?? position.unrealizedPnL ?? position.realizedPnL ?? null;
-    const pnlPercent = position.profitLossPercentage ?? (
-        pnlValue !== null && position.totalCostBasis > 0
-            ? (pnlValue / position.totalCostBasis) * 100
-            : null
-    );
-    const pnlColor = pnlValue !== null ? (pnlValue >= 0 ? '#22c55e' : '#ef4444') : Theme.textDisabled;
-    const pnlText = pnlValue !== null
-        ? `${pnlValue >= 0 ? '+' : '-'}${formatCurrency(Math.abs(pnlValue))}`
-        : '—';
-    const hasTokens = position.totalTokenAmount > 0.001 || (position.totalTokensBought - position.totalTokensSold) > 0.001;
 
-    return (
-        <TouchableOpacity
-            className="px-4 py-4"
-            onPress={onPress}
-            activeOpacity={0.7}
-        >
-            <View className="bg-app-card rounded-2xl p-4 border border-border">
-                <View className="flex-row items-center gap-3 mb-3">
-                    <View className="w-12 h-12 rounded-xl overflow-hidden border border-border bg-app-elevated">
-                        <Image
-                            source={position.eventImageUrl ? { uri: position.eventImageUrl } : defaultProfileImage}
-                            style={{ width: '100%', height: '100%' }}
-                            contentFit="cover"
-                        />
-                    </View>
-                    <View className="flex-1">
-                        <Text className="text-base font-semibold text-txt-primary" numberOfLines={2}>
-                            {marketTitle}
-                        </Text>
-                        <Text className="text-xs text-txt-secondary" numberOfLines={1}>
-                            {subtitle || position.market?.subtitle || 'Market'}
-                        </Text>
-                    </View>
-                    <View className={`px-2.5 py-1 rounded-md ${isYes ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                        <Text className={`text-xs font-bold ${isYes ? 'text-green-500' : 'text-red-500'}`}>
-                            {isYes ? 'YES' : 'NO'}
-                        </Text>
-                    </View>
-                </View>
-
-                <View className="flex-row items-center justify-between mb-2">
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-txt-disabled uppercase">Cost</Text>
-                        <Text className="text-base font-semibold text-txt-primary">
-                            {formatCurrency(position.totalCostBasis)}
-                        </Text>
-                    </View>
-                    {!isPrevious && (
-                        <View className="flex-1">
-                            <Text className="text-[11px] text-txt-disabled uppercase">Value</Text>
-                            <Text className="text-base font-semibold text-txt-primary">
-                                {formatCurrency(position.currentValue)}
-                            </Text>
-                        </View>
-                    )}
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-txt-disabled uppercase">PnL</Text>
-                        <Text className="text-base font-semibold" style={{ color: pnlColor }}>
-                            {pnlText}
-                        </Text>
-                        <Text className="text-[11px] font-medium" style={{ color: pnlColor }}>
-                            {pnlPercent === null ? '—' : `${pnlPercent >= 0 ? '+' : ''}${formatPercent(pnlPercent)}`}
-                        </Text>
-                    </View>
-                </View>
-
-                <View className="flex-row items-center justify-between">
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-txt-disabled uppercase">Entry</Text>
-                        <Text className="text-sm font-medium text-txt-primary">
-                            {formatCurrency(position.averageEntryPrice)}
-                        </Text>
-                    </View>
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-txt-disabled uppercase">Current</Text>
-                        <Text className="text-sm font-medium text-txt-primary">
-                            {formatCurrency(position.currentPrice)}
-                        </Text>
-                    </View>
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-txt-disabled uppercase">Trades</Text>
-                        <Text className="text-sm font-medium text-txt-primary">
-                            {position.tradeCount}
-                        </Text>
-                    </View>
-                </View>
-
-                {/* Sell Button for active positions with tokens */}
-                {!isPrevious && hasTokens && onSell && (
-                    <TouchableOpacity
-                        className="mt-3 bg-red-500/10 rounded-xl py-2.5 flex-row items-center justify-center gap-2 border border-red-500/20"
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            onSell();
-                        }}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons name="trending-down" size={16} color="#ef4444" />
-                        <Text className="text-red-500 font-semibold text-sm">Sell Position</Text>
-                    </TouchableOpacity>
-                )}
-            </View>
-        </TouchableOpacity>
-    );
-};
 
 // Helper functions for PnL calculations
 const getPriceChange = (candles: CandleData[]) => {
@@ -403,6 +284,8 @@ export default function UserProfileScreen() {
     const [showQuoteSheet, setShowQuoteSheet] = useState(false);
     const [lastTradeInfo, setLastTradeInfo] = useState<{ side: 'yes' | 'no'; amount: string; marketTitle: string } | null>(null);
     const [lastTradeId, setLastTradeId] = useState<string | null>(null);
+    const [copySheetVisible, setCopySheetVisible] = useState(false);
+    const [usdcBalance, setUsdcBalance] = useState<number>(0);
 
     const slideAnim = useRef(new Animated.Value(0)).current;
     const loadedEventTickers = useRef(new Set<string>());
@@ -456,6 +339,30 @@ export default function UserProfileScreen() {
         }
     };
 
+    const loadUsdcBalance = useCallback(async () => {
+        if (!currentUser?.walletAddress) {
+            setUsdcBalance(0);
+            return;
+        }
+        try {
+            const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
+            const conn = new Connection(rpcUrl, 'confirmed');
+            const usdcMint = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+            const tokenAccounts = await conn.getParsedTokenAccountsByOwner(
+                new PublicKey(currentUser.walletAddress),
+                { mint: usdcMint }
+            );
+            const totalBalance = tokenAccounts.value.reduce((sum, accountInfo) => {
+                const amount = accountInfo.account.data?.parsed?.info?.tokenAmount?.uiAmount;
+                return sum + (typeof amount === 'number' ? amount : 0);
+            }, 0);
+            setUsdcBalance(totalBalance);
+        } catch (error) {
+            console.error("Failed to load USDC balance:", error);
+            setUsdcBalance(0);
+        }
+    }, [currentUser?.walletAddress]);
+
     useEffect(() => {
         if (userId) {
             loadProfile();
@@ -463,7 +370,8 @@ export default function UserProfileScreen() {
             loadPositions();
             if (currentUser && !isOwnProfile) checkFollowStatus();
         }
-    }, [userId, currentUser]);
+        loadUsdcBalance();
+    }, [userId, currentUser, loadUsdcBalance]);
 
     const loadProfile = async () => {
         try {
@@ -603,7 +511,7 @@ export default function UserProfileScreen() {
             const tokensToSell = selectedPosition.totalTokenAmount > 0
                 ? selectedPosition.totalTokenAmount
                 : selectedPosition.totalTokensBought - selectedPosition.totalTokensSold;
-            
+
             if (tokensToSell <= 0) {
                 throw new Error('No tokens to sell');
             }
@@ -805,12 +713,7 @@ export default function UserProfileScreen() {
                         <TouchableOpacity className="justify-center items-center" onPress={() => router.back()}>
                             <Ionicons name="chevron-back" size={24} color={Theme.textSecondary} />
                         </TouchableOpacity>
-                        <TouchableOpacity
-                            className="justify-center items-center"
-                            onPress={() => Share.share({ message: `${username} on Hunch\n${profile.walletAddress}` })}
-                        >
-                            <Ionicons name="share-outline" size={20} color={Theme.textSecondary} />
-                        </TouchableOpacity>
+
                     </View>
 
                     {/* Profile Row */}
@@ -829,36 +732,52 @@ export default function UserProfileScreen() {
                             <View className="flex-row items-center justify-between mb-2.5 gap-3">
                                 <Text className="text-xl font-bold text-txt-primary flex-1" numberOfLines={1}>{username}</Text>
 
-                                {!isOwnProfile && currentUser && (
-                                    <TouchableOpacity
-                                        className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full border-[1.5px] ${isFollowing ? 'bg-txt-primary border-txt-primary' : 'bg-transparent border-txt-primary'
-                                            }`}
-                                        onPress={handleFollow}
-                                        disabled={followLoading}
-                                    >
-                                        {followLoading ? (
-                                            <ActivityIndicator size="small" color={Theme.textPrimary} />
-                                        ) : (
-                                            <Text className={`text-[13px] font-semibold ${isFollowing ? 'text-txt-inverse' : 'text-txt-primary'}`}>
-                                                {isFollowing ? "Following" : "Follow"}
-                                            </Text>
-                                        )}
-                                    </TouchableOpacity>
-                                )}
+
                             </View>
 
                             <View className="flex-row gap-5">
-                                <TouchableOpacity onPress={() => router.push({ pathname: '/user/followers/[userId]', params: { userId: userId as string, tab: 'following' } })}>
-                                    <Text className="text-base text-txt-secondary">
-                                        <Text className="font-semibold text-txt-primary">{profile.followingCount || 0}</Text> Following
-                                    </Text>
-                                </TouchableOpacity>
                                 <TouchableOpacity onPress={() => router.push({ pathname: '/user/followers/[userId]', params: { userId: userId as string, tab: 'followers' } })}>
                                     <Text className="text-base text-txt-secondary">
                                         <Text className="font-semibold text-txt-primary">{profile.followerCount || 0}</Text> Followers
                                     </Text>
                                 </TouchableOpacity>
+                                <TouchableOpacity onPress={() => router.push({ pathname: '/user/followers/[userId]', params: { userId: userId as string, tab: 'following' } })}>
+                                    <Text className="text-base text-txt-secondary">
+                                        <Text className="font-semibold text-txt-primary">{profile.followingCount || 0}</Text> Following
+                                    </Text>
+                                </TouchableOpacity>
                             </View>
+
+                            {!isOwnProfile && currentUser && (
+                                <View className="mt-4 flex-row gap-3">
+                                    <TouchableOpacity
+                                        className={`flex-1 flex-row justify-center items-center gap-1.5 px-3 py-2.5 rounded-xl ${isFollowing ? 'bg-gray-200' : 'bg-black'
+                                            }`}
+                                        onPress={handleFollow}
+                                        disabled={followLoading}
+                                    >
+                                        {followLoading ? (
+                                            <ActivityIndicator size="small" color={isFollowing ? "black" : "white"} />
+                                        ) : (
+                                            <Text className={`text-sm font-semibold ${isFollowing ? "text-black" : "text-white"}`}>
+                                                {isFollowing ? "Following" : "Follow"}
+                                            </Text>
+                                        )}
+                                    </TouchableOpacity>
+                                    {isFollowing && (
+                                        <TouchableOpacity
+                                            className="flex-1 flex-row justify-center items-center gap-1.5 px-3 py-2.5 rounded-xl bg-black"
+                                            onPress={() => {
+                                                Haptics.selectionAsync();
+                                                setCopySheetVisible(true);
+                                            }}
+                                        >
+                                            <Ionicons name="copy-outline" size={16} color="white" />
+                                            <Text className="text-sm font-semibold text-white">Copy Trade</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            )}
                         </View>
                     </View>
 
@@ -897,13 +816,12 @@ export default function UserProfileScreen() {
                                             <Text className="text-sm text-txt-disabled">No active positions</Text>
                                         </View>
                                     ) : (
-                                        <View className="bg-app-card rounded-xl overflow-hidden border border-border">
+                                        <View className="">
                                             {activePositions.map((position) => (
-                                                <PositionItem
+                                                <PositionCard
                                                     key={`${position.marketTicker}-${position.side}`}
                                                     position={position}
                                                     onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })}
-                                                    onSell={isOwnProfile ? () => handleOpenSell(position) : undefined}
                                                 />
                                             ))}
                                         </View>
@@ -922,9 +840,9 @@ export default function UserProfileScreen() {
                                             <Text className="text-sm text-txt-disabled">No previous positions</Text>
                                         </View>
                                     ) : (
-                                        <View className="bg-app-card rounded-xl overflow-hidden border border-border">
+                                        <View className="">
                                             {previousPositions.map((position) => (
-                                                <PositionItem
+                                                <PositionCard
                                                     key={`${position.marketTicker}-${position.side}`}
                                                     position={position}
                                                     isPrevious
@@ -969,6 +887,18 @@ export default function UserProfileScreen() {
                     loadTrades();
                 }}
                 tradeInfo={lastTradeInfo || { side: 'yes', amount: '0', marketTitle: 'Market' }}
+            />
+
+            <CopyTradeSheet
+                visible={copySheetVisible}
+                onClose={() => setCopySheetVisible(false)}
+                username={username}
+                balance={usdcBalance}
+                onConfirm={(perTrade, totalCap) => {
+                    console.log('Copy Trade Config:', { perTrade, totalCap });
+                    setCopySheetVisible(false);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }}
             />
         </View>
     );

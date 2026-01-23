@@ -1,4 +1,6 @@
 import CreditCard from "@/components/CreditCard";
+import PositionActionSheet from "@/components/PositionActionSheet";
+import PositionCard from "@/components/PositionCard";
 import SellPositionSheet from "@/components/SellPositionSheet";
 import SettingsSheet from "@/components/SettingsSheet";
 import TradeQuoteSheet from "@/components/TradeQuoteSheet";
@@ -32,126 +34,7 @@ const formatPercent = (value: number | null | undefined) => {
     return `${value.toFixed(1)}%`;
 };
 
-const PositionItem = ({
-    position,
-    isPrevious = false,
-    onPress,
-    onSell,
-}: {
-    position: AggregatedPosition;
-    isPrevious?: boolean;
-    onPress: () => void;
-    onSell?: () => void;
-}) => {
-    const isYes = position.side === 'yes';
-    const marketTitle = position.market?.title || position.marketTicker;
-    const subtitle = isYes ? position.market?.yesSubTitle : position.market?.noSubTitle;
-    const pnlValue = position.totalPnL ?? position.profitLoss ?? position.unrealizedPnL ?? position.realizedPnL ?? null;
-    const pnlPercent = position.profitLossPercentage ?? (
-        pnlValue !== null && position.totalCostBasis > 0
-            ? (pnlValue / position.totalCostBasis) * 100
-            : null
-    );
-    const pnlColor = pnlValue !== null ? (pnlValue >= 0 ? '#22c55e' : '#ef4444') : Theme.textDisabled;
-    const pnlText = pnlValue !== null
-        ? `${pnlValue >= 0 ? '+' : '-'}${formatCurrency(Math.abs(pnlValue))}`
-        : '—';
-    const hasTokens = position.totalTokenAmount > 0.001 || (position.totalTokensBought - position.totalTokensSold) > 0.001;
 
-    return (
-        <TouchableOpacity
-            className="px-4 py-4"
-            onPress={onPress}
-            activeOpacity={0.7}
-        >
-            <View className="bg-app-card rounded-2xl p-4 border border-border">
-                <View className="flex-row items-center gap-3 mb-3">
-                    <View className="w-12 h-12 rounded-xl overflow-hidden border border-border bg-app-elevated">
-                        <Image
-                            source={position.eventImageUrl ? { uri: position.eventImageUrl } : defaultProfileImage}
-                            className="w-full h-full"
-                        />
-                    </View>
-                    <View className="flex-1">
-                        <Text className="text-base font-semibold text-txt-primary" numberOfLines={2}>
-                            {marketTitle}
-                        </Text>
-                        <Text className="text-xs text-txt-secondary" numberOfLines={1}>
-                            {subtitle || position.market?.subtitle || 'Market'}
-                        </Text>
-                    </View>
-                    <View className={`px-2.5 py-1 rounded-md ${isYes ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                        <Text className={`text-xs font-bold ${isYes ? 'text-green-500' : 'text-red-500'}`}>
-                            {isYes ? 'YES' : 'NO'}
-                        </Text>
-                    </View>
-                </View>
-
-                <View className="flex-row items-center justify-between mb-2">
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-txt-disabled uppercase">Cost</Text>
-                        <Text className="text-base font-semibold text-txt-primary">
-                            {formatCurrency(position.totalCostBasis)}
-                        </Text>
-                    </View>
-                    {!isPrevious && (
-                        <View className="flex-1">
-                            <Text className="text-[11px] text-txt-disabled uppercase">Value</Text>
-                            <Text className="text-base font-semibold text-txt-primary">
-                                {formatCurrency(position.currentValue)}
-                            </Text>
-                        </View>
-                    )}
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-txt-disabled uppercase">PnL</Text>
-                        <Text className="text-base font-semibold" style={{ color: pnlColor }}>
-                            {pnlText}
-                        </Text>
-                        <Text className="text-[11px] font-medium" style={{ color: pnlColor }}>
-                            {pnlPercent === null ? '—' : `${pnlPercent >= 0 ? '+' : ''}${formatPercent(pnlPercent)}`}
-                        </Text>
-                    </View>
-                </View>
-
-                <View className="flex-row items-center justify-between">
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-txt-disabled uppercase">Entry</Text>
-                        <Text className="text-sm font-medium text-txt-primary">
-                            {formatCurrency(position.averageEntryPrice)}
-                        </Text>
-                    </View>
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-txt-disabled uppercase">Current</Text>
-                        <Text className="text-sm font-medium text-txt-primary">
-                            {formatCurrency(position.currentPrice)}
-                        </Text>
-                    </View>
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-txt-disabled uppercase">Trades</Text>
-                        <Text className="text-sm font-medium text-txt-primary">
-                            {position.tradeCount}
-                        </Text>
-                    </View>
-                </View>
-
-                {/* Sell Button for active positions with tokens */}
-                {!isPrevious && hasTokens && onSell && (
-                    <TouchableOpacity
-                        className="mt-3 bg-red-500/10 rounded-xl py-2.5 flex-row items-center justify-center gap-2 border border-red-500/20"
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            onSell();
-                        }}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons name="trending-down" size={16} color="#ef4444" />
-                        <Text className="text-red-500 font-semibold text-sm">Sell Position</Text>
-                    </TouchableOpacity>
-                )}
-            </View>
-        </TouchableOpacity>
-    );
-};
 
 export default function ProfileScreen() {
     const { user, logout } = usePrivy();
@@ -177,6 +60,10 @@ export default function ProfileScreen() {
     const [sellSheetVisible, setSellSheetVisible] = useState(false);
     const [selectedPosition, setSelectedPosition] = useState<AggregatedPosition | null>(null);
     const [isSelling, setIsSelling] = useState(false);
+
+    // Position Action Sheet state
+    const [actionSheetVisible, setActionSheetVisible] = useState(false);
+    const [selectedActionPosition, setSelectedActionPosition] = useState<AggregatedPosition | null>(null);
 
     // Quote sheet state
     const [showQuoteSheet, setShowQuoteSheet] = useState(false);
@@ -360,6 +247,12 @@ export default function ProfileScreen() {
         setSelectedPosition(position);
         setSellSheetVisible(true);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    };
+
+    const handleOpenActionSheet = (position: AggregatedPosition) => {
+        setSelectedActionPosition(position);
+        setActionSheetVisible(true);
+        Haptics.selectionAsync();
     };
 
     // Handle sell trade execution - sells all tokens for this position
@@ -566,20 +459,20 @@ export default function ProfileScreen() {
                                 <View className="flex-row gap-5 ">
                                     <TouchableOpacity onPress={() => {
                                         if (backendUser?.id) {
-                                            router.push({ pathname: '/user/followers/[userId]', params: { userId: backendUser.id, tab: 'following' } });
-                                        }
-                                    }}>
-                                        <Text className="text-base text-txt-secondary">
-                                            <Text className="font-semibold text-txt-primary">{followingCount}</Text> Following
-                                        </Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity onPress={() => {
-                                        if (backendUser?.id) {
                                             router.push({ pathname: '/user/followers/[userId]', params: { userId: backendUser.id, tab: 'followers' } });
                                         }
                                     }}>
                                         <Text className="text-base text-txt-secondary">
                                             <Text className="font-semibold text-txt-primary">{followerCount}</Text> Followers
+                                        </Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => {
+                                        if (backendUser?.id) {
+                                            router.push({ pathname: '/user/followers/[userId]', params: { userId: backendUser.id, tab: 'following' } });
+                                        }
+                                    }}>
+                                        <Text className="text-base text-txt-secondary">
+                                            <Text className="font-semibold text-txt-primary">{followingCount}</Text> Following
                                         </Text>
                                     </TouchableOpacity>
                                 </View>
@@ -664,13 +557,12 @@ export default function ProfileScreen() {
                                                 <Text className="text-sm text-txt-disabled">No positions</Text>
                                             </View>
                                         ) : (
-                                            <View className="bg-app-card rounded-xl overflow-hidden border border-border">
+                                            <View className="">
                                                 {activePositions.map((position, index) => (
-                                                    <PositionItem
+                                                    <PositionCard
                                                         key={`active-${position.marketTicker}-${position.side}-${index}`}
                                                         position={position}
-                                                        onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })}
-                                                        onSell={() => handleOpenSell(position)}
+                                                        onPress={() => handleOpenActionSheet(position)}
                                                     />
                                                 ))}
                                             </View>
@@ -692,9 +584,9 @@ export default function ProfileScreen() {
                                                 <Text className="text-sm text-txt-disabled">No positions</Text>
                                             </View>
                                         ) : (
-                                            <View className="bg-app-card rounded-xl overflow-hidden border border-border">
+                                            <View className="">
                                                 {previousPositions.map((position, index) => (
-                                                    <PositionItem
+                                                    <PositionCard
                                                         key={`previous-${position.marketTicker}-${position.side}-${index}`}
                                                         position={position}
                                                         isPrevious
@@ -716,6 +608,17 @@ export default function ProfileScreen() {
                 onClose={() => setSettingsVisible(false)}
                 onSwitchTheme={() => console.log("Switch theme clicked")}
                 onLogout={handleLogout}
+            />
+
+            <PositionActionSheet
+                visible={actionSheetVisible}
+                onClose={() => {
+                    setActionSheetVisible(false);
+                    setSelectedActionPosition(null);
+                }}
+                position={selectedActionPosition}
+                onViewMarket={(ticker) => router.push({ pathname: '/market/[ticker]', params: { ticker } })}
+                onSell={(position) => handleOpenSell(position)}
             />
 
             <SellPositionSheet
@@ -748,7 +651,7 @@ export default function ProfileScreen() {
                 }}
                 tradeInfo={lastTradeInfo || { side: 'yes', amount: '0', marketTitle: 'Market' }}
             />
-        </View>
+        </View >
     );
 }
 
