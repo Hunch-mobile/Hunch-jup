@@ -11,6 +11,19 @@ if (!DFLOW_API_KEY) {
     console.log('[API] ✓ DFLOW_API_KEY is configured');
 }
 
+// Helper to safely parse JSON responses
+const safeJsonParse = async (response: Response) => {
+    const text = await response.text();
+    if (!text || text.trim() === '') {
+        return null;
+    }
+    try {
+        return JSON.parse(text);
+    } catch {
+        return null;
+    }
+};
+
 export const api = {
     // User endpoints
     syncUser: async (data: SyncUserRequest): Promise<User> => {
@@ -20,17 +33,18 @@ export const api = {
             body: JSON.stringify(data),
         });
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to sync user');
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to sync user');
         }
-        return response.json();
+        const result = await safeJsonParse(response);
+        return result as User;
     },
 
     getUser: async (userId: string): Promise<User> => {
         const response = await fetch(`${API_BASE_URL}/api/users/${userId}`);
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to get user');
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to get user');
         }
         return response.json();
     },
@@ -42,9 +56,10 @@ export const api = {
             body: JSON.stringify(preferences),
         });
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to save preferences');
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to save preferences');
         }
+        // Success - no need to parse response body
     },
 
     getUserPreferences: async (userId: string): Promise<{ interests?: string[]; habits?: string[]; hasCompletedOnboarding?: boolean } | null> => {
@@ -57,6 +72,16 @@ export const api = {
             throw new Error(error.error || 'Failed to get preferences');
         }
         return response.json();
+    },
+
+    getTopUsers: async (sortBy: 'followers' | 'trades' = 'followers', limit: number = 4): Promise<User[]> => {
+        const response = await fetch(`${API_BASE_URL}/api/users/top?sortBy=${sortBy}&limit=${limit}`);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to get top users');
+        }
+        const result = await safeJsonParse(response);
+        return result || [];
     },
 
     searchUsers: async (query: string): Promise<User[]> => {
@@ -586,6 +611,27 @@ export const getMarketDetails = async (ticker: string): Promise<Market | null> =
         return market;
     } catch (error) {
         console.error(`Failed to fetch market details for ${ticker}:`, error);
+        return null;
+    }
+};
+
+// Event details cache to avoid repeated API calls
+const eventCache = new Map<string, { data: Event; timestamp: number }>();
+
+export const getEventDetails = async (eventTicker: string): Promise<Event | null> => {
+    try {
+        // Check cache first
+        const cached = eventCache.get(eventTicker);
+        if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+            return cached.data;
+        }
+
+        // Fetch fresh data
+        const event = await marketsApi.fetchEventDetails(eventTicker);
+        eventCache.set(eventTicker, { data: event, timestamp: Date.now() });
+        return event;
+    } catch (error) {
+        console.error(`Failed to fetch event details for ${eventTicker}:`, error);
         return null;
     }
 };

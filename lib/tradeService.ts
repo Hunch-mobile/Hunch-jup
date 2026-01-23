@@ -172,9 +172,6 @@ export async function signAndSendWithPrivy(
         params: {
             transaction,
             connection,
-        },
-        options: {
-            sponsor: true,
         }
     });
 

@@ -408,7 +408,7 @@ export default function ProfileScreen() {
             const tokensToSell = selectedPosition.totalTokenAmount > 0
                 ? selectedPosition.totalTokenAmount
                 : selectedPosition.totalTokensBought - selectedPosition.totalTokensSold;
-            
+
             if (tokensToSell <= 0) {
                 throw new Error('No tokens to sell');
             }
@@ -665,9 +665,9 @@ export default function ProfileScreen() {
                                             </View>
                                         ) : (
                                             <View className="bg-app-card rounded-xl overflow-hidden border border-border">
-                                                {activePositions.map((position) => (
+                                                {activePositions.map((position, index) => (
                                                     <PositionItem
-                                                        key={`${position.marketTicker}-${position.side}`}
+                                                        key={`active-${position.marketTicker}-${position.side}-${index}`}
                                                         position={position}
                                                         onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })}
                                                         onSell={() => handleOpenSell(position)}
@@ -693,9 +693,9 @@ export default function ProfileScreen() {
                                             </View>
                                         ) : (
                                             <View className="bg-app-card rounded-xl overflow-hidden border border-border">
-                                                {previousPositions.map((position) => (
+                                                {previousPositions.map((position, index) => (
                                                     <PositionItem
-                                                        key={`${position.marketTicker}-${position.side}`}
+                                                        key={`previous-${position.marketTicker}-${position.side}-${index}`}
                                                         position={position}
                                                         isPrevious
                                                         onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })}

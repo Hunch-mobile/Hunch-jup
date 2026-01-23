@@ -101,6 +101,7 @@ export interface SyncUserRequest {
     walletAddress: string;
     displayName?: string;
     avatarUrl?: string;
+    preferences?: string[];
 }
 
 export interface CreateTradeRequest {
