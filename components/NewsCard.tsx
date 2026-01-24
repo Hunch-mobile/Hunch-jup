@@ -59,14 +59,17 @@ export const NewsCard = ({ item }: NewsCardProps) => {
         <View className="mx-5 mb-5">
             {/* Header Row */}
             <View className="flex-row items-center mb-3">
-                {/* Hunch Avatar - Black & White */}
+                {/* Hunch Avatar - Logo */}
                 <View style={styles.avatar}>
-                    <Ionicons name="flash" size={24} color="#111827" />
+                    <Image
+                        source={require('@/assets/hunch.jpg')}
+                        style={{ width: 36, height: 36, borderRadius: 18 }}
+                    />
                 </View>
 
                 <View className="flex-1 ml-3">
                     <View className="flex-row items-center">
-                        <Text style={styles.username}>Hunch</Text>
+                        <Text style={styles.username}>Scout</Text>
                         <Image
                             source={require('@/assets/verified.png')}
                             style={styles.verifiedBadge}
