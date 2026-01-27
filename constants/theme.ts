@@ -52,8 +52,8 @@ export const Theme = {
 
   // Chart colors - Vibrant palette for mini charts
   chartPositive: '#FFD93D',       // Bright yellow for positive trends
-  chartNegative: '#FF6B9D',       // Hot pink for negative trends
-  chartNeutral: '#A855F7',        // Purple for neutral
+  chartNegative: '#000000',       // Black for negative trends
+  chartNeutral: '#22c55e',        // Green for neutral
   chartGradientStart: '#FFD93D',  // Yellow gradient start
   chartGradientEnd: '#FF6B9D',    // Pink gradient end
   chartLine: '#F97316',           // Orange for main line

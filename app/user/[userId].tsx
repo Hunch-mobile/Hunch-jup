@@ -16,7 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const defaultProfileImage = require("@/assets/default.jpeg");
@@ -258,6 +258,7 @@ export default function UserProfileScreen() {
     const { userId } = useLocalSearchParams<{ userId: string }>();
     const { backendUser: currentUser } = useUser();
     const { wallets } = useEmbeddedSolanaWallet();
+    const insets = useSafeAreaInsets();
 
     const [profile, setProfile] = useState<User | null>(null);
     const [trades, setTrades] = useState<TradeWithMarket[]>([]);
@@ -707,13 +708,19 @@ export default function UserProfileScreen() {
     return (
         <View className="flex-1 bg-app-bg">
             <SafeAreaView className="flex-1" edges={['top']}>
-                <ScrollView contentContainerStyle={{ paddingHorizontal: 20 }} showsVerticalScrollIndicator={false}>
-                    {/* Header */}
+                <ScrollView
+                    contentContainerStyle={{
+                        paddingHorizontal: 20,
+                        paddingBottom: (!isOwnProfile && currentUser && isFollowing) ? insets.bottom + 88 : 24,
+                    }}
+                    showsVerticalScrollIndicator={false}
+                >
+                    {/* Header: back only (Copy Trade is fixed at bottom) */}
                     <View className="flex-row items-center justify-between pt-4 pb-5">
                         <TouchableOpacity className="justify-center items-center" onPress={() => router.back()}>
                             <Ionicons name="chevron-back" size={24} color={Theme.textSecondary} />
                         </TouchableOpacity>
-
+                        <View className="w-10" />
                     </View>
 
                     {/* Profile Row */}
@@ -751,8 +758,7 @@ export default function UserProfileScreen() {
                             {!isOwnProfile && currentUser && (
                                 <View className="mt-4 flex-row gap-3">
                                     <TouchableOpacity
-                                        className={`flex-1 flex-row justify-center items-center gap-1.5 px-3 py-2.5 rounded-xl ${isFollowing ? 'bg-gray-200' : 'bg-black'
-                                            }`}
+                                        className={`flex-1 flex-row justify-center items-center gap-1.5 px-3 py-2.5 rounded-xl ${isFollowing ? 'bg-gray-200' : 'bg-black'}`}
                                         onPress={handleFollow}
                                         disabled={followLoading}
                                     >
@@ -764,18 +770,6 @@ export default function UserProfileScreen() {
                                             </Text>
                                         )}
                                     </TouchableOpacity>
-                                    {isFollowing && (
-                                        <TouchableOpacity
-                                            className="flex-1 flex-row justify-center items-center gap-1.5 px-3 py-2.5 rounded-xl bg-black"
-                                            onPress={() => {
-                                                Haptics.selectionAsync();
-                                                setCopySheetVisible(true);
-                                            }}
-                                        >
-                                            <Ionicons name="copy-outline" size={16} color="white" />
-                                            <Text className="text-sm font-semibold text-white">Copy Trade</Text>
-                                        </TouchableOpacity>
-                                    )}
                                 </View>
                             )}
                         </View>
@@ -856,9 +850,35 @@ export default function UserProfileScreen() {
                         </View>
                     </View>
 
-                    <View className="h-20" />
                 </ScrollView>
             </SafeAreaView>
+
+            {/* Fixed Copy Trade button at bottom center (only when viewing another user and following) */}
+            {!isOwnProfile && currentUser && isFollowing && (
+                <View
+                    style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        paddingBottom: insets.bottom + 16,
+                        alignItems: 'center',
+                    }}
+                    pointerEvents="box-none"
+                >
+                    <TouchableOpacity
+                        className="flex-row items-center gap-2 px-6 py-3.5 rounded-xl bg-black"
+                        onPress={() => {
+                            Haptics.selectionAsync();
+                            setCopySheetVisible(true);
+                        }}
+                        activeOpacity={0.8}
+                    >
+                        <Ionicons name="copy-outline" size={18} color="white" />
+                        <Text className="text-base font-semibold text-white">Copy Trade</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
 
             <SellPositionSheet
                 visible={sellSheetVisible}

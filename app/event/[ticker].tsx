@@ -3,55 +3,79 @@ import { MultiMarketChart } from '@/components/MultiMarketChart';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { marketsApi } from "@/lib/api";
+import { isNumericOutcomeMarket } from "@/lib/marketUtils";
 import { Event, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
 import { Connection, clusterApiUrl } from "@solana/web3.js";
+import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Animated, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+// Market colors matching MultiMarketChart
+const MARKET_COLORS = ['#FACC15', '#22D3EE', '#22c55e', '#000000'];
 
 // MarketCard for the list below charts
-const MarketCard = ({ item, onPress }: { item: Market; onPress: () => void }) => {
-
+const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => void; color?: string }) => {
   const yesBid = item.yesBid ? parseFloat(item.yesBid) * 100 : null;
   const yesAsk = item.yesAsk ? parseFloat(item.yesAsk) * 100 : null;
-  const probability = yesBid && yesAsk ? ((yesBid + yesAsk) / 2) : null;
+  const probability = yesBid && yesAsk ? (yesBid + yesAsk) / 2 : null;
   const displayTitle = item.yesSubTitle || item.title;
+  const marketColor = color || Theme.textPrimary;
+
+  // Darker versions of market colors for odds text
+  const getDarkerColor = (color: string): string => {
+    const darkerMap: Record<string, string> = {
+      '#FACC15': '#D4A017', // Darker yellow
+      '#22D3EE': '#0EA5E9', // Darker cyan
+      '#22c55e': '#16a34a', // Darker green
+      '#000000': '#000000', // Black stays black
+    };
+    return darkerMap[color] || color;
+  };
+  const darkerColor = getDarkerColor(marketColor);
 
   return (
     <TouchableOpacity
-      className="bg-app-card rounded-[16px] p-4 mb-3 border border-border"
-      activeOpacity={0.8}
-      onPress={onPress}
+      className="rounded-2xl p-4 mb-3"
+      activeOpacity={0.7}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
     >
-      <View className="flex-row justify-between items-center gap-3">
-        <View className="flex-1 flex-row items-start gap-2.5 pr-2">
-          <Text className="flex-1 text-[15px] font-semibold text-txt-primary leading-[21px]" numberOfLines={2}>
+      <View className="flex-row justify-between items-start gap-3">
+        {(item as any).imageUrl ? (
+          <View className="w-16 h-16 rounded-xl overflow-hidden bg-app-elevated">
+            <Image
+              source={{ uri: (item as any).imageUrl }}
+              style={{ width: '100%', height: '100%' }}
+              contentFit="cover"
+            />
+          </View>
+        ) : null}
+        <View className="flex-1">
+          <Text className="text-2xl font-semibold text-txt-primary leading-[28px]" numberOfLines={2}>
             {displayTitle}
           </Text>
+          {item.volume != null && item.volume > 0 && (
+            <Text className="text-xs font-medium text-txt-disabled mt-1.5" style={{ opacity: 0.6 }}>
+              ${(item.volume / 1000).toFixed(1)}K vol
+            </Text>
+          )}
         </View>
-        <View className="flex-row items-center gap-1.5">
-          <Text className="text-xl font-bold text-txt-primary min-w-[50px] text-right">
-            {probability ? `${probability.toFixed(0)}%` : '--'}
-          </Text>
-          <Ionicons name="chevron-forward" size={18} color={Theme.textDisabled} />
-        </View>
+        {probability != null && (
+          <View className="px-3.5 py-2 min-w-[64px] items-center">
+            <Text className="text-[24px] font-bold" style={{ color: darkerColor }}>
+              {probability.toFixed(0)}%
+            </Text>
+          </View>
+        )}
       </View>
-      {item.subtitle && (
-        <Text className="mt-1 text-xs text-txt-secondary" numberOfLines={1}>
-          {item.subtitle}
-        </Text>
-      )}
-      {item.volume && item.volume > 0 && (
-        <Text className="mt-2 text-xs text-txt-secondary font-medium">
-          Vol: ${((item.volume || 0) / 1000).toFixed(1)}K
-        </Text>
-      )}
     </TouchableOpacity>
   );
 };
@@ -60,6 +84,7 @@ export default function EventDetailScreen() {
   const { ticker } = useLocalSearchParams<{ ticker: string }>();
   const { backendUser } = useUser();
   const { wallets } = useEmbeddedSolanaWallet();
+  const insets = useSafeAreaInsets();
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +92,13 @@ export default function EventDetailScreen() {
   const [marketSheetVisible, setMarketSheetVisible] = useState(false);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [walletProvider, setWalletProvider] = useState<any>(null);
+  const [showMoreMarkets, setShowMoreMarkets] = useState(false);
+  const [heroImageError, setHeroImageError] = useState(false);
+  const scrollY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    setHeroImageError(false);
+  }, [event?.imageUrl]);
 
   const connection = useMemo(() => {
     const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
@@ -129,12 +161,20 @@ export default function EventDetailScreen() {
     });
   }, [event?.markets]);
 
+  // Top 4 by odds (Yes implied probability); activeMarkets is already sorted by it
+  const top4ByOdds = useMemo(() => activeMarkets.slice(0, 4), [activeMarkets]);
+  const remainingMarkets = useMemo(() => activeMarkets.slice(4), [activeMarkets]);
+
   const topMarketsForCharts = useMemo(() => {
-    return [...activeMarkets]
-      .filter(m => m.yesMint || (m.accounts && Object.values(m.accounts).some(a => a?.yesMint)))
-      .sort((a, b) => (b.volume || 0) - (a.volume || 0))
-      .slice(0, 4);
-  }, [activeMarkets]);
+    return top4ByOdds.filter(
+      m => m.yesMint || (m.accounts && Object.values(m.accounts).some(a => a?.yesMint))
+    );
+  }, [top4ByOdds]);
+
+  const chartsSelectionMode = useMemo(
+    () => topMarketsForCharts.length > 0 && topMarketsForCharts.every(isNumericOutcomeMarket),
+    [topMarketsForCharts]
+  );
 
   const handleOpenMarketSheet = (marketItem: Market) => {
     setSelectedMarket(marketItem);
@@ -150,8 +190,9 @@ export default function EventDetailScreen() {
       <View className="flex-1 bg-app-bg">
         <LinearGradient colors={[Theme.bgMain, Theme.bgCard]} style={StyleSheet.absoluteFillObject} />
         <SafeAreaView className="flex-1">
-          <View className="flex-1 justify-center items-center">
+          <View className="flex-1 justify-center items-center gap-3">
             <ActivityIndicator size="large" color={Theme.accentSubtle} />
+            <Text className="text-[15px] text-txt-secondary">Loading event…</Text>
           </View>
         </SafeAreaView>
       </View>
@@ -163,24 +204,22 @@ export default function EventDetailScreen() {
       <View className="flex-1 bg-app-bg">
         <LinearGradient colors={[Theme.bgMain, Theme.bgCard]} style={StyleSheet.absoluteFillObject} />
         <SafeAreaView className="flex-1">
-          <View className="flex-row px-5 pt-3">
+          <View className="flex-row px-4 pt-2">
             <TouchableOpacity
-              className="w-8 h-8 rounded-full bg-app-card justify-center items-center"
+              className="w-10 h-10 rounded-full bg-app-card justify-center items-center border border-border"
               onPress={() => router.back()}
             >
-              <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
+              <Ionicons name="chevron-back" size={22} color={Theme.textPrimary} />
             </TouchableOpacity>
           </View>
-          <View className="flex-1 justify-center items-center px-10">
-            <Ionicons name="alert-circle-outline" size={64} color={Theme.error} />
-            <Text className="text-status-error text-base mt-4 mb-3 text-center">
-              {error || "Event not found"}
-            </Text>
-            <TouchableOpacity
-              className="bg-app-card py-2.5 px-5 rounded-[10px] border border-border"
-              onPress={loadEventDetails}
-            >
-              <Text className="text-txt-primary text-sm font-semibold">Retry</Text>
+          <View className="flex-1 justify-center items-center px-8">
+            <View className="w-20 h-20 rounded-full bg-red-500/10 justify-center items-center mb-5">
+              <Ionicons name="alert-circle-outline" size={48} color={Theme.error} />
+            </View>
+            <Text className="text-[17px] font-semibold text-txt-primary text-center mb-2">{error || "Event not found"}</Text>
+            <Text className="text-sm text-txt-secondary text-center mb-6">Check your connection and try again.</Text>
+            <TouchableOpacity className="bg-app-card py-3 px-6 rounded-xl border border-border" onPress={loadEventDetails}>
+              <Text className="text-[15px] font-semibold text-txt-primary">Retry</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -193,19 +232,35 @@ export default function EventDetailScreen() {
       <LinearGradient colors={[Theme.bgMain, Theme.bgCard]} style={StyleSheet.absoluteFillObject} />
 
       <SafeAreaView className="flex-1" edges={['top']}>
-        <ScrollView
+        <Animated.ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ flexGrow: 1 }}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + 24 }}
           scrollEnabled={chartScrollEnabled}
+          bounces={false}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: false }
+          )}
+          scrollEventThrottle={16}
         >
-          {/* Hero Section */}
-          <View className="relative h-[220px] overflow-hidden">
-            {event.imageUrl ? (
+          {/* Hero: image with opacity blend - fades out as user scrolls */}
+          <Animated.View
+            className="h-52 overflow-hidden"
+            style={{
+              opacity: scrollY.interpolate({
+                inputRange: [0, 150],
+                outputRange: [1, 0],
+                extrapolate: 'clamp',
+              }),
+            }}
+          >
+            {(event.imageUrl && !heroImageError) ? (
               <Image
                 source={{ uri: event.imageUrl }}
-                style={styles.heroImage}
+                style={{ width: '100%', height: '100%' }}
                 contentFit="cover"
                 transition={200}
+                onError={() => setHeroImageError(true)}
               />
             ) : (
               <View className="w-full h-full bg-app-card justify-center items-center">
@@ -213,84 +268,209 @@ export default function EventDetailScreen() {
               </View>
             )}
             <LinearGradient
-              colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.45)', Theme.bgMain]}
+              colors={['transparent', Theme.bgMain]}
               style={StyleSheet.absoluteFillObject}
+              pointerEvents="none"
             />
+            {event.competition && (
+              <View className="absolute bottom-3 left-4 px-2.5 py-1 rounded-lg bg-black/40">
+                <Text className="text-[11px] font-bold text-white tracking-wide">{event.competition}</Text>
+              </View>
+            )}
+          </Animated.View>
 
-            {/* Back Button */}
-            <TouchableOpacity
-              className="absolute top-3 left-3 w-9 h-9 rounded-full bg-black/50 justify-center items-center"
-              onPress={() => router.back()}
-            >
-              <Ionicons name="chevron-back" size={20} color={Theme.textPrimary} />
-            </TouchableOpacity>
-
-            {/* Event Info */}
-            <View className="absolute bottom-0 left-0 right-0 p-4">
-              {event.competition && (
-                <View className="self-start bg-cyan-500/15 px-2.5 py-1 rounded-md mb-2">
-                  <Text className="text-[10px] font-bold uppercase tracking-wide" style={{ color: Theme.accentSubtle }}>
-                    {event.competition}
-                  </Text>
-                </View>
-              )}
-              <Text className="text-[22px] font-bold text-txt-primary leading-7" numberOfLines={2}>
+          {/* Main text below the image: white text, black outline only (no block bg) */}
+          <View className="px-4 pt-4 pb-2">
+            <View className="relative">
+              {([[-2,-2],[-2,0],[-2,2],[0,-2],[0,2],[2,-2],[2,0],[2,2],[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]] as const).map(([dx, dy]) => (
+                <Text
+                  key={`${dx},${dy}`}
+                  className="text-[32px] font-bold leading-8"
+                  style={{ position: 'absolute', left: dx, top: dy, color: '#000', width: '100%' }}
+                  numberOfLines={2}
+                >
+                  {event.title}
+                </Text>
+              ))}
+              <Text
+                className="text-[32px] font-bold leading-8 relative z-10"
+                style={{ color: '#fff' }}
+                numberOfLines={2}
+              >
                 {event.title}
               </Text>
             </View>
+            
+            {/* Market end/resolution time */}
+            {(() => {
+              // Get the earliest close/expiration time from active markets or event
+              const marketCloseTimes = activeMarkets
+                .map(m => m.closeTime || m.expirationTime)
+                .filter((t): t is number => t != null && t > 0);
+              
+              const eventCloseTime = event.closeTime;
+              const allCloseTimes = [...marketCloseTimes];
+              if (eventCloseTime) allCloseTimes.push(eventCloseTime);
+              
+              const earliestCloseTime = allCloseTimes.length > 0 
+                ? Math.min(...allCloseTimes) 
+                : null;
+              
+              if (!earliestCloseTime) return null;
+              
+              const closeDate = new Date(earliestCloseTime * 1000);
+              const now = new Date();
+              const diffMs = closeDate.getTime() - now.getTime();
+              const diffDays = diffMs / (1000 * 60 * 60 * 24);
+              
+              // Don't show if more than 2 years away
+              if (diffDays > 730) return null;
+              
+              const formattedDate = closeDate.toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric',
+                year: closeDate.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+              });
+              const formattedTime = closeDate.toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit',
+                hour12: true
+              });
+              
+              let displayText = '';
+              if (diffMs < 0) {
+                displayText = `Resolved • ${formattedDate}`;
+              } else if (diffDays <= 7) {
+                // Within a week: show date and time
+                displayText = `${formattedDate} at ${formattedTime}`;
+              } else {
+                // More than a week: show only date
+                displayText = formattedDate;
+              }
+              
+              return (
+                <View className="mt-3 flex-row items-center gap-2">
+                  <Ionicons name="time-outline" size={16} color={Theme.textSecondary} />
+                  <Text className="text-sm text-txt-secondary">
+                    {displayText}
+                  </Text>
+                </View>
+              );
+            })()}
           </View>
 
-          {/* Stats Row */}
-          <View className="flex-row px-4 py-3 gap-4">
-            <View className="flex-row items-center gap-1.5">
-              <Ionicons name="pulse" size={14} color={Theme.accentSubtle} />
-              <Text className="text-txt-secondary text-[13px] font-semibold">
-                {activeMarkets.length} Markets
-              </Text>
-            </View>
-            {event.volume && event.volume > 0 && (
-              <View className="flex-row items-center gap-1.5">
-                <Ionicons name="trending-up" size={14} color={Theme.textSecondary} />
-                <Text className="text-txt-secondary text-[13px] font-semibold">
-                  ${(event.volume / 1000000).toFixed(1)}M Vol
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* Charts Section */}
+          {/* Charts */}
           {topMarketsForCharts.length > 0 && (
             <View className="mt-2">
               <MultiMarketChart
+                title="."
                 markets={topMarketsForCharts}
+                selectionMode={chartsSelectionMode}
                 onInteractionStart={() => setChartScrollEnabled(false)}
                 onInteractionEnd={() => setChartScrollEnabled(true)}
               />
             </View>
           )}
 
-          {/* Markets List */}
+          {/* Top 4 by odds + Show more */}
           <View className="mt-6 px-4">
-            <Text className="text-lg font-bold text-txt-primary mb-3">Markets</Text>
-            {activeMarkets.length === 0 ? (
-              <View className="items-center py-10 gap-2">
-                <Ionicons name="bar-chart-outline" size={40} color={Theme.textDisabled} />
-                <Text className="text-txt-disabled text-sm">No markets available</Text>
+            {/* <Text className="text-[17px] font-bold text-txt-primary mb-3">Top 4 by odds</Text> */}
+            {top4ByOdds.length === 0 ? (
+              <View className="items-center py-10 gap-2.5">
+                <Ionicons name="bar-chart-outline" size={44} color={Theme.textDisabled} />
+                <Text className="text-base font-semibold text-txt-primary">No markets yet</Text>
+                <Text className="text-sm text-txt-disabled">Markets for this event will appear here.</Text>
               </View>
             ) : (
-              activeMarkets.map((market) => (
-                <MarketCard
-                  key={market.ticker}
-                  item={market}
-                  onPress={() => handleOpenMarketSheet(market)}
-                />
-              ))
+              <>
+                {top4ByOdds.map((m, index) => (
+                  <MarketCard
+                    key={m.ticker}
+                    item={m}
+                    color={MARKET_COLORS[index % MARKET_COLORS.length]}
+                    onPress={() => handleOpenMarketSheet(m)}
+                  />
+                ))}
+                {remainingMarkets.length > 0 && (
+                  <>
+                    <TouchableOpacity
+                      className="flex-row items-center justify-center gap-1.5 py-3.5 mt-1 mb-2"
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setShowMoreMarkets((v) => !v);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text className="text-[15px] font-semibold text-[#333333]">
+                        {showMoreMarkets ? 'Show less' : `Show more (${remainingMarkets.length})`}
+                      </Text>
+                      <Ionicons
+                        name={showMoreMarkets ? 'chevron-up' : 'chevron-down'}
+                        size={18}
+                        color={Theme.accentSubtle}
+                      />
+                    </TouchableOpacity>
+                    {showMoreMarkets &&
+                      remainingMarkets.map((m, index) => (
+                        <MarketCard
+                          key={m.ticker}
+                          item={m}
+                          color={MARKET_COLORS[(top4ByOdds.length + index) % MARKET_COLORS.length]}
+                          onPress={() => handleOpenMarketSheet(m)}
+                        />
+                      ))}
+                  </>
+                )}
+              </>
             )}
           </View>
-
-          <View className="h-10" />
-        </ScrollView>
+        </Animated.ScrollView>
       </SafeAreaView>
+
+      {/* Sticky header: main text with outline, fades in as main text scrolls off */}
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 10,
+            paddingHorizontal: 24,
+            paddingBottom: 12,
+            backgroundColor: Theme.bgMain,
+          },
+          {
+            paddingTop: insets.top,
+            opacity: scrollY.interpolate({
+              inputRange: [100, 200],
+              outputRange: [0, 1],
+              extrapolate: 'clamp',
+            }),
+          },
+        ]}
+      >
+        <View className="relative">
+            {([[-2,-2],[-2,0],[-2,2],[0,-2],[0,2],[2,-2],[2,0],[2,2],[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]] as const).map(([dx, dy]) => (
+              <Text
+                key={`sticky-${dx},${dy}`}
+                className="text-[24px] font-bold leading-7"
+                style={{ position: 'absolute', left: dx, top: dy, color: '#000', width: '100%' }}
+                numberOfLines={2}
+              >
+                {event.title}
+              </Text>
+            ))}
+            <Text
+              className="text-[24px] font-bold leading-7 relative z-10"
+              style={{ color: '#fff' }}
+              numberOfLines={2}
+            >
+              {event.title}
+            </Text>
+        </View>
+      </Animated.View>
 
       <MarketTradeSheet
         visible={marketSheetVisible}
@@ -305,10 +485,3 @@ export default function EventDetailScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-});

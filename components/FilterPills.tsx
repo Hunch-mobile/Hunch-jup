@@ -37,6 +37,8 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange, pr
 
     const renderPill = useCallback(({ item, index }: { item: string; index: number }) => {
         const isSelected = item === selectedCategory;
+        // Show only the first word to avoid long labels
+        const label = item.split(' ')[0];
         return (
             <TouchableOpacity
                 onPress={() => handlePress(item, index)}
@@ -52,7 +54,7 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange, pr
                         isSelected ? styles.pillTextSelected : styles.pillTextUnselected,
                     ]}
                 >
-                    {item}
+                    {label}
                 </Text>
             </TouchableOpacity>
         );
@@ -86,7 +88,7 @@ const styles = StyleSheet.create({
     },
     pill: {
         paddingHorizontal: 16,
-        paddingVertical: 8,
+        paddingVertical: 4,
         borderRadius: 20,
         borderWidth: 1,
     },
@@ -96,11 +98,11 @@ const styles = StyleSheet.create({
     },
     pillUnselected: {
         backgroundColor: Theme.bgCard,
-        borderColor: Theme.border,
+        borderColor: Theme.bgCard,
     },
     pillText: {
-        fontSize: 14,
-        fontWeight: '600',
+        fontSize: 20,
+        fontWeight: '400',
     },
     pillTextSelected: {
         color: Theme.bgMain,

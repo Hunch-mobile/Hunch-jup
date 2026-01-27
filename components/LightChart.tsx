@@ -7,7 +7,9 @@ interface LightChartProps {
     candles: CandleData[];
     width: number;
     height: number;
-    isYes?: boolean; // true = green, false = red
+    isYes?: boolean; // true = green, false = noColor or black
+    /** When isYes is false, use this color. Default black for screens; pass '#ef4444' for drawer. */
+    noColor?: string;
     entryTimestamp?: number; // seconds
     entryAvatarUri?: string;
     scrubIndex?: number | null;
@@ -25,6 +27,7 @@ export const LightChart: React.FC<LightChartProps> = ({
     width,
     height,
     isYes = true,
+    noColor,
     entryTimestamp,
     entryAvatarUri,
     scrubIndex,
@@ -123,8 +126,8 @@ export const LightChart: React.FC<LightChartProps> = ({
         return { path, areaPath, lastPoint, gridLines, entryPoint, points, stride };
     }, [candles, width, height, entryTimestamp]);
 
-    // Colors based on trade side
-    const lineColor = isYes ? '#22c55e' : '#ef4444'; // green for YES, red for NO
+    // Colors based on trade side. NO: noColor (e.g. red in drawer) or black on screens
+    const lineColor = isYes ? '#22c55e' : (noColor ?? '#000000');
     const gradientId = `light-gradient-${isYes ? 'yes' : 'no'}`;
 
     // Render placeholder if no data

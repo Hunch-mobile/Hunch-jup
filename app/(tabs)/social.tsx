@@ -9,10 +9,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
 import { clusterApiUrl, Connection } from "@solana/web3.js";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, FlatList, Image, PanResponder, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface FeedItem extends Trade {
     type: 'trade';
@@ -265,7 +267,10 @@ const FeedCard = ({
             <View className="bg-white rounded-[24px] p-3.5 border border-[#E8E8E8] shadow-sm relative">
 
                 <View className="flex-row items-center gap-3 mb-3.5">
-                    <Text className={`text-[32px] font-black ${isYes ? 'text-[#41d93b]' : 'text-[#ef4444]'}`}>
+                    <Text
+                        className={`text-[32px] font-black ${isYes ? 'text-[#41d93b]' : 'text-[#ef4444]'}`}
+                        style={{ fontFamily: 'BBHSansHegarty' }}
+                    >
                         {isYes ? 'YES' : 'NO'}
                     </Text>
                     <Text className="text-[14px] text-txt-disabled">on</Text>
@@ -334,6 +339,7 @@ const FeedCard = ({
 export default function SocialScreen() {
     const { backendUser } = useUser();
     const { wallets } = useEmbeddedSolanaWallet();
+    const insets = useSafeAreaInsets();
 
     // Solana connection for trading
     const connection = useMemo(() => {
@@ -367,6 +373,7 @@ export default function SocialScreen() {
     const [searchMarketResults, setSearchMarketResults] = useState<SearchMarketItem[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [isSearchingMarkets, setIsSearchingMarkets] = useState(false);
+    const [previousSearches, setPreviousSearches] = useState<SearchMarketItem[]>([]);
     const [isLoadingFeedByMode, setIsLoadingFeedByMode] = useState({ global: true, following: true });
     const [isLoadingMoreByMode, setIsLoadingMoreByMode] = useState({ global: false, following: false });
     const [refreshingByMode, setRefreshingByMode] = useState({ global: false, following: false });
@@ -409,6 +416,21 @@ export default function SocialScreen() {
             }
         };
         loadEvidence();
+    }, []);
+
+    // Load previous searches on mount
+    useEffect(() => {
+        const loadPreviousSearches = async () => {
+            try {
+                const stored = await AsyncStorage.getItem('previousSearches');
+                if (stored) {
+                    setPreviousSearches(JSON.parse(stored));
+                }
+            } catch (error) {
+                console.error('Failed to load previous searches:', error);
+            }
+        };
+        loadPreviousSearches();
     }, []);
 
     useEffect(() => {
@@ -590,7 +612,29 @@ export default function SocialScreen() {
                 });
             });
 
-            setSearchMarketResults(marketMatches.slice(0, 50));
+            const finalResults = marketMatches.slice(0, 50);
+            setSearchMarketResults(finalResults);
+            
+            // Save to previous searches (limit to 10 most recent)
+            if (finalResults.length > 0) {
+                try {
+                    const stored = await AsyncStorage.getItem('previousSearches');
+                    const existing: SearchMarketItem[] = stored ? JSON.parse(stored) : [];
+                    // Add new results, avoiding duplicates
+                    const newSearches = [...finalResults];
+                    const combined = [...newSearches, ...existing.filter(item => {
+                        const itemId = item.type === 'event' ? item.event.ticker : item.market.ticker;
+                        return !newSearches.some(newItem => {
+                            const newId = newItem.type === 'event' ? newItem.event.ticker : newItem.market.ticker;
+                            return newId === itemId;
+                        });
+                    })].slice(0, 10); // Keep only 10 most recent
+                    await AsyncStorage.setItem('previousSearches', JSON.stringify(combined));
+                    setPreviousSearches(combined);
+                } catch (error) {
+                    console.error('Failed to save previous searches:', error);
+                }
+            }
         } catch (error) {
             console.error("Failed to search users:", error);
         } finally {
@@ -773,14 +817,14 @@ export default function SocialScreen() {
                     >
                         {!showSearch ? (
                             <TouchableOpacity
-                                className="w-10 h-10 rounded-full justify-center items-center"
+                                className="w-12 h-12 rounded-full justify-center items-center"
                                 onPress={() => setShowSearch(true)}
                             >
-                                <Ionicons name="search" size={24} color={Theme.textPrimary} />
+                                <Ionicons name="search" size={28} color={Theme.textPrimary} />
                             </TouchableOpacity>
                         ) : (
-                            <View className="flex-row items-center h-12 gap-2.5 px-3">
-                                <Ionicons name="search" size={16} color={Theme.textDisabled} />
+                            <View className="flex-row items-center h-12 gap-2.5 px-4 bg-white rounded-full border-2 border-black">
+                                <Ionicons name="search" size={18} color={Theme.textDisabled} />
                                 <Animated.View style={{ flex: 1, opacity: searchInputOpacity }}>
                                     <TextInput
                                         className="text-txt-primary text-[17px]"
@@ -792,21 +836,22 @@ export default function SocialScreen() {
                                     />
                                 </Animated.View>
                                 {(isSearching || isSearchingMarkets) && <ActivityIndicator size="small" color={Theme.accentSubtle} />}
-                                {(searchQuery.length > 0 || isSearching || isSearchingMarkets) && (
-                                    <TouchableOpacity onPress={() => { setSearchQuery(""); setSearchResults([]); }}>
+                                {searchQuery.length > 0 ? (
+                                    <TouchableOpacity onPress={() => { setSearchQuery(""); setSearchResults([]); setSearchMarketResults([]); }}>
                                         <Ionicons name="close-circle" size={18} color={Theme.textDisabled} />
                                     </TouchableOpacity>
+                                ) : (
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setShowSearch(false);
+                                            setSearchQuery("");
+                                            setSearchResults([]);
+                                            setSearchMarketResults([]);
+                                        }}
+                                    >
+                                        <Ionicons name="close" size={18} color={Theme.textSecondary} />
+                                    </TouchableOpacity>
                                 )}
-                                <TouchableOpacity
-                                    onPress={() => {
-                                        setShowSearch(false);
-                                        setSearchQuery("");
-                                        setSearchResults([]);
-                                        setSearchMarketResults([]);
-                                    }}
-                                >
-                                    <Ionicons name="close" size={18} color={Theme.textSecondary} />
-                                </TouchableOpacity>
                             </View>
                         )}
                     </Animated.View>
@@ -919,10 +964,14 @@ export default function SocialScreen() {
                     <>
                         {renderHeader()}
                         <FlatList
-                            data={[
-                                ...searchMarketResults.map((item) => ({ type: 'marketResult' as const, item })),
-                                ...searchResults.map((item) => ({ type: 'userResult' as const, item })),
-                            ]}
+                            data={
+                                searchQuery.trim().length === 0 && previousSearches.length > 0
+                                    ? previousSearches.map((item) => ({ type: 'marketResult' as const, item }))
+                                    : [
+                                        ...searchMarketResults.map((item) => ({ type: 'marketResult' as const, item })),
+                                        ...searchResults.map((item) => ({ type: 'userResult' as const, item })),
+                                    ]
+                            }
                             keyExtractor={(entry) =>
                                 entry.type === 'marketResult'
                                     ? entry.item.type === 'event'
@@ -980,11 +1029,20 @@ export default function SocialScreen() {
                             }
                             contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
                             showsVerticalScrollIndicator={false}
-                            ListEmptyComponent={() => (
-                                <View className="px-6 py-8">
-                                    <Text className="text-sm text-txt-secondary">No results found.</Text>
-                                </View>
-                            )}
+                            ListEmptyComponent={() => {
+                                if (searchQuery.trim().length === 0 && previousSearches.length === 0) {
+                                    return (
+                                        <View className="px-6 py-8">
+                                            <Text className="text-sm text-txt-secondary">No previous searches.</Text>
+                                        </View>
+                                    );
+                                }
+                                return (
+                                    <View className="px-6 py-8">
+                                        <Text className="text-sm text-txt-secondary">No results found.</Text>
+                                    </View>
+                                );
+                            }}
                         />
                     </>
                 ) : (
@@ -1096,6 +1154,45 @@ export default function SocialScreen() {
                 connection={connection}
                 initialSide={tradeSheetItem?.side}
             />
+
+            {/* Floating Plus Button */}
+            <TouchableOpacity
+                style={{
+                    position: 'absolute',
+                    bottom: Math.max(insets.bottom, 0) + 4 + 72 + 20, // Tab bar height (72) + margin (4) + spacing (20)
+                    right: 20,
+                    width: 56,
+                    height: 56,
+                    borderRadius: 12,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                    elevation: 8,
+                }}
+                onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    // TODO: Handle plus button action
+                }}
+                activeOpacity={0.8}
+            >
+                <LinearGradient
+                    colors={['#FFEB3B', '#FFD700']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{
+                        width: 56,
+                        height: 56,
+                        borderRadius: 12,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        borderWidth: 2,
+                        borderColor: '#000',
+                    }}
+                >
+                    <Text style={{ fontSize: 32, fontWeight: '500', color: '#000', lineHeight: 32 }}>+</Text>
+                </LinearGradient>
+            </TouchableOpacity>
         </View>
     );
 }
@@ -1105,14 +1202,12 @@ const styles = StyleSheet.create({
     searchBarContainer: {
         position: 'absolute',
         right: 20,
-        height: 40,
+        height: 48,
         borderRadius: 999,
-        overflow: 'hidden',
+        overflow: 'visible',
     },
     searchBarOpen: {
-        backgroundColor: Theme.bgCard,
-        borderWidth: 1,
-        borderColor: Theme.border,
+        backgroundColor: 'transparent',
     },
     searchBarClosed: {
         backgroundColor: 'transparent',

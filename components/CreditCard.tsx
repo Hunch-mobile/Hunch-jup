@@ -302,6 +302,7 @@ const styles = StyleSheet.create({
         color: 'rgba(0,0,0,0.6)',
         letterSpacing: 1,
         fontWeight: '600',
+        fontFamily: 'RobotoRoundRegular',
     },
     balanceSection: {
         flex: 1,
@@ -314,6 +315,7 @@ const styles = StyleSheet.create({
         letterSpacing: 1,
         marginBottom: 4,
         fontWeight: '500',
+        fontFamily: 'RobotoRoundRegular',
     },
     labelSmall: {
         fontSize: 11,
@@ -322,12 +324,14 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
         marginBottom: 2,
         fontWeight: '500',
+        fontFamily: 'RobotoRoundRegular',
     },
     balanceValue: {
         fontSize: 36,
         color: '#1e293b',
         fontWeight: '700',
         letterSpacing: -1,
+        fontFamily: 'RobotoRoundRegular',
     },
     statsRow: {
         flexDirection: 'row',
@@ -338,11 +342,13 @@ const styles = StyleSheet.create({
         fontSize: 20,
         color: '#1e293b',
         fontWeight: '600',
+        fontFamily: 'RobotoRoundRegular',
     },
     statValueDim: {
         fontSize: 24,
         color: 'rgba(0,0,0,0.5)',
         fontWeight: '700',
+        fontFamily: 'RobotoRoundRegular',
     },
     // Back styles
     topRowBack: {
@@ -363,6 +369,7 @@ const styles = StyleSheet.create({
         color: '#4ade80',
         fontSize: 12,
         fontWeight: '600',
+        fontFamily: 'RobotoRoundRegular',
     },
     actionRow: {
         flexDirection: 'row',
@@ -388,13 +395,16 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 14,
         fontWeight: '700',
+        fontFamily: 'RobotoRoundRegular',
     },
     withdrawButtonText: {
         color: '#1e293b',
+        fontFamily: 'RobotoRoundRegular',
     },
     tapBackText: {
         textAlign: 'center',
         fontSize: 10,
         color: 'rgba(0,0,0,0.4)',
+        fontFamily: 'RobotoRoundRegular',
     },
 });

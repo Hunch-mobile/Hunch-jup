@@ -7,9 +7,15 @@ import Constants from 'expo-constants';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect } from 'react';
+import { Text } from 'react-native';
 
 import { UserProvider } from '@/contexts/UserContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+
+SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -17,6 +23,31 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+
+  const [fontsLoaded] = useFonts({
+    WinkySans: require('../assets/fonts/WinkySans-VariableFont_wght.ttf'),
+    BBHSansHegarty: require('../assets/fonts/BBHSansHegarty.ttf'),
+    RobotoRoundRegular: require('../assets/fonts/Roboto-Round-Regular.ttf'),
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+
+      // Set global default font for all Text components
+      if (!Text.defaultProps) {
+        Text.defaultProps = {};
+      }
+      const defaultStyle = Text.defaultProps.style || {};
+      Text.defaultProps.style = Array.isArray(defaultStyle)
+        ? [...defaultStyle, { fontFamily: 'RobotoRoundRegular' }]
+        : [defaultStyle, { fontFamily: 'RobotoRoundRegular' }];
+    }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) {
+    return null;
+  }
 
   return (
     <PrivyProvider

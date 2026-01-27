@@ -2,34 +2,36 @@ import { Theme } from '@/constants/theme';
 import { marketsApi } from '@/lib/api';
 import { CandleData, Market } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
     Animated,
     Dimensions,
     Easing,
     GestureResponderEvent,
     StyleSheet,
     Text,
-    View,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import Svg, { Circle, Defs, Line, LinearGradient, Path, Stop } from 'react-native-svg';
-
-// AnimatedCircle for blinking dots
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const CHART_HEIGHT = 180;
+const CHART_HEIGHT = 260;
 const CHART_PADDING = 16;
-const RIGHT_PADDING = 20; // Extra space for live dots
+const RIGHT_PADDING = 20;
+const SCRUB_HAPTIC_THROTTLE_MS = 40;
 
-// Vibrant colors for different market lines
-const MARKET_COLORS = [
-    '#FFD93D', // Yellow
-    '#FF6B9D', // Pink
-    '#3FE3FF', // Cyan
-    '#A855F7', // Purple
+type TimeFilter = '24h' | '1w' | '1m' | 'all';
+const TIME_FILTER_OPTIONS: { key: TimeFilter; label: string; seconds: number }[] = [
+    { key: '24h', label: '24H', seconds: 24 * 60 * 60 },
+    { key: '1w', label: '1W', seconds: 7 * 24 * 60 * 60 },
+    { key: '1m', label: '1M', seconds: 30 * 24 * 60 * 60 },
+    { key: 'all', label: 'All', seconds: 365 * 24 * 60 * 60 },
 ];
+
+// Yellow, cyan, green, black
+const MARKET_COLORS = ['#FACC15', '#22D3EE', '#22c55e', '#000000'];
 
 // Cache for candle data
 const candleCache = new Map<string, { data: CandleData[]; timestamp: number }>();
@@ -44,6 +46,9 @@ interface MarketChartData {
 
 interface MultiMarketChartProps {
     markets: Market[];
+    title?: string;
+    /** When true, show market selector chips; only selected markets are charted. For numeric-outcome markets. */
+    selectionMode?: boolean;
     onInteractionStart?: () => void;
     onInteractionEnd?: () => void;
 }
@@ -64,6 +69,8 @@ const getYesMint = (market: Market): string | undefined => {
 
 export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
     markets,
+    title,
+    selectionMode = false,
     onInteractionStart,
     onInteractionEnd,
 }) => {
@@ -71,63 +78,33 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
     const [loading, setLoading] = useState(true);
     const [touchPosition, setTouchPosition] = useState<{ x: number; index: number } | null>(null);
     const [isInteracting, setIsInteracting] = useState(false);
+    const [selectedTickers, setSelectedTickers] = useState<Set<string>>(() =>
+        new Set(markets[0] ? [markets[0].ticker] : [])
+    );
+
+    const [timeFilter, setTimeFilter] = useState<TimeFilter>('1w');
+    const scrubHapticRef = useRef({ lastIndex: -1, lastTime: 0 });
+    const pulseAnim = useRef(new Animated.Value(0.55)).current;
+
+    const marketTickersKey = markets.map((m) => m.ticker).join(',');
+    useEffect(() => {
+        if (selectionMode) {
+            setSelectedTickers(new Set(markets[0] ? [markets[0].ticker] : []));
+        }
+    }, [selectionMode, marketTickersKey]);
 
     const chartWidth = SCREEN_WIDTH - CHART_PADDING * 2;
-    const drawableWidth = chartWidth - RIGHT_PADDING; // Leave space for live dots
+    const drawableWidth = chartWidth - RIGHT_PADDING;
 
-    // Animation for live dots
-    const pulseAnim = useRef(new Animated.Value(1)).current;
-    const glowAnim = useRef(new Animated.Value(0.3)).current;
-
-    useEffect(() => {
-        const pulseAnimation = Animated.loop(
-            Animated.sequence([
-                Animated.timing(pulseAnim, {
-                    toValue: 1.4,
-                    duration: 800,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: false,
-                }),
-                Animated.timing(pulseAnim, {
-                    toValue: 1,
-                    duration: 800,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: false,
-                }),
-            ])
-        );
-
-        const glowAnimation = Animated.loop(
-            Animated.sequence([
-                Animated.timing(glowAnim, {
-                    toValue: 0.6,
-                    duration: 800,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: false,
-                }),
-                Animated.timing(glowAnim, {
-                    toValue: 0.3,
-                    duration: 800,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: false,
-                }),
-            ])
-        );
-
-        pulseAnimation.start();
-        glowAnimation.start();
-
-        return () => {
-            pulseAnimation.stop();
-            glowAnimation.stop();
-        };
-    }, [pulseAnim, glowAnim]);
-
-    // Fetch candle data for all markets
+    // Fetch candle data for all markets (time range like trade drawer)
     useEffect(() => {
         const fetchAllCandles = async () => {
             setLoading(true);
             const results: MarketChartData[] = [];
+            const opt = TIME_FILTER_OPTIONS.find(f => f.key === timeFilter);
+            const endTs = Math.floor(Date.now() / 1000);
+            const startTs = endTs - (opt?.seconds ?? 7 * 24 * 60 * 60);
+            const periodInterval = timeFilter === '24h' ? 1 : timeFilter === '1w' ? 60 : 1440;
 
             await Promise.all(
                 markets.slice(0, 4).map(async (market, index) => {
@@ -139,18 +116,14 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
                         return;
                     }
 
-                    // Check cache
-                    const cached = candleCache.get(yesMint);
+                    const cacheKey = `${yesMint}-${timeFilter}`;
+                    const cached = candleCache.get(cacheKey);
                     if (cached && Date.now() - cached.timestamp < CANDLE_CACHE_DURATION) {
                         results.push({ market, candles: cached.data, color, loading: false });
                         return;
                     }
 
                     try {
-                        const endTs = Math.floor(Date.now() / 1000);
-                        const startTs = endTs - (30 * 24 * 60 * 60); // 30 days
-                        const periodInterval = 1440; // Daily
-
                         const data = await marketsApi.fetchCandlesticksByMint(yesMint, {
                             startTs,
                             endTs,
@@ -158,7 +131,7 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
                         });
 
                         if (data && data.length > 0) {
-                            candleCache.set(yesMint, { data, timestamp: Date.now() });
+                            candleCache.set(cacheKey, { data, timestamp: Date.now() });
                             results.push({ market, candles: data, color, loading: false });
                         } else {
                             results.push({ market, candles: [], color, loading: false });
@@ -170,7 +143,6 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
                 })
             );
 
-            // Sort by original market order
             results.sort((a, b) => {
                 const indexA = markets.findIndex(m => m.ticker === a.market.ticker);
                 const indexB = markets.findIndex(m => m.ticker === b.market.ticker);
@@ -184,18 +156,46 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
         if (markets.length > 0) {
             fetchAllCandles();
         }
-    }, [markets]);
+    }, [markets, timeFilter]);
 
-    // Generate chart paths for all markets
+    // Skeleton pulse animation
+    useEffect(() => {
+        const loop = Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulseAnim, {
+                    toValue: 0.9,
+                    duration: 800,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+                Animated.timing(pulseAnim, {
+                    toValue: 0.5,
+                    duration: 800,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                }),
+            ])
+        );
+        loop.start();
+        return () => loop.stop();
+    }, [pulseAnim]);
+
+    // Filter to selected markets when in selectionMode
+    const dataForChart = useMemo(() => {
+        if (!selectionMode) return marketData;
+        return marketData.filter((d) => selectedTickers.has(d.market.ticker));
+    }, [marketData, selectionMode, selectedTickers]);
+
+    // Generate chart paths (from dataForChart: all or selected)
     const chartPaths = useMemo(() => {
-        if (marketData.length === 0) return [];
+        if (dataForChart.length === 0) return [];
 
         // Find global min/max across all candles for unified scale
         let globalMin = Infinity;
         let globalMax = -Infinity;
         let maxLength = 0;
 
-        marketData.forEach(({ candles }) => {
+        dataForChart.forEach(({ candles }) => {
             if (candles.length > 0) {
                 const recentCandles = candles.slice(-20);
                 maxLength = Math.max(maxLength, recentCandles.length);
@@ -212,7 +212,7 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
         const paddingY = CHART_HEIGHT * 0.15;
         const chartHeight = CHART_HEIGHT - paddingY * 2;
 
-        return marketData.map(({ candles, color, market }) => {
+        return dataForChart.map(({ candles, color, market }) => {
             if (candles.length === 0) return null;
 
             const recentCandles = candles.slice(-20);
@@ -224,40 +224,49 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
                 return { x, y, price };
             });
 
-            // Create smooth bezier path
+            // Angular / straight line segments (polygonal, sharp edges)
             let path = `M ${points[0].x} ${points[0].y}`;
             for (let i = 1; i < points.length; i++) {
-                const prev = points[i - 1];
-                const curr = points[i];
-                const cpx = (prev.x + curr.x) / 2;
-                path += ` Q ${cpx} ${prev.y} ${cpx} ${(prev.y + curr.y) / 2}`;
-                path += ` Q ${cpx} ${curr.y} ${curr.x} ${curr.y}`;
+                path += ` L ${points[i].x} ${points[i].y}`;
             }
 
-            return { path, points, color, market };
-        }).filter(Boolean);
-    }, [marketData, chartWidth]);
+            const first = points[0];
+            const last = points[points.length - 1];
+            const areaPath = `${path} L ${last.x} ${CHART_HEIGHT} L ${first.x} ${CHART_HEIGHT} Z`;
 
-    // Get prices at touch position
+            return { path, areaPath, points, color, market };
+        }).filter(Boolean);
+    }, [dataForChart, chartWidth]);
+
+    // Get prices at touch position (uses dataForChart so only selected in selectionMode)
     const getPricesAtIndex = useCallback((index: number) => {
-        return marketData.map(({ market, candles, color }) => {
+        return dataForChart.map(({ market, candles, color }) => {
             const recentCandles = candles.slice(-20);
             const clampedIndex = Math.min(index, recentCandles.length - 1);
             const price = recentCandles[clampedIndex]?.close ?? 0;
             return { market, price, color };
         });
-    }, [marketData]);
+    }, [dataForChart]);
 
-    // Touch handlers
+    // Touch handlers with haptics on scrub
     const handleTouch = useCallback((event: GestureResponderEvent) => {
         const { locationX } = event.nativeEvent;
         const clampedX = Math.max(0, Math.min(locationX, drawableWidth));
-        const maxLength = Math.max(...marketData.map(d => d.candles.slice(-20).length), 1);
+        const maxLength = Math.max(...dataForChart.map(d => d.candles.slice(-20).length), 1);
         const index = Math.round((clampedX / drawableWidth) * (maxLength - 1));
+        const now = Date.now();
+        const { lastIndex, lastTime } = scrubHapticRef.current;
+        if (index !== lastIndex) {
+            if (lastIndex >= 0 && now - lastTime >= SCRUB_HAPTIC_THROTTLE_MS) {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }
+            scrubHapticRef.current = { lastIndex: index, lastTime: now };
+        }
         setTouchPosition({ x: clampedX, index });
-    }, [chartWidth, marketData]);
+    }, [chartWidth, dataForChart]);
 
     const handleTouchStart = useCallback((event: GestureResponderEvent) => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setIsInteracting(true);
         onInteractionStart?.();
         handleTouch(event);
@@ -268,6 +277,7 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
     }, [handleTouch]);
 
     const handleTouchEnd = useCallback(() => {
+        scrubHapticRef.current = { lastIndex: -1, lastTime: 0 };
         setTimeout(() => {
             setIsInteracting(false);
             setTouchPosition(null);
@@ -280,12 +290,135 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
         return `${cents}¢`;
     };
 
+    const headerRow = (
+        <View style={styles.headerRow}>
+            {title ? <Text style={styles.headerTitle}>{title}</Text> : null}
+            <View style={styles.timeFilters}>
+                {TIME_FILTER_OPTIONS.map((option) => {
+                    const isSelected = timeFilter === option.key;
+                    return (
+                        <TouchableOpacity
+                            key={option.key}
+                            style={[styles.timeFilterPill, isSelected && styles.timeFilterPillSelected]}
+                            onPress={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                setTimeFilter(option.key);
+                            }}
+                            activeOpacity={0.6}
+                        >
+                            <Text
+                                style={[
+                                    styles.timeFilterText,
+                                    { color: isSelected ? '#fff' : Theme.textDisabled },
+                                ]}
+                            >
+                                {option.label}
+                            </Text>
+                        </TouchableOpacity>
+                    );
+                })}
+            </View>
+        </View>
+    );
+
+    const tickerToColor = useMemo(() => {
+        const m = new Map<string, string>();
+        marketData.forEach((d) => m.set(d.market.ticker, d.color));
+        return m;
+    }, [marketData]);
+
+    const toggleMarket = useCallback((ticker: string) => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setSelectedTickers((prev) => {
+            const next = new Set(prev);
+            if (next.has(ticker)) next.delete(ticker);
+            else next.add(ticker);
+            return next;
+        });
+    }, []);
+
+    const selectionChips = selectionMode ? (
+        <View style={styles.selectionChips}>
+            {markets.map((m, i) => {
+                const sel = selectedTickers.has(m.ticker);
+                const color = tickerToColor.get(m.ticker) ?? MARKET_COLORS[i % MARKET_COLORS.length];
+                const lab = (m.yesSubTitle || m.title || '').length > 18
+                    ? (m.yesSubTitle || m.title || '').substring(0, 18) + '…'
+                    : (m.yesSubTitle || m.title || '');
+                return (
+                    <TouchableOpacity
+                        key={m.ticker}
+                        style={[
+                            styles.selectionChip,
+                            sel ? { backgroundColor: color + '22', borderColor: color } : { borderColor: Theme.border },
+                        ]}
+                        onPress={() => toggleMarket(m.ticker)}
+                        activeOpacity={0.7}
+                    >
+                        <View style={[styles.selectionChipDot, { backgroundColor: sel ? color : Theme.border }]} />
+                        <Text
+                            style={[styles.selectionChipText, { color: sel ? Theme.textPrimary : Theme.textDisabled }]}
+                            numberOfLines={1}
+                        >
+                            {lab || 'Market'}
+                        </Text>
+                    </TouchableOpacity>
+                );
+            })}
+        </View>
+    ) : null;
+
     if (loading) {
+        const pad = CHART_HEIGHT * 0.15;
+        const ch = CHART_HEIGHT - 2 * pad;
+        const w = chartWidth;
+        const skeletonPaths = [
+            `M 0 ${pad + ch * 0.35} L ${w * 0.25} ${pad + ch * 0.65} L ${w * 0.5} ${pad + ch * 0.2} L ${w * 0.75} ${pad + ch * 0.75} L ${w} ${pad + ch * 0.45}`,
+            `M 0 ${pad + ch * 0.5} L ${w * 0.25} ${pad + ch * 0.3} L ${w * 0.5} ${pad + ch * 0.7} L ${w * 0.75} ${pad + ch * 0.4} L ${w} ${pad + ch * 0.55}`,
+            `M 0 ${pad + ch * 0.7} L ${w * 0.25} ${pad + ch * 0.5} L ${w * 0.5} ${pad + ch * 0.85} L ${w * 0.75} ${pad + ch * 0.3} L ${w} ${pad + ch * 0.6}`,
+        ];
         return (
             <View style={styles.container}>
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color={Theme.textDisabled} />
-                    <Text style={styles.loadingText}>Loading charts...</Text>
+                {headerRow}
+                {selectionChips}
+                <Animated.View style={{ opacity: pulseAnim }}>
+                    <View style={styles.chartContainer}>
+                        <Svg width={chartWidth} height={CHART_HEIGHT}>
+                            {skeletonPaths.map((d, i) => (
+                                <Path
+                                    key={i}
+                                    d={d}
+                                    stroke={Theme.border}
+                                    strokeWidth={2.5}
+                                    fill="none"
+                                    strokeLinecap="butt"
+                                    strokeLinejoin="miter"
+                                />
+                            ))}
+                        </Svg>
+                    </View>
+                    <View style={styles.legendRow}>
+                        {[1, 2, 3].map((i) => (
+                            <View key={i} style={styles.legendItem}>
+                                <View style={[styles.legendDot, styles.skeletonDot]} />
+                                <View style={[styles.skeletonBar, { width: 56 }]} />
+                                <View style={[styles.skeletonBar, { width: 32 }]} />
+                            </View>
+                        ))}
+                    </View>
+                </Animated.View>
+            </View>
+        );
+    }
+
+    if (selectionMode && selectedTickers.size === 0) {
+        return (
+            <View style={styles.container}>
+                {headerRow}
+                {selectionChips}
+                <View style={styles.emptyContainer}>
+                    <Ionicons name="checkbox-outline" size={32} color={Theme.textDisabled} />
+                    <Text style={styles.emptyText}>Select one or more markets to compare</Text>
                 </View>
             </View>
         );
@@ -294,6 +427,8 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
     if (chartPaths.length === 0) {
         return (
             <View style={styles.container}>
+                {headerRow}
+                {selectionChips}
                 <View style={styles.emptyContainer}>
                     <Ionicons name="analytics-outline" size={32} color={Theme.textDisabled} />
                     <Text style={styles.emptyText}>No chart data available</Text>
@@ -304,7 +439,7 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
 
     const currentPrices = isInteracting && touchPosition
         ? getPricesAtIndex(touchPosition.index)
-        : marketData.map(({ market, candles, color }) => ({
+        : dataForChart.map(({ market, candles, color }) => ({
             market,
             price: candles.slice(-20).pop()?.close ?? 0,
             color,
@@ -312,24 +447,8 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
 
     return (
         <View style={styles.container}>
-            {/* Legend with prices */}
-            <View style={styles.legend}>
-                {currentPrices.map(({ market, price, color }) => {
-                    const displayName = market.yesSubTitle || market.title;
-                    return (
-                        <View key={market.ticker} style={styles.legendItem}>
-                            <View style={[styles.legendDot, { backgroundColor: color }]} />
-                            <Text style={styles.legendTitle} numberOfLines={1}>
-                                {displayName.length > 25 ? displayName.substring(0, 25) + '...' : displayName}
-                            </Text>
-                            <Text style={[styles.legendPrice, { color }]}>
-                                {formatCents(price)}
-                            </Text>
-                        </View>
-                    );
-                })}
-            </View>
-
+            {headerRow}
+            {selectionChips}
             {/* Chart */}
             <View
                 style={styles.chartContainer}
@@ -347,65 +466,72 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
                     <Defs>
                         {chartPaths.map((item, idx) => (
                             <LinearGradient key={`grad-${idx}`} id={`gradient-${idx}`} x1="0" y1="0" x2="0" y2="1">
-                                <Stop offset="0%" stopColor={item!.color} stopOpacity={0.2} />
+                                <Stop offset="0%" stopColor={item!.color} stopOpacity={0.12} />
                                 <Stop offset="100%" stopColor={item!.color} stopOpacity={0} />
                             </LinearGradient>
                         ))}
                     </Defs>
 
-                    {/* Draw paths */}
+                    {/* Area fill (like LightChart / trade drawer) */}
+                    {chartPaths.map((item, idx) => (
+                        <Path
+                            key={`area-${idx}`}
+                            d={item!.areaPath}
+                            fill={`url(#gradient-${idx})`}
+                        />
+                    ))}
+
+                    {/* Line paths - strokeWidth 3 like trade drawer */}
                     {chartPaths.map((item, idx) => (
                         <Path
                             key={`line-${idx}`}
                             d={item!.path}
                             stroke={item!.color}
-                            strokeWidth={2.5}
+                            strokeWidth={3}
                             fill="none"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
+                            strokeLinecap="butt"
+                            strokeLinejoin="miter"
                         />
                     ))}
 
-                    {/* Crosshair when interacting */}
+                    {/* Right-side dim overlay while scrubbing: gray/less opaque */}
+                    {isInteracting && touchPosition && touchPosition.x < chartWidth && (
+                        <Rect
+                            x={touchPosition.x}
+                            y={0}
+                            width={chartWidth - touchPosition.x}
+                            height={CHART_HEIGHT}
+                            fill="rgba(255,255,255,0.72)"
+                        />
+                    )}
+
+                    {/* Crosshair when interacting (LightChart style) */}
                     {isInteracting && touchPosition && (
                         <Line
                             x1={touchPosition.x}
                             y1={0}
                             x2={touchPosition.x}
                             y2={CHART_HEIGHT}
-                            stroke={Theme.textSecondary}
+                            stroke="#9CA3AF"
                             strokeWidth={1}
                             strokeDasharray="4,4"
-                            opacity={0.5}
+                            strokeOpacity={0.7}
                         />
                     )}
 
-                    {/* Live dots at end of each line - Animated */}
+                    {/* Static dot at end (like LightChart - no pulse/glow) */}
                     {!isInteracting && chartPaths.map((item, idx) => {
                         const lastPoint = item!.points[item!.points.length - 1];
                         return (
-                            <React.Fragment key={`dot-${idx}`}>
-                                {/* Outer glow - animated */}
-                                <AnimatedCircle
-                                    cx={lastPoint.x}
-                                    cy={lastPoint.y}
-                                    r={pulseAnim.interpolate({
-                                        inputRange: [1, 1.4],
-                                        outputRange: [8, 12],
-                                    })}
-                                    fill={item!.color}
-                                    opacity={glowAnim}
-                                />
-                                {/* Inner solid dot */}
-                                <Circle
-                                    cx={lastPoint.x}
-                                    cy={lastPoint.y}
-                                    r={5}
-                                    fill={item!.color}
-                                    stroke="#FFF"
-                                    strokeWidth={2}
-                                />
-                            </React.Fragment>
+                            <Circle
+                                key={`dot-${idx}`}
+                                cx={lastPoint.x}
+                                cy={lastPoint.y}
+                                r={4}
+                                fill={item!.color}
+                                stroke="#FFFFFF"
+                                strokeWidth={1.5}
+                            />
                         );
                     })}
 
@@ -419,7 +545,7 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
                                 key={`touch-${idx}`}
                                 cx={point.x}
                                 cy={point.y}
-                                r={6}
+                                r={5}
                                 fill={item!.color}
                                 stroke="#FFF"
                                 strokeWidth={2}
@@ -427,6 +553,53 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
                         );
                     })}
                 </Svg>
+                {/* Odds tooltip following finger while scrubbing — all markets in the graph */}
+                {isInteracting && touchPosition && currentPrices.length > 0 && (
+                    <View
+                        pointerEvents="none"
+                        style={[
+                            styles.scrubOddsPill,
+                            {
+                                left: Math.max(4, Math.min(touchPosition.x - 32, chartWidth - 72)),
+                            },
+                        ]}
+                    >
+                        {currentPrices.map(({ market, price, color }) => (
+                            <View key={market.ticker} style={styles.scrubOddsRow}>
+                                <View style={[styles.scrubOddsDot, { backgroundColor: color }]} />
+                                <Text style={styles.scrubOddsText}>{(price * 100).toFixed(1)}%</Text>
+                            </View>
+                        ))}
+                    </View>
+                )}
+            </View>
+
+            {/* Market names below: 2 on left, 2 on right */}
+            <View style={styles.legendTwoCols}>
+                <View style={styles.legendColumnLeft}>
+                    {currentPrices.slice(0, 2).map(({ market, color }) => {
+                        const displayName = market.yesSubTitle || market.title;
+                        const short = displayName.length > 14 ? displayName.substring(0, 14) + '…' : displayName;
+                        return (
+                            <View key={market.ticker} style={styles.legendItem}>
+                                <View style={[styles.legendDot, { backgroundColor: color }]} />
+                                <Text style={styles.legendTitle} numberOfLines={1}>{short}</Text>
+                            </View>
+                        );
+                    })}
+                </View>
+                <View style={styles.legendColumnRight}>
+                    {currentPrices.slice(2, 4).map(({ market, color }) => {
+                        const displayName = market.yesSubTitle || market.title;
+                        const short = displayName.length > 14 ? displayName.substring(0, 14) + '…' : displayName;
+                        return (
+                            <View key={market.ticker} style={styles.legendItem}>
+                                <View style={[styles.legendDot, { backgroundColor: color }]} />
+                                <Text style={styles.legendTitle} numberOfLines={1}>{short}</Text>
+                            </View>
+                        );
+                    })}
+                </View>
             </View>
         </View>
     );
@@ -435,21 +608,6 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
 const styles = StyleSheet.create({
     container: {
         marginHorizontal: CHART_PADDING,
-        backgroundColor: Theme.bgCard,
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: Theme.border,
-    },
-    loadingContainer: {
-        height: CHART_HEIGHT,
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: 8,
-    },
-    loadingText: {
-        fontSize: 12,
-        color: Theme.textDisabled,
     },
     emptyContainer: {
         height: CHART_HEIGHT,
@@ -461,42 +619,149 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: Theme.textDisabled,
     },
-    legend: {
-        marginBottom: 12,
-        gap: 8,
+    legendRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'flex-start',
+        alignItems: 'center',
+        gap: 12,
+        marginTop: 14,
+    },
+    legendTwoCols: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 14,
+        gap: 12,
+        paddingLeft: 24,
+        paddingRight: 40,
+    },
+    legendColumnLeft: {
+        flexDirection: 'column',
+        gap: 6,
+        alignItems: 'flex-start',
+        flex: 1,
+    },
+    legendColumnRight: {
+        flexDirection: 'column',
+        gap: 6,
+        alignItems: 'flex-end',
+        flex: 1,
     },
     legendItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 6,
     },
     legendDot: {
-        width: 10,
-        height: 10,
+        width: 9,
+        height: 9,
         borderRadius: 5,
     },
+    skeletonDot: {
+        backgroundColor: Theme.border,
+    },
+    skeletonBar: {
+        height: 10,
+        borderRadius: 4,
+        backgroundColor: Theme.border,
+    },
     legendTitle: {
-        flex: 1,
-        fontSize: 12,
-        color: Theme.textSecondary,
+        fontSize: 15,
+        fontWeight: '600',
+        color: Theme.textPrimary,
+        maxWidth: 140,
     },
     legendPrice: {
-        fontSize: 14,
+        fontSize: 15,
         fontWeight: '700',
         fontVariant: ['tabular-nums'],
     },
-    chartContainer: {
-        borderRadius: 12,
-        overflow: 'hidden',
-        backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    headerRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
     },
-    indicator: {
+    selectionChips: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 12,
+    },
+    selectionChip: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
         gap: 6,
-        marginTop: 12,
-    }
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 10,
+        borderWidth: 1.5,
+    },
+    selectionChipDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+    },
+    selectionChipText: {
+        fontSize: 13,
+        fontWeight: '600',
+        maxWidth: 140,
+    },
+    headerTitle: {
+        fontSize: 17,
+        fontWeight: '700',
+        color: Theme.textPrimary,
+    },
+    chartContainer: {
+        borderRadius: 16,
+        overflow: 'hidden',
+        backgroundColor: '#F5F5F5',
+    },
+    scrubOddsPill: {
+        
+        position: 'absolute',
+        top: 10,
+        backgroundColor: 'rgba(0,0,0,0.42)',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        minWidth: 60,
+        alignItems: 'flex-start',
+        gap: 4,
+    },
+    scrubOddsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    scrubOddsDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+    },
+    scrubOddsText: {
+        color: '#fff',
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    timeFilters: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    timeFilterPill: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    timeFilterPillSelected: {
+        backgroundColor: '#000',
+    },
+    timeFilterText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: Theme.textDisabled,
+    },
 });
 
 export default MultiMarketChart;

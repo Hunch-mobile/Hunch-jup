@@ -106,79 +106,86 @@ export default function WithdrawSheet({
             style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 20), transform: [{ translateY: slideAnim }] }]}
           >
             <Pressable onPress={(e) => e.stopPropagation()}>
-              <View className="items-center py-2" {...panResponder.panHandlers}>
-                <View className="w-12 h-1.5 rounded-full bg-border" />
+              <View className="items-center py-3" {...panResponder.panHandlers}>
+                <View className="w-12 h-1.5 rounded-full bg-[#E5E7EB]" />
               </View>
               {/* Close Button */}
               <TouchableOpacity
-                className="absolute right-4 top-3 w-9 h-9 rounded-xl bg-app-card border border-border justify-center items-center z-10"
+                className="absolute right-5 top-4 w-10 h-10 rounded-full bg-[#F5F5F5] justify-center items-center z-10"
                 onPress={onClose}
                 activeOpacity={0.7}
               >
-                <Ionicons name="close" size={20} color={Theme.textSecondary} />
+                <Ionicons name="close" size={20} color={Theme.textPrimary} />
               </TouchableOpacity>
 
               {/* Header */}
-              <View className="pb-4">
-                <Text className="text-xl font-bold text-txt-primary">Withdraw</Text>
-                <Text className="mt-1 text-sm text-txt-secondary">Send funds to a public address</Text>
+              <View className="pb-6 pt-2">
+                <Text className="text-2xl font-bold text-txt-primary mb-1.5">Withdraw</Text>
+                <Text className="text-[15px] text-txt-secondary leading-5">Send funds to a public address</Text>
               </View>
 
               {/* Form */}
-              <View className="gap-4 pb-2">
+              <View className="gap-5 pb-2">
                 {/* To Address */}
-                <View className="gap-2">
-                  <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide">To address</Text>
-                  <View className={`bg-app-card rounded-[14px] border px-3.5 h-[52px] justify-center ${errors.toAddress ? 'border-status-error' : 'border-border'}`}>
+                <View className="gap-2.5">
+                  <Text className="text-[11px] font-semibold text-txt-secondary uppercase tracking-wider">To Address</Text>
+                  <View className={`bg-white rounded-2xl border-2 px-4 h-[56px] justify-center ${errors.toAddress ? 'border-red-500' : 'border-[#E5E7EB]'}`}>
                     <TextInput
                       value={toAddress}
                       onChangeText={setToAddress}
                       onBlur={() => setTouched(true)}
                       placeholder="Public address"
-                      placeholderTextColor={Theme.textDisabled}
+                      placeholderTextColor="#9CA3AF"
                       autoCapitalize="none"
                       autoCorrect={false}
-                      className="text-txt-primary text-base"
+                      className="text-txt-primary text-[16px]"
                     />
                   </View>
-                  {errors.toAddress && <Text className="text-status-error text-xs mt-0.5">{errors.toAddress}</Text>}
+                  {errors.toAddress && <Text className="text-red-500 text-xs mt-1 font-medium">{errors.toAddress}</Text>}
                 </View>
 
                 {/* Amount */}
-                <View className="gap-2">
-                  <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide">Amount</Text>
-                  <View className={`bg-app-card rounded-[14px] border px-3.5 h-[52px] justify-center ${errors.amount ? 'border-status-error' : 'border-border'}`}>
+                <View className="gap-2.5">
+                  <Text className="text-[11px] font-semibold text-txt-secondary uppercase tracking-wider">Amount</Text>
+                  <View className={`bg-white rounded-2xl border-2 px-4 h-[56px] justify-center ${errors.amount ? 'border-red-500' : 'border-[#E5E7EB]'}`}>
                     <Pressable onPress={() => setAmountKeypadOpen(true)}>
-                      <Text className="text-txt-primary text-base">
+                      <Text className="text-txt-primary text-[16px] font-medium">
                         {amount || "0.00"}
                       </Text>
                     </Pressable>
                   </View>
-                  {errors.amount && <Text className="text-status-error text-xs mt-0.5">{errors.amount}</Text>}
+                  {errors.amount && <Text className="text-red-500 text-xs mt-1 font-medium">{errors.amount}</Text>}
                 </View>
 
                 {/* Submit */}
                 <TouchableOpacity
-                  activeOpacity={0.85}
+                  activeOpacity={0.9}
                   disabled={!canSubmit}
                   onPress={handleSubmit}
-                  className={`mt-2 ${!canSubmit ? 'opacity-60' : ''}`}
+                  className="mt-1"
                 >
-                  <LinearGradient
-                    colors={canSubmit ? [Theme.accentSubtle, '#00B8D4'] : [Theme.bgElevated, Theme.bgElevated]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.ctaGrad}
-                  >
-                    {submitting ? (
-                      <ActivityIndicator size="small" color={Theme.bgMain} />
-                    ) : (
-                      <>
-                        <Ionicons name="arrow-up" size={18} color={Theme.bgMain} />
-                        <Text className="text-app-bg text-base font-extrabold">Withdraw</Text>
-                      </>
-                    )}
-                  </LinearGradient>
+                  {canSubmit ? (
+                    <LinearGradient
+                      colors={['#000', '#1F2937']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.ctaGrad}
+                    >
+                      {submitting ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <>
+                          <Ionicons name="arrow-up" size={20} color="#fff" />
+                          <Text className="text-white text-[16px] font-bold">Withdraw</Text>
+                        </>
+                      )}
+                    </LinearGradient>
+                  ) : (
+                    <View style={[styles.ctaGrad, { backgroundColor: '#F5F5F5' }]}>
+                      <Ionicons name="arrow-up" size={20} color="#9CA3AF" />
+                      <Text className="text-[#9CA3AF] text-[16px] font-semibold">Withdraw</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               </View>
             </Pressable>
@@ -198,23 +205,24 @@ export default function WithdrawSheet({
 // Minimal styles for sheet and gradient
 const styles = StyleSheet.create({
   sheet: {
-    backgroundColor: Theme.bgMain,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 12,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 24,
+    paddingTop: 8,
     overflow: "hidden",
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: Theme.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
   },
   ctaGrad: {
-    height: 54,
+    height: 56,
     borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
     flexDirection: "row",
-    gap: 10,
+    gap: 8,
   },
 });

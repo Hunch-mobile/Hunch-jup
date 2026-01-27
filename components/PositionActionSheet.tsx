@@ -100,7 +100,10 @@ export default function PositionActionSheet({
                             </Text>
                             <View className="flex-row items-center gap-2 mt-1">
                                 <View className={`px-2 py-0.5 rounded-md ${isYes ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                                    <Text className={`text-xs font-bold ${isYes ? 'text-green-500' : 'text-red-500'}`}>
+                                    <Text
+                                        className={`text-xs font-bold ${isYes ? 'text-green-500' : 'text-red-500'}`}
+                                        style={{ fontFamily: 'BBHSansHegarty' }}
+                                    >
                                         {isYes ? 'YES' : 'NO'}
                                     </Text>
                                 </View>

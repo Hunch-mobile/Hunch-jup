@@ -1,12 +1,13 @@
 import { Theme } from '@/constants/theme';
-import { marketsApi } from '@/lib/api';
+import { api, marketsApi } from '@/lib/api';
 import { formatVolume, getMarketDisplayTitle, getScoredEventsForRail } from '@/lib/marketUtils';
 import { CandleData, Event, Market } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Dimensions, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useUser } from '@/contexts/UserContext';
 import AnimatedPrice from './AnimatedPrice';
 import { MiniChart } from './MiniChart';
 
@@ -99,7 +100,13 @@ const RailCard = ({
                 {/* Header Row */}
                 <View className="flex-row items-start mb-4 gap-3">
                     {event.imageUrl ? (
-                        <Image source={{ uri: event.imageUrl }} className="w-14 h-14 rounded-xl" contentFit="cover" transition={200} />
+                        <Image
+                            source={{ uri: event.imageUrl }}
+                            style={{ width: 56, height: 56 }}
+                            className="rounded-xl"
+                            contentFit="cover"
+                            transition={200}
+                        />
                     ) : (
                         <View className="w-14 h-14 rounded-xl bg-app-elevated justify-center items-center">
                             <Ionicons name="stats-chart" size={20} color={Theme.textDisabled} />
@@ -172,14 +179,33 @@ const RailCard = ({
 };
 
 export const MarketRail = () => {
+    const { backendUser } = useUser();
     const [railItems, setRailItems] = useState<RailItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [candlesMap, setCandlesMap] = useState<Record<string, CandleData[]>>({});
     const [scrollEnabled, setScrollEnabled] = useState(true);
+    const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
+
+    const loadPortfolioValue = useCallback(async () => {
+        if (!backendUser) return;
+        try {
+            const { positions } = await api.getPositions(backendUser.id);
+            // Calculate total portfolio value: sum of all position current values
+            const totalPositionValue = positions.active.reduce((sum, pos) => {
+                return sum + (pos.currentValue || 0);
+            }, 0);
+            setPortfolioValue(totalPositionValue);
+        } catch (error) {
+            console.error('Failed to load portfolio value:', error);
+        }
+    }, [backendUser]);
 
     useEffect(() => {
         loadRailData();
-    }, []);
+        if (backendUser) {
+            loadPortfolioValue();
+        }
+    }, [backendUser, loadPortfolioValue]);
 
     const loadRailData = async () => {
         try {
@@ -249,15 +275,21 @@ export const MarketRail = () => {
 
     if (railItems.length === 0) return null;
 
+    const formatPortfolioValue = (value: number | null) => {
+        if (value === null) return '—';
+        if (value >= 1000000) {
+            return `$${(value / 1000000).toFixed(2)}M`;
+        }
+        if (value >= 1000) {
+            return `$${(value / 1000).toFixed(1)}K`;
+        }
+        return `$${value.toFixed(2)}`;
+    };
+
     return (
         <View className="py-5 bg-app-bg">
-            {/* Header */}
-            <View className="flex-row items-center px-5 mb-4 gap-2">
-                <Text className="text-3xl font-extrabold text-txt-primary tracking-tight">Trending Markets</Text>
-                <Ionicons name="flame" size={18} color={Theme.chartLine} />
-            </View>
 
-            <FlatList
+            {/* <FlatList
                 horizontal
                 data={railItems}
                 keyExtractor={(item) => item.event.ticker}
@@ -275,7 +307,7 @@ export const MarketRail = () => {
                 decelerationRate="fast"
                 snapToAlignment="start"
                 scrollEnabled={scrollEnabled}
-            />
+            /> */}
         </View>
     );
 };

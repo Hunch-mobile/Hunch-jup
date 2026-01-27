@@ -111,6 +111,35 @@ export const getMarketDisplayTitle = (market: Market): string => {
     return market.yesSubTitle || market.title || 'Untitled Market';
 };
 
+/** Patterns that indicate a numeric-outcome market (e.g. "Bitcoin hitting $X", "How many launches") */
+const NUMERIC_OUTCOME_PATTERNS = [
+    /\bhitting\b/i,
+    /\bhit\s+\$?[\d,]/i,
+    /\bhow\s+many\b/i,
+    /\bnumber\s+of\b/i,
+    /\bat\s+least\b/i,
+    /\bat\s+most\b/i,
+    /\babove\s+\$?[\d,]/i,
+    /\bbelow\s+\$?[\d,]/i,
+    /\bover\s+\$?[\d,]/i,
+    /\bunder\s+\$?[\d,]/i,
+    /\breach(es)?\s+\$?[\d,]/i,
+    /\bexceed(s)?\s+\$?[\d,]/i,
+    /\$[\d,]+(k|m|bn)?\s+(before|by)/i,
+    /[\d,]+(k|m|bn)?\s+(before|by)/i,
+    /\b(before|by)\s+[\d\/]/i,
+    /\b(before|by)\s+[A-Z][a-z]{2,}/i,
+];
+
+/**
+ * Heuristic: true if the market is about numeric outcomes (prices, counts, targets)
+ * e.g. "Bitcoin hitting $100k before 2025", "How many SpaceX launches before..."
+ */
+export const isNumericOutcomeMarket = (market: Market): boolean => {
+    const t = (market.yesSubTitle || market.title || '').toLowerCase();
+    return NUMERIC_OUTCOME_PATTERNS.some((p) => p.test(t));
+};
+
 /**
  * Calculate event score for market rail ranking
  * Combines volume metrics and time-to-close urgency

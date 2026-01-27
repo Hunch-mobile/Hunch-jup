@@ -587,6 +587,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                                 width={SCREEN_WIDTH - 40}
                                                 height={SHEET_CHART_HEIGHT}
                                                 isYes={selectedSide === 'yes'}
+                                                noColor="#ef4444"
                                                 scrubIndex={scrubIndex}
                                                 showFill={true}
                                                 showGlow={false}

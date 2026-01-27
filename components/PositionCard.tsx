@@ -1,7 +1,6 @@
 import { Theme } from '@/constants/theme';
 import { getEventDetails } from "@/lib/api";
 import { AggregatedPosition } from "@/lib/types";
-import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useState } from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -58,21 +57,16 @@ export default function PositionCard({
             onPress={onPress}
             activeOpacity={0.7}
         >
-            <View className="rounded-2xl p-4 overflow-hidden relative">
-                {!isPrevious && pnlValue !== null && (
-                    <LinearGradient
-                        colors={[
-                            pnlValue >= 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)',
-                            'transparent'
-                        ]}
-                        start={{ x: 0.5, y: 1 }}
-                        end={{ x: 0.5, y: 0 }}
-                        style={StyleSheet.absoluteFillObject}
-                        pointerEvents="none"
-                    />
-                )}
+            <View className="rounded-2xl p-4 overflow-hidden relative" style={{ backgroundColor: '#F5F5F5' }}>
                 <Text className="text-xl font-bold mb-2" numberOfLines={1}>
-                    {formatCurrency(position.totalCostBasis)} <Text className={isYes ? "text-lime-500 text-2xl font-extrabold" : "text-red-500 text-2xl font-extrabold"}>{isYes ? 'YES' : 'NO'}</Text> on {subtitle || position.market?.subtitle}
+                    {formatCurrency(position.totalCostBasis)}{" "}
+                    <Text
+                        className={isYes ? "text-lime-500 text-2xl font-extrabold" : "text-red-500 text-2xl font-extrabold"}
+                        style={{ fontFamily: 'BBHSansHegarty' }}
+                    >
+                        {isYes ? 'YES' : 'NO'}
+                    </Text>{" "}
+                    on {subtitle || position.market?.subtitle}
                 </Text>
                 <View className="flex-row items-center gap-3 mb-3">
                     <View className="w-12 h-12 rounded-xl overflow-hidden border border-border bg-app-elevated">

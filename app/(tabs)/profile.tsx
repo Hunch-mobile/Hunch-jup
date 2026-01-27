@@ -22,7 +22,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const defaultProfileImage = require("@/assets/default.jpeg");
 
-type TradeTab = 'active' | 'previous';
+type TradeTab = 'positions' | 'copying';
+type PositionFilter = 'active' | 'previous';
 
 const formatCurrency = (value: number | null | undefined, fractionDigits = 2) => {
     if (value === null || value === undefined || !Number.isFinite(value)) return '—';
@@ -45,7 +46,8 @@ export default function ProfileScreen() {
     const [profileData, setProfileData] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [trades, setTrades] = useState<Trade[]>([]);
-    const [activeTab, setActiveTab] = useState<TradeTab>('active');
+    const [activeTab, setActiveTab] = useState<TradeTab>('positions');
+    const [positionFilter, setPositionFilter] = useState<PositionFilter>('active');
     const [settingsVisible, setSettingsVisible] = useState(false);
     const [solBalance, setSolBalance] = useState<number | null>(null);
     const [solUsdPrice, setSolUsdPrice] = useState<number | null>(null);
@@ -102,6 +104,7 @@ export default function ProfileScreen() {
 
     const slideAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(0.6)).current;
+    const indicatorAnim = useRef(new Animated.Value(0)).current;
 
     // Solana connection for trading
     const connection = useMemo(() => {
@@ -110,16 +113,28 @@ export default function ProfileScreen() {
     }, []);
     const solanaWallet = wallets?.[0];
 
+    const paneWidth = SCREEN_WIDTH - 40;
+    const tabWidth = (SCREEN_WIDTH - 40) / 2;
     const animateToTab = useCallback((tab: TradeTab) => {
-        const toValue = tab === 'active' ? 0 : -SCREEN_WIDTH + 40;
-        Animated.spring(slideAnim, {
-            toValue,
-            useNativeDriver: true,
-            tension: 50,
-            friction: 7,
-        }).start();
+        const toValue = tab === 'positions' ? 0 : -paneWidth;
+        const indicatorValue = tab === 'positions' ? 0 : 1;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        Animated.parallel([
+            Animated.spring(slideAnim, {
+                toValue,
+                useNativeDriver: true,
+                tension: 50,
+                friction: 7,
+            }),
+            Animated.spring(indicatorAnim, {
+                toValue: indicatorValue * tabWidth,
+                useNativeDriver: true,
+                tension: 50,
+                friction: 7,
+            }),
+        ]).start();
         setActiveTab(tab);
-    }, [slideAnim]);
+    }, [slideAnim, indicatorAnim, paneWidth, tabWidth]);
 
     useEffect(() => {
         loadProfile();
@@ -506,63 +521,113 @@ export default function ProfileScreen() {
 
                     {/* Trades Section */}
                     <View>
-                        {/* Tab Header */}
-                        <View className="flex-row mb-4 border-b border-border">
-                            <TouchableOpacity
-                                className="flex-1 items-center py-3 relative"
-                                onPress={() => animateToTab('active')}
-                            >
-                                <View className="flex-row items-center gap-2">
-                                    <Animated.View
-                                        style={{
-                                            width: 8,
-                                            height: 8,
-                                            borderRadius: 4,
-                                            backgroundColor: '#22c55e',
-                                            opacity: pulseAnim,
-                                            transform: [{ scale: pulseAnim }],
-                                        }}
-                                    />
-                                    <Text className={`text-lg font-bold ${activeTab === 'active' ? ' text-txt-primary' : 'font-medium text-txt-secondary'}`}>
-                                        ACTIVE ({activePositions.length})
+                        {/* Clean Tab Header with animated underline */}
+                        <View className="mb-5">
+                            <View className="flex-row relative border-b border-border/30 pb-1">
+                                {/* Animated sliding underline */}
+                                <Animated.View
+                                    style={{
+                                        position: 'absolute',
+                                        bottom: -1,
+                                        left: 0,
+                                        height: 2,
+                                        width: tabWidth,
+                                        backgroundColor: '#000',
+                                        transform: [{ translateX: indicatorAnim }],
+                                    }}
+                                />
+                                <TouchableOpacity
+                                    className="flex-1 items-center py-3 relative"
+                                    onPress={() => animateToTab('positions')}
+                                    activeOpacity={0.6}
+                                >
+                                    <View className="flex-row items-center gap-2">
+                                        {activeTab === 'positions' && (
+                                            <Animated.View
+                                                style={{
+                                                    width: 8,
+                                                    height: 8,
+                                                    borderRadius: 4,
+                                                    backgroundColor: '#22c55e',
+                                                    opacity: pulseAnim,
+                                                    transform: [{ scale: pulseAnim }],
+                                                }}
+                                            />
+                                        )}
+                                        <Text
+                                            className="text-base font-bold"
+                                            style={{ color: activeTab === 'positions' ? Theme.textPrimary : Theme.textSecondary }}
+                                        >
+                                            POSITIONS{activeTab === 'positions' ? ` (${positionFilter === 'active' ? activePositions.length : previousPositions.length})` : ''}
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    className="flex-1 items-center py-3 relative"
+                                    onPress={() => animateToTab('copying')}
+                                    activeOpacity={0.6}
+                                >
+                                    <Text
+                                        className="text-base font-bold"
+                                        style={{ color: activeTab === 'copying' ? Theme.textPrimary : Theme.textSecondary }}
+                                    >
+                                        COPYING{activeTab === 'copying' ? ' (0)' : ''}
                                     </Text>
-                                </View>
-                                {activeTab === 'active' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-txt-primary" />}
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                className="flex-1 items-center py-3 relative"
-                                onPress={() => animateToTab('previous')}
-                            >
-                                <Text className={`text-lg font-bold ${activeTab === 'previous' ? ' text-red-500' : 'font-medium text-txt-secondary'}`}>
-                                    PREVIOUS ({previousPositions.length})
-                                </Text>
-                                {activeTab === 'previous' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-500" />}
-                            </TouchableOpacity>
+                                </TouchableOpacity>
+                            </View>
                         </View>
 
                         {/* Animated Sliding Lists */}
                         <View style={styles.listContainer}>
                             <Animated.View style={[styles.slidingContainer, { transform: [{ translateX: slideAnim }] }]}>
-                                {/* Active Trades */}
+                                {/* Positions Tab with Filter */}
                                 <View style={styles.listPane}>
+                                    {activeTab === 'positions' && (
+                                        <View className="flex-row items-center justify-end mb-4 px-1">
+                                            <TouchableOpacity
+                                                className="px-4 py-2 relative"
+                                                onPress={() => {
+                                                    setPositionFilter(positionFilter === 'active' ? 'previous' : 'active');
+                                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                                }}
+                                                activeOpacity={0.7}
+                                            >
+                                                <Text
+                                                    className="text-sm font-semibold"
+                                                    style={{ color: Theme.textPrimary }}
+                                                >
+                                                    {positionFilter === 'active' ? 'Active' : 'Previous'}
+                                                </Text>
+                                                <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-black" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
                                     <View className="pb-10">
                                         {isLoadingPositions ? (
                                             <View className="p-10 items-center gap-3">
                                                 <ActivityIndicator size="small" color={Theme.textPrimary} />
                                                 <Text className="text-sm text-txt-disabled">Loading positions...</Text>
                                             </View>
-                                        ) : activePositions.length === 0 ? (
+                                        ) : (positionFilter === 'active' ? activePositions : previousPositions).length === 0 ? (
                                             <View className="p-10 items-center gap-3">
-                                                <Ionicons name="bar-chart-outline" size={32} color={Theme.textDisabled} />
-                                                <Text className="text-sm text-txt-disabled">No positions</Text>
+                                                <Ionicons 
+                                                    name={positionFilter === 'active' ? 'bar-chart-outline' : 'time-outline'} 
+                                                    size={32} 
+                                                    color={Theme.textDisabled} 
+                                                />
+                                                <Text className="text-sm text-txt-disabled">No {positionFilter} positions</Text>
                                             </View>
                                         ) : (
                                             <View className="">
-                                                {activePositions.map((position, index) => (
+                                                {(positionFilter === 'active' ? activePositions : previousPositions).map((position, index) => (
                                                     <PositionCard
-                                                        key={`active-${position.marketTicker}-${position.side}-${index}`}
+                                                        key={`${positionFilter}-${position.marketTicker}-${position.side}-${index}`}
                                                         position={position}
-                                                        onPress={() => handleOpenActionSheet(position)}
+                                                        isPrevious={positionFilter === 'previous'}
+                                                        onPress={() => positionFilter === 'active' 
+                                                            ? handleOpenActionSheet(position)
+                                                            : router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })
+                                                        }
                                                     />
                                                 ))}
                                             </View>
@@ -570,31 +635,13 @@ export default function ProfileScreen() {
                                     </View>
                                 </View>
 
-                                {/* Previous Trades */}
+                                {/* Copying */}
                                 <View style={styles.listPane}>
                                     <View className="pb-10">
-                                        {isLoadingPositions ? (
-                                            <View className="p-10 items-center gap-3">
-                                                <ActivityIndicator size="small" color={Theme.textPrimary} />
-                                                <Text className="text-sm text-txt-disabled">Loading positions...</Text>
-                                            </View>
-                                        ) : previousPositions.length === 0 ? (
-                                            <View className="p-10 items-center gap-3">
-                                                <Ionicons name="time-outline" size={32} color={Theme.textDisabled} />
-                                                <Text className="text-sm text-txt-disabled">No positions</Text>
-                                            </View>
-                                        ) : (
-                                            <View className="">
-                                                {previousPositions.map((position, index) => (
-                                                    <PositionCard
-                                                        key={`previous-${position.marketTicker}-${position.side}-${index}`}
-                                                        position={position}
-                                                        isPrevious
-                                                        onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })}
-                                                    />
-                                                ))}
-                                            </View>
-                                        )}
+                                        <View className="p-10 items-center gap-3">
+                                            <Ionicons name="copy-outline" size={32} color={Theme.textDisabled} />
+                                            <Text className="text-sm text-txt-disabled">Copy trades will appear here</Text>
+                                        </View>
                                     </View>
                                 </View>
                             </Animated.View>
