@@ -11,7 +11,7 @@ import { useFundSolanaWallet } from "@privy-io/expo/ui";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Animated, FlatList, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // Filter active events (events with at least one active market)
@@ -195,6 +195,8 @@ export default function HomeScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
   const [portfolioPnl, setPortfolioPnl] = useState<number | null>(null);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const headerAnim = useRef(new Animated.Value(0)).current;
 
   const isLoadingRef = useRef(false);
 
@@ -445,6 +447,17 @@ export default function HomeScreen() {
     loadEventsForCategory(selectedCategory, true);
   }, [selectedCategory]);
 
+  // Animated header transitions
+  const valueScale = headerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.9],
+  });
+
+  const extrasOpacity = headerAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+
   // Create mixed feed items (events + markets + news carousel)
   const feedItems: FeedItem[] = [];
   const NEWS_INTERVAL = 4; // Insert news after every 4 items
@@ -499,53 +512,60 @@ export default function HomeScreen() {
   return (
     <View className="flex-1 bg-app-bg">
       <SafeAreaView className="flex-1" edges={['top']}>
-        {/* Header with Portfolio Value and Search Button */}
-        <View className="px-5 pt-4 pb-3 flex-row justify-between items-center">
-          <View className="flex-1">
+        {/* Header with Portfolio Value / PnL / Add Cash (collapses on scroll) */}
+        <Animated.View className="px-5 pt-2 pb-2 flex-row items-center justify-between">
+          <View className={headerCollapsed ? 'flex-1 items-center' : 'flex-1'}>
             {portfolioValue !== null ? (
               <>
-                <Text className="text-3xl font-extrabold text-txt-primary tracking-tight">
+                <Animated.Text
+                  className="text-2xl font-extrabold text-txt-primary tracking-tight"
+                  style={{ transform: [{ scale: valueScale }] }}
+                >
                   {portfolioValue >= 1000000
                     ? `$${(portfolioValue / 1000000).toFixed(2)}M`
                     : portfolioValue >= 1000
                     ? `$${(portfolioValue / 1000).toFixed(1)}K`
                     : `$${portfolioValue.toFixed(2)}`}
-                </Text>
+                </Animated.Text>
                 {portfolioPnl !== null && (
-                  <Text
-                    className="text-[16px]  font-semibold mt-1"
-                    style={{ color: portfolioPnl >= 0 ? Theme.chartNeutral : Theme.error }}
+                  <Animated.Text
+                    className="text-[16px] font-semibold mt-1"
+                    style={{
+                      opacity: extrasOpacity,
+                      color: portfolioPnl >= 0 ? Theme.chartNeutral : Theme.error,
+                    }}
                   >
                     {portfolioPnl >= 0 ? '+' : '-'}${Math.abs(portfolioPnl).toFixed(2)}
-                  </Text>
+                  </Animated.Text>
                 )}
               </>
             ) : (
-              <Text className="text-3xl font-extrabold text-txt-primary tracking-tight">—</Text>
+              <Text className="text-2xl font-extrabold text-txt-primary tracking-tight">
+                —
+              </Text>
             )}
           </View>
-          <TouchableOpacity
-            className="flex-row items-center gap-1.5 px-3.5 py-2 rounded-md bg-slate-200"
-            onPress={() => {
-              if (backendUser?.walletAddress) {
-                fundWallet({ address: backendUser.walletAddress, amount: "0.2" });
-              }
-            }}
-            activeOpacity={0.7}
+          <Animated.View
+            style={[
+              { opacity: extrasOpacity },
+              headerCollapsed && { position: 'absolute', right: 20 },
+            ]}
           >
-            <Text className="text-[15px] font-medium text-txt-primary">+ Add Cash</Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              className="flex-row items-center gap-1.5 px-3.5 py-2 rounded-md bg-slate-200"
+              onPress={() => {
+                if (backendUser?.walletAddress) {
+                  fundWallet({ address: backendUser.walletAddress, amount: "0.2" });
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Text className="text-[15px] font-medium text-txt-primary">+ Add Cash</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
 
-        {/* Filter Pills - Fixed at top, prioritized by preferences */}
-        <FilterPills
-          categories={categories}
-          selectedCategory={selectedCategory}
-          onCategoryChange={handleCategoryChange}
-          preferredCategories={getPreferredCategories()}
-        />
-
-        {/* Scrollable content: MarketRail + Events + News */}
+        {/* Scrollable content: Filters + MarketRail + Events + News */}
         {loading ? (
           <View className="flex-1 justify-center items-center">
             <ActivityIndicator size="large" color={Theme.accentSubtle} />
@@ -573,9 +593,33 @@ export default function HomeScreen() {
             showsVerticalScrollIndicator={false}
             refreshing={loading}
             onRefresh={handleRefresh}
+            onScroll={(event) => {
+              const offsetY = event.nativeEvent.contentOffset.y;
+              const shouldCollapse = offsetY > 40;
+              setHeaderCollapsed((prev) => {
+                if (prev === shouldCollapse) return prev;
+                Animated.timing(headerAnim, {
+                  toValue: shouldCollapse ? 1 : 0,
+                  duration: 200,
+                  useNativeDriver: true,
+                }).start();
+                return shouldCollapse;
+              });
+            }}
+            scrollEventThrottle={16}
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.5}
-            ListHeaderComponent={<MarketRail />}
+            ListHeaderComponent={
+              <>
+                <FilterPills
+                  categories={categories}
+                  selectedCategory={selectedCategory}
+                  onCategoryChange={handleCategoryChange}
+                  preferredCategories={getPreferredCategories()}
+                />
+                <MarketRail />
+              </>
+            }
             ListFooterComponent={renderFooter}
             ItemSeparatorComponent={({ leadingItem }) =>
               leadingItem?.type === 'event' || leadingItem?.type === 'market' ? (
