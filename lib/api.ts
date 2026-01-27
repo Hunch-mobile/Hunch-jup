@@ -230,24 +230,48 @@ export const api = {
 };
 
 export const marketsApi = {
-    // Fetch all markets
+    // Fetch all markets - calls DFlow API directly
     fetchMarkets: async (limit: number = 200): Promise<Market[]> => {
-        const response = await fetch(
-            `${API_BASE_URL}/api/dflow/markets?limit=${limit}`,
-            {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+        try {
+            const response = await fetch(
+                `${METADATA_API_BASE_URL}/api/v1/markets?limit=${limit}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': DFLOW_API_KEY,
+                    },
+                }
+            );
+
+            if (!response.ok) {
+                let errorMessage = `Failed to fetch markets: ${response.status} ${response.statusText}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = `Failed to fetch markets: ${errorData.error || errorData.message || response.statusText}`;
+                } catch {
+                    // If response is not JSON, try to get text
+                    try {
+                        const errorText = await response.text();
+                        if (errorText) {
+                            errorMessage = `Failed to fetch markets: ${errorText}`;
+                        }
+                    } catch {
+                        // Use status code if we can't parse anything
+                    }
+                }
+                throw new Error(errorMessage);
             }
-        );
 
-        if (!response.ok) {
-            throw new Error(`Failed to fetch markets: ${response.statusText}`);
+            const data: MarketsResponse = await response.json();
+            return data.markets || [];
+        } catch (error) {
+            // Re-throw with more context if it's a network error
+            if (error instanceof TypeError && error.message.includes('fetch')) {
+                throw new Error(`Failed to fetch markets: Network error - ${error.message}`);
+            }
+            throw error;
         }
-
-        const data: MarketsResponse = await response.json();
-        return data.markets || [];
     },
 
     // Fetch tags for category filtering
@@ -452,6 +476,39 @@ export const marketsApi = {
 
         const data: EventsResponse = await response.json();
         return data.events || [];
+    },
+
+    // Consolidated Home Feed
+    fetchHomeFeed: async (
+        limit: number = 20,
+        cursor?: string,
+        category?: string
+    ): Promise<{ events: Event[]; cursor?: string }> => {
+        const params = new URLSearchParams({
+            limit: limit.toString(),
+        });
+        if (category && category !== 'All') {
+            params.append('category', category);
+        }
+        if (cursor) {
+            params.append('cursor', cursor);
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+        const response = await fetch(
+            `https://hunchdotrun-roan.vercel.app/api/home-feed?${params.toString()}`,
+            { signal: controller.signal }
+        ).finally(() => {
+            clearTimeout(timeoutId);
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch home feed: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return { events: data.events || [], cursor: data.cursor };
     },
 
     // Filter outcome mints

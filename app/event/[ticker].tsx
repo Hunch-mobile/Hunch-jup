@@ -49,11 +49,21 @@ const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => voi
       }}
     >
       <View className="flex-row justify-between items-start gap-3">
-        {(item as any).imageUrl ? (
-          <View className="w-16 h-16 rounded-xl overflow-hidden bg-app-elevated">
+        {item.image_url ? (
+          <View
+            style={{
+              transform: [{ rotate: '-3deg' }],
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.15,
+              shadowRadius: 3,
+              elevation: 4,
+            }}
+            className="w-16 h-16 items-center justify-center rounded-xl bg-white border-[2.5px] border-white"
+          >
             <Image
-              source={{ uri: (item as any).imageUrl }}
-              style={{ width: '100%', height: '100%' }}
+              source={{ uri: item.image_url }}
+              style={{ width: '100%', height: '100%', borderRadius: 9 }}
               contentFit="cover"
             />
           </View>
@@ -76,7 +86,7 @@ const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => voi
           </View>
         )}
       </View>
-    </TouchableOpacity>
+    </TouchableOpacity >
   );
 };
 
@@ -282,7 +292,7 @@ export default function EventDetailScreen() {
           {/* Main text below the image: white text, black outline only (no block bg) */}
           <View className="px-4 pt-4 pb-2">
             <View className="relative">
-              {([[-2,-2],[-2,0],[-2,2],[0,-2],[0,2],[2,-2],[2,0],[2,2],[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]] as const).map(([dx, dy]) => (
+              {([[-2, -2], [-2, 0], [-2, 2], [0, -2], [0, 2], [2, -2], [2, 0], [2, 2], [-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]] as const).map(([dx, dy]) => (
                 <Text
                   key={`${dx},${dy}`}
                   className="text-[32px] font-bold leading-8"
@@ -300,43 +310,43 @@ export default function EventDetailScreen() {
                 {event.title}
               </Text>
             </View>
-            
+
             {/* Market end/resolution time */}
             {(() => {
               // Get the earliest close/expiration time from active markets or event
               const marketCloseTimes = activeMarkets
                 .map(m => m.closeTime || m.expirationTime)
                 .filter((t): t is number => t != null && t > 0);
-              
+
               const eventCloseTime = event.closeTime;
               const allCloseTimes = [...marketCloseTimes];
               if (eventCloseTime) allCloseTimes.push(eventCloseTime);
-              
-              const earliestCloseTime = allCloseTimes.length > 0 
-                ? Math.min(...allCloseTimes) 
+
+              const earliestCloseTime = allCloseTimes.length > 0
+                ? Math.min(...allCloseTimes)
                 : null;
-              
+
               if (!earliestCloseTime) return null;
-              
+
               const closeDate = new Date(earliestCloseTime * 1000);
               const now = new Date();
               const diffMs = closeDate.getTime() - now.getTime();
               const diffDays = diffMs / (1000 * 60 * 60 * 24);
-              
+
               // Don't show if more than 2 years away
               if (diffDays > 730) return null;
-              
-              const formattedDate = closeDate.toLocaleDateString('en-US', { 
-                month: 'short', 
+
+              const formattedDate = closeDate.toLocaleDateString('en-US', {
+                month: 'short',
                 day: 'numeric',
                 year: closeDate.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
               });
-              const formattedTime = closeDate.toLocaleTimeString('en-US', { 
-                hour: 'numeric', 
+              const formattedTime = closeDate.toLocaleTimeString('en-US', {
+                hour: 'numeric',
                 minute: '2-digit',
                 hour12: true
               });
-              
+
               let displayText = '';
               if (diffMs < 0) {
                 displayText = `Resolved • ${formattedDate}`;
@@ -347,7 +357,7 @@ export default function EventDetailScreen() {
                 // More than a week: show only date
                 displayText = formattedDate;
               }
-              
+
               return (
                 <View className="mt-3 flex-row items-center gap-2">
                   <Ionicons name="time-outline" size={16} color={Theme.textSecondary} />
@@ -452,30 +462,30 @@ export default function EventDetailScreen() {
         ]}
       >
         <View className="relative">
-            {([[-2,-2],[-2,0],[-2,2],[0,-2],[0,2],[2,-2],[2,0],[2,2],[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]] as const).map(([dx, dy]) => (
-              <Text
-                key={`sticky-${dx},${dy}`}
-                className="text-[24px] font-bold leading-7"
-                style={{ position: 'absolute', left: dx, top: dy, color: '#000', width: '100%' }}
-                numberOfLines={2}
-              >
-                {event.title}
-              </Text>
-            ))}
+          {([[-2, -2], [-2, 0], [-2, 2], [0, -2], [0, 2], [2, -2], [2, 0], [2, 2], [-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]] as const).map(([dx, dy]) => (
             <Text
-              className="text-[24px] font-bold leading-7 relative z-10"
-              style={{ color: '#fff' }}
+              key={`sticky-${dx},${dy}`}
+              className="text-[24px] font-bold leading-7"
+              style={{ position: 'absolute', left: dx, top: dy, color: '#000', width: '100%' }}
               numberOfLines={2}
             >
               {event.title}
             </Text>
+          ))}
+          <Text
+            className="text-[24px] font-bold leading-7 relative z-10"
+            style={{ color: '#fff' }}
+            numberOfLines={2}
+          >
+            {event.title}
+          </Text>
         </View>
       </Animated.View>
 
       <MarketTradeSheet
         visible={marketSheetVisible}
         onClose={handleCloseMarketSheet}
-        onTradeSuccess={() => {}}
+        onTradeSuccess={() => { }}
         market={selectedMarket}
         backendUser={backendUser || null}
         walletProvider={walletProvider}

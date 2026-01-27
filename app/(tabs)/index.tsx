@@ -1,16 +1,19 @@
 import { FilterPills } from "@/components/FilterPills";
 import { MarketRail } from "@/components/MarketRail";
+import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import { MiniNewsCarousel } from "@/components/MiniNewsCarousel";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, marketsApi } from "@/lib/api";
-import { formatPercent, getTopMarkets } from "@/lib/marketUtils";
+import { formatPercent } from "@/lib/marketUtils";
 import { Event, EventEvidence, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
+import { useEmbeddedSolanaWallet } from "@privy-io/expo";
 import { useFundSolanaWallet } from "@privy-io/expo/ui";
+import { Connection, clusterApiUrl } from "@solana/web3.js";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, FlatList, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -27,115 +30,136 @@ const sortByVolume = (events: Event[]): Event[] => {
   return [...events].sort((a, b) => (b.volume || 0) - (a.volume || 0));
 };
 
-// Chunk array into smaller pieces (for API batching)
-const chunkArray = <T,>(arr: T[], size: number): T[][] => {
-  const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
+
+
+const getTopMarketByVolume = (markets: Market[] | undefined): Market | null => {
+  if (!markets || markets.length === 0) return null;
+  const activeMarkets = markets.filter((market) => market.status === 'active');
+  if (activeMarkets.length === 0) return null;
+  return activeMarkets
+    .slice()
+    .sort((a, b) => (b.volume || 0) - (a.volume || 0))[0] || null;
 };
 
-const EventCard = ({ item }: { item: Event }) => {
-  const topMarkets = getTopMarkets(item.markets, 2);
-
-  const handlePress = () => {
-    router.push({ pathname: '/event/[ticker]', params: { ticker: item.ticker } });
+const EventCarousel = ({ items }: { items: Event[] }) => {
+  const renderEventItem = ({ item }: { item: Event }) => {
+    const topMarket = getTopMarketByVolume(item.markets);
+    return (
+      <TouchableOpacity
+        className="w-[220px] mr-3 bg-app-card rounded-xl overflow-hidden"
+        activeOpacity={0.7}
+        onPress={() => router.push({ pathname: '/event/[ticker]', params: { ticker: item.ticker } })}
+      >
+        {item.imageUrl ? (
+          <Image
+            source={{ uri: item.imageUrl }}
+            style={{ width: '100%', height: 110 }}
+            contentFit="cover"
+            transition={200}
+          />
+        ) : (
+          <View className="w-full h-[110px] bg-app-card justify-center items-center">
+            <Ionicons name="image-outline" size={22} color={Theme.textDisabled} />
+          </View>
+        )}
+        <View className="px-3 py-3">
+          <Text className="text-[14px] font-semibold text-txt-primary" numberOfLines={2}>
+            {item.title}
+          </Text>
+          {topMarket && (
+            <View className="flex-row items-center justify-between mt-1">
+              <Text className="text-[12px] text-txt-secondary flex-1 mr-2" numberOfLines={1}>
+                {topMarket.yesSubTitle || topMarket.title}
+              </Text>
+              <Text className="text-[12px] font-bold text-txt-primary">
+                {formatPercent(topMarket.yesBid)}
+              </Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
   };
+
+  return (
+    <View className="py-4">
+      <View className="px-5 mb-2">
+        <Text className="text-[14px] font-semibold text-txt-primary">Events</Text>
+      </View>
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.ticker}
+        renderItem={renderEventItem}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 20 }}
+      />
+    </View>
+  );
+};
+
+const MarketCard = ({
+  item,
+  onPress,
+  eventTitle,
+}: {
+  item: Market;
+  onPress: () => void;
+  eventTitle?: string;
+}) => {
+  const marketSubTitle = item.yesSubTitle || item.title;
+  const yesBid = item.yesBid ? parseFloat(item.yesBid) * 100 : null;
+  const noBid = item.noBid ? parseFloat(item.noBid) * 100 : null;
 
   return (
     <TouchableOpacity
       className="py-4 px-5 bg-transparent"
       activeOpacity={0.7}
-      onPress={handlePress}
+      onPress={onPress}
     >
       <View className="flex-row items-start gap-4">
-        {/* Left - Event Image */}
-        {item.imageUrl ? (
-          <Image
-            source={{ uri: item.imageUrl }}
-            style={{ width: 70, height: 70 }}
-            className="rounded-[10px]"
-            contentFit="cover"
-            transition={200}
-          />
+        {/* Left - Market Icon */}
+        {item.image_url ? (
+          <View className="w-[70px] h-[70px] rounded-[10px] bg-app-card overflow-hidden">
+            <Image
+              source={{ uri: item.image_url }}
+              style={{ width: '100%', height: '100%' }}
+              contentFit="cover"
+              transition={200}
+            />
+          </View>
         ) : (
           <View className="w-[70px] h-[70px] rounded-[10px] bg-app-card justify-center items-center">
-            <Ionicons name="image-outline" size={24} color={Theme.textDisabled} />
+            <Ionicons name="stats-chart" size={24} color={Theme.textPrimary} />
           </View>
         )}
 
         {/* Right Content */}
         <View className="flex-1 gap-1.5">
-          {item.competition && (
-            <Text className="text-[10px] font-semibold text-txt-secondary uppercase tracking-wider">
-              {item.competition}
+          {eventTitle ? (
+            <Text className="text-[12px] text-txt-secondary" numberOfLines={1}>
+              {eventTitle}
             </Text>
-          )}
-
-          <Text className="text-[15px] font-semibold text-txt-primary leading-5" numberOfLines={2}>
-            {item.title}
+          ) : null}
+          <Text className="text-[15px] font-bold text-txt-primary leading-5" numberOfLines={2}>
+            {marketSubTitle}
           </Text>
 
-          {/* Top Markets */}
-          {topMarkets.length > 0 && (
-            <View className="gap-1 mt-1">
-              {topMarkets.map((market: Market) => (
-                <View key={market.ticker} className="flex-row items-center justify-between py-1">
-                  <Text className="flex-1 text-[13px] text-txt-secondary mr-2" numberOfLines={1}>
-                    {market.yesSubTitle || market.title}
-                  </Text>
-                  <Text className="text-[13px] font-bold text-txt-primary">
-                    {formatPercent(market.yesBid)}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-};
-
-const MarketCard = ({ item }: { item: Market }) => {
-  const handlePress = () => {
-    router.push({ pathname: '/market/[ticker]', params: { ticker: item.ticker } });
-  };
-
-  const displayTitle = item.yesSubTitle || item.title;
-  const yesBid = item.yesBid ? parseFloat(item.yesBid) * 100 : null;
-
-  return (
-    <TouchableOpacity
-      className="py-4 px-5 bg-transparent"
-      activeOpacity={0.7}
-      onPress={handlePress}
-    >
-      <View className="flex-row items-start gap-4">
-        {/* Left - Market Icon */}
-        <View className="w-[70px] h-[70px] rounded-[10px] bg-app-card justify-center items-center">
-          <Ionicons name="stats-chart" size={24} color={Theme.textPrimary} />
-        </View>
-
-        {/* Right Content */}
-        <View className="flex-1 gap-1.5">
-          <Text className="text-[10px] font-semibold text-txt-secondary uppercase tracking-wider">
-            Market
-          </Text>
-          <Text className="text-[15px] font-semibold text-txt-primary leading-5" numberOfLines={2}>
-            {displayTitle}
-          </Text>
-
-          {/* Market Price */}
-          {yesBid !== null && (
-            <View className="flex-row items-center justify-between mt-1">
+          {/* Market Prices */}
+          <View className="gap-1 mt-1">
+            <View className="flex-row items-center justify-between">
               <Text className="text-[13px] text-txt-secondary">Yes</Text>
               <Text className="text-[13px] font-bold text-txt-primary">
-                {formatPercent(item.yesBid)}
+                {yesBid !== null ? formatPercent(item.yesBid) : '—'}
               </Text>
             </View>
-          )}
+            <View className="flex-row items-center justify-between">
+              <Text className="text-[13px] text-txt-secondary">No</Text>
+              <Text className="text-[13px] font-bold text-txt-primary">
+                {noBid !== null ? formatPercent(item.noBid) : '—'}
+              </Text>
+            </View>
+          </View>
 
           {/* Volume */}
           {item.volume && item.volume > 0 && (
@@ -176,13 +200,14 @@ const NEWS_EVENT_TICKERS = ['KXFEDDECISION-26JAN', 'KXFEDCHAIRNOM-29'];
 
 // Feed item types for mixed list
 type FeedItem =
-  | { type: 'event'; data: Event }
   | { type: 'market'; data: Market }
+  | { type: 'eventCarousel'; data: Event[] }
   | { type: 'news'; data: EventEvidence[] };
 
 export default function HomeScreen() {
   const { preferences, backendUser } = useUser();
   const { fundWallet } = useFundSolanaWallet();
+  const { wallets } = useEmbeddedSolanaWallet();
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [events, setEvents] = useState<Event[]>([]);
@@ -197,20 +222,44 @@ export default function HomeScreen() {
   const [portfolioPnl, setPortfolioPnl] = useState<number | null>(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const headerAnim = useRef(new Animated.Value(0)).current;
+  const [marketSheetVisible, setMarketSheetVisible] = useState(false);
+  const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+  const [walletProvider, setWalletProvider] = useState<any>(null);
+  const [selectedMarketEventTitle, setSelectedMarketEventTitle] = useState<string | undefined>(undefined);
 
   const isLoadingRef = useRef(false);
+  const solanaWallet = wallets?.[0];
+
+  const connection = useMemo(() => {
+    const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
+    return new Connection(rpcUrl, 'confirmed');
+  }, []);
+
+  useEffect(() => {
+    const getProvider = async () => {
+      if (solanaWallet) {
+        try {
+          const provider = await solanaWallet.getProvider();
+          setWalletProvider(provider);
+        } catch (error) {
+          console.error('Failed to get wallet provider:', error);
+        }
+      }
+    };
+    getProvider();
+  }, [solanaWallet]);
 
   // Get preferred categories from user interests
   const getPreferredCategories = (): string[] => {
     if (!preferences?.interests && !preferences?.habits) {
       return [];
     }
-    
+
     // Use interests if available, otherwise fall back to habits mapping (backwards compatibility)
     if (preferences.interests && preferences.interests.length > 0) {
       return preferences.interests.filter(int => categories.includes(int));
     }
-    
+
     // Legacy habits mapping (for backwards compatibility)
     const habitToCategories: Record<string, string[]> = {
       'Exercise': ['Sports', 'Transportation'],
@@ -221,13 +270,13 @@ export default function HomeScreen() {
       'Write in journal': ['Social'],
       'Healthy breakfast': ['Companies', 'Economics'],
     };
-    
+
     const relevantCategories = new Set<string>();
     (preferences.habits || []).forEach(habit => {
       const cats = habitToCategories[habit] || [];
       cats.forEach(cat => relevantCategories.add(cat));
     });
-    
+
     return Array.from(relevantCategories);
   };
 
@@ -292,7 +341,7 @@ export default function HomeScreen() {
   const loadNews = async () => {
     try {
       const evidence = await api.fetchEvidence(NEWS_EVENT_TICKERS);
-      
+
       // Filter news by preferred categories if user has preferences
       const preferredCategories = getPreferredCategories();
       if (preferredCategories.length > 0) {
@@ -346,56 +395,27 @@ export default function HomeScreen() {
       let fetchedMarkets: Market[] = [];
       let newCursor: string | undefined;
 
-      if (category === 'Hot') {
-        // Flow 1: Fetch all events with pagination
-        const result = await marketsApi.fetchEvents(20, {
-          status: 'active',
-          withNestedMarkets: true,
-          cursor: reset ? undefined : cursor,
-        });
+      // Map 'Hot' to 'All' for the API, keep other categories as is
+      const apiCategory = category === 'Hot' ? 'All' : category;
+
+      // 1. Fetch Events using the new consolidated endpoint
+      try {
+        const result = await marketsApi.fetchHomeFeed(
+          20,
+          reset ? undefined : cursor,
+          apiCategory
+        );
         fetchedEvents = result.events;
         newCursor = result.cursor;
-
-        // Also fetch markets
-        try {
-          const allMarkets = await marketsApi.fetchMarkets(20);
-          // Filter active markets only
-          fetchedMarkets = allMarkets.filter(
-            market => market.status === 'active'
-          );
-        } catch (err) {
-          console.error("Failed to fetch markets:", err);
-          // Continue without markets if fetch fails
-        }
-      } else {
-        // Flow 2: Fetch series for category, then events by series tickers
-        const series = await marketsApi.fetchSeries(category, {
-          isInitialized: true,
-          status: 'active',
-        });
-
-        const tickers = series.map(s => s.ticker);
-
-        if (tickers.length === 0) {
-          fetchedEvents = [];
-        } else {
-          // Split into chunks of 25 for API limits
-          const tickerChunks = chunkArray(tickers, 25);
-          const allEvents: Event[] = [];
-
-          for (const chunk of tickerChunks) {
-            const chunkEvents = await marketsApi.fetchEventsBySeries(chunk, {
-              withNestedMarkets: true,
-              status: 'active',
-            });
-            allEvents.push(...chunkEvents);
-          }
-
-          fetchedEvents = allEvents;
-        }
-        // No pagination for category-specific events
-        newCursor = undefined;
+      } catch (err) {
+        console.error("Failed to fetch home feed:", err);
+        throw err;
       }
+
+      // 2. Derive top-volume markets from events (one per event)
+      fetchedMarkets = fetchedEvents
+        .map((event) => getTopMarketByVolume(event.markets))
+        .filter((market): market is Market => !!market);
 
       // Filter and sort events
       const activeEvents = fetchedEvents.filter(isEventActive);
@@ -431,9 +451,8 @@ export default function HomeScreen() {
   }, []);
 
   const handleLoadMore = useCallback(() => {
-    // Only paginate for "All" category
+    // Pagination is supported if we have a cursor/hasMore
     if (
-      selectedCategory === 'All' &&
       hasMore &&
       !loading &&
       !loadingMore &&
@@ -458,46 +477,95 @@ export default function HomeScreen() {
     outputRange: [1, 0],
   });
 
-  // Create mixed feed items (events + markets + news carousel)
-  const feedItems: FeedItem[] = [];
-  const NEWS_INTERVAL = 4; // Insert news after every 4 items
+  const eventTitleByTicker = useMemo(() => {
+    const map = new Map<string, string>();
+    events.forEach((event) => map.set(event.ticker, event.title));
+    return map;
+  }, [events]);
 
-  // Combine events and markets, interleaving them
-  const maxLength = Math.max(events.length, markets.length);
-  let itemIndex = 0;
+  const handleOpenMarketSheet = (marketItem: Market) => {
+    setSelectedMarket(marketItem);
+    if (marketItem.eventTicker) {
+      setSelectedMarketEventTitle(eventTitleByTicker.get(marketItem.eventTicker) || marketItem.title);
+    } else {
+      setSelectedMarketEventTitle(marketItem.title);
+    }
+    setMarketSheetVisible(true);
+  };
 
-  for (let i = 0; i < maxLength; i++) {
-    // Add event if available
-    if (i < events.length) {
-      feedItems.push({ type: 'event', data: events[i] });
+  const handleCloseMarketSheet = () => {
+    setMarketSheetVisible(false);
+  };
+
+  // Create mixed feed items (markets list with event carousels + news carousel)
+  const feedItems = useMemo((): FeedItem[] => {
+    const items: FeedItem[] = [];
+    const NEWS_INTERVAL = 4;
+    const EVENT_CAROUSEL_INTERVAL = 8;
+    const EVENTS_PER_CAROUSEL = 7;
+    let newsInserted = false;
+
+    if (markets.length === 0) {
+      if (events.length > 0) {
+        items.push({ type: 'eventCarousel', data: events.slice(0, EVENTS_PER_CAROUSEL) });
+      }
+      return items;
+    }
+
+    let eventCursor = 0;
+    let itemIndex = 0;
+
+    for (let i = 0; i < markets.length; i++) {
+      items.push({ type: 'market', data: markets[i] });
       itemIndex++;
 
-      // Insert news carousel after every NEWS_INTERVAL items (but only once if we have news)
-      if (newsItems.length > 0 && itemIndex % NEWS_INTERVAL === 0 && itemIndex <= NEWS_INTERVAL) {
-        feedItems.push({ type: 'news', data: newsItems });
+      if (!newsInserted && newsItems.length > 0 && itemIndex % NEWS_INTERVAL === 0) {
+        items.push({ type: 'news', data: newsItems });
+        newsInserted = true;
+      }
+
+      if ((i + 1) % EVENT_CAROUSEL_INTERVAL === 0 && eventCursor < events.length) {
+        items.push({
+          type: 'eventCarousel',
+          data: events.slice(eventCursor, eventCursor + EVENTS_PER_CAROUSEL),
+        });
+        eventCursor += EVENTS_PER_CAROUSEL;
+        itemIndex++;
+
+        if (!newsInserted && newsItems.length > 0 && itemIndex % NEWS_INTERVAL === 0) {
+          items.push({ type: 'news', data: newsItems });
+          newsInserted = true;
+        }
       }
     }
 
-    // Add market if available (alternate with events)
-    if (i < markets.length) {
-      feedItems.push({ type: 'market', data: markets[i] });
-      itemIndex++;
-
-      // Insert news carousel after every NEWS_INTERVAL items (but only once if we have news)
-      if (newsItems.length > 0 && itemIndex % NEWS_INTERVAL === 0 && itemIndex <= NEWS_INTERVAL) {
-        feedItems.push({ type: 'news', data: newsItems });
-      }
+    if (eventCursor < events.length) {
+      items.push({
+        type: 'eventCarousel',
+        data: events.slice(eventCursor, eventCursor + EVENTS_PER_CAROUSEL),
+      });
     }
-  }
+
+    return items;
+  }, [events, markets, newsItems]);
 
   const renderFeedItem = ({ item }: { item: FeedItem }) => {
     if (item.type === 'news') {
       return <MiniNewsCarousel items={item.data} />;
     }
-    if (item.type === 'market') {
-      return <MarketCard item={item.data} />;
+    if (item.type === 'eventCarousel') {
+      return <EventCarousel items={item.data} />;
     }
-    return <EventCard item={item.data} />;
+    if (item.type === 'market') {
+      return (
+        <MarketCard
+          item={item.data}
+          onPress={() => handleOpenMarketSheet(item.data)}
+          eventTitle={item.data.eventTicker ? eventTitleByTicker.get(item.data.eventTicker) : undefined}
+        />
+      );
+    }
+    return null;
   };
 
   const renderFooter = () => {
@@ -524,8 +592,8 @@ export default function HomeScreen() {
                   {portfolioValue >= 1000000
                     ? `$${(portfolioValue / 1000000).toFixed(2)}M`
                     : portfolioValue >= 1000
-                    ? `$${(portfolioValue / 1000).toFixed(1)}K`
-                    : `$${portfolioValue.toFixed(2)}`}
+                      ? `$${(portfolioValue / 1000).toFixed(1)}K`
+                      : `$${portfolioValue.toFixed(2)}`}
                 </Animated.Text>
                 {portfolioPnl !== null && (
                   <Animated.Text
@@ -586,7 +654,8 @@ export default function HomeScreen() {
             keyExtractor={(item, index) => {
               if (item.type === 'news') return `news-${index}`;
               if (item.type === 'market') return `market-${item.data.ticker}`;
-              return `event-${item.data.ticker}`;
+              if (item.type === 'eventCarousel') return `event-carousel-${index}`;
+              return `item-${index}`;
             }}
             renderItem={renderFeedItem}
             contentContainerStyle={{ paddingBottom: 80 }}
@@ -622,7 +691,7 @@ export default function HomeScreen() {
             }
             ListFooterComponent={renderFooter}
             ItemSeparatorComponent={({ leadingItem }) =>
-              leadingItem?.type === 'event' || leadingItem?.type === 'market' ? (
+              leadingItem?.type === 'market' ? (
                 <View className="h-px bg-border opacity-50" />
               ) : null
             }
@@ -637,6 +706,17 @@ export default function HomeScreen() {
           />
         )}
       </SafeAreaView>
+
+      <MarketTradeSheet
+        visible={marketSheetVisible}
+        onClose={handleCloseMarketSheet}
+        onTradeSuccess={() => { }}
+        market={selectedMarket}
+        backendUser={backendUser || null}
+        walletProvider={walletProvider}
+        connection={connection}
+        eventTitle={selectedMarketEventTitle}
+      />
     </View>
   );
 }

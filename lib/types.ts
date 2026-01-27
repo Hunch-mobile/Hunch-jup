@@ -158,6 +158,7 @@ export interface Market {
             redemptionStatus?: string | null;
         };
     };
+    image_url?: string;
 }
 
 export interface SettlementSource {
