@@ -1,3 +1,4 @@
+import { FollowersSkeleton } from '@/components/skeletons';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
@@ -261,9 +262,7 @@ export default function FollowersFollowingScreen() {
                         {/* Followers */}
                         <View style={styles.listPane}>
                             {loadingFollowers ? (
-                                <View className="flex-1 justify-center items-center">
-                                    <ActivityIndicator size="large" color={Theme.textPrimary} />
-                                </View>
+                                <FollowersSkeleton />
                             ) : followers.length === 0 ? (
                                 <View className="flex-1 justify-center items-center px-10 gap-3">
                                     <Ionicons name="people-outline" size={48} color={Theme.textDisabled} />
@@ -292,9 +291,7 @@ export default function FollowersFollowingScreen() {
                         {/* Following */}
                         <View style={styles.listPane}>
                             {loadingFollowing ? (
-                                <View className="flex-1 justify-center items-center">
-                                    <ActivityIndicator size="large" color={Theme.textPrimary} />
-                                </View>
+                                <FollowersSkeleton />
                             ) : following.length === 0 ? (
                                 <View className="flex-1 justify-center items-center px-10 gap-3">
                                     <Ionicons name="person-add-outline" size={48} color={Theme.textDisabled} />

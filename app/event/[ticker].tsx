@@ -1,5 +1,5 @@
+import { EventDetailSkeleton } from '@/components/skeletons';
 import { MarketTradeSheet } from '@/components/MarketTradeSheet';
-import { MultiMarketChart } from '@/components/MultiMarketChart';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { marketsApi } from "@/lib/api";
@@ -13,14 +13,19 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-// Market colors matching MultiMarketChart
-const MARKET_COLORS = ['#FACC15', '#22D3EE', '#22c55e', '#000000'];
+// Market colors (yellow, blue, black)
+const MARKET_COLORS = ['#FACC15', '#22D3EE', '#000000'];
+const FALLBACK_IMAGE_MARKER = 'kalshi-fallback-images';
 
 // MarketCard for the list below charts
 const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => void; color?: string }) => {
+  const [imageFailed, setImageFailed] = useState(false);
+  const isFallbackImage =
+    typeof (item as any).image_url === 'string' &&
+    (item as any).image_url.toLowerCase().includes(FALLBACK_IMAGE_MARKER);
   const yesBid = item.yesBid ? parseFloat(item.yesBid) * 100 : null;
   const yesAsk = item.yesAsk ? parseFloat(item.yesAsk) * 100 : null;
   const probability = yesBid && yesAsk ? (yesBid + yesAsk) / 2 : null;
@@ -32,8 +37,8 @@ const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => voi
     const darkerMap: Record<string, string> = {
       '#FACC15': '#D4A017', // Darker yellow
       '#22D3EE': '#0EA5E9', // Darker cyan
-      '#22c55e': '#16a34a', // Darker green
-      '#000000': '#000000', // Black stays black
+      '#22c55e': '#00e003', // Neon green brand
+      '#000000': '#000000', // Dark black
     };
     return darkerMap[color] || color;
   };
@@ -49,11 +54,11 @@ const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => voi
       }}
     >
       <View className="flex-row justify-between items-start gap-3">
-        {item.image_url ? (
+        {item.image_url && !isFallbackImage && !imageFailed ? (
           <View
             style={{
               transform: [{ rotate: '-3deg' }],
-              shadowColor: '#000',
+              shadowColor: '#000000',
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.15,
               shadowRadius: 3,
@@ -65,6 +70,7 @@ const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => voi
               source={{ uri: item.image_url }}
               style={{ width: '100%', height: '100%', borderRadius: 9 }}
               contentFit="cover"
+              onError={() => setImageFailed(true)}
             />
           </View>
         ) : null}
@@ -72,8 +78,9 @@ const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => voi
           <Text className="text-2xl font-semibold text-txt-primary leading-[28px]" numberOfLines={2}>
             {displayTitle}
           </Text>
+          
           {item.volume != null && item.volume > 0 && (
-            <Text className="text-xs font-medium text-txt-disabled mt-1.5" style={{ opacity: 0.6 }}>
+            <Text className="text-lg font-medium text-txt-disabled mt-1.5" style={{ opacity: 0.6 }}>
               ${(item.volume / 1000).toFixed(1)}K vol
             </Text>
           )}
@@ -200,10 +207,7 @@ export default function EventDetailScreen() {
       <View className="flex-1 bg-app-bg">
         <LinearGradient colors={[Theme.bgMain, Theme.bgCard]} style={StyleSheet.absoluteFillObject} />
         <SafeAreaView className="flex-1">
-          <View className="flex-1 justify-center items-center gap-3">
-            <ActivityIndicator size="large" color={Theme.accentSubtle} />
-            <Text className="text-[15px] text-txt-secondary">Loading event…</Text>
-          </View>
+          <EventDetailSkeleton />
         </SafeAreaView>
       </View>
     );
@@ -223,7 +227,7 @@ export default function EventDetailScreen() {
             </TouchableOpacity>
           </View>
           <View className="flex-1 justify-center items-center px-8">
-            <View className="w-20 h-20 rounded-full bg-red-500/10 justify-center items-center mb-5">
+            <View className="w-20 h-20 rounded-full bg-[#FF10F0]/10 justify-center items-center mb-5">
               <Ionicons name="alert-circle-outline" size={48} color={Theme.error} />
             </View>
             <Text className="text-[17px] font-semibold text-txt-primary text-center mb-2">{error || "Event not found"}</Text>
@@ -296,7 +300,7 @@ export default function EventDetailScreen() {
                 <Text
                   key={`${dx},${dy}`}
                   className="text-[32px] font-bold leading-8"
-                  style={{ position: 'absolute', left: dx, top: dy, color: '#000', width: '100%' }}
+                  style={{ position: 'absolute', left: dx, top: dy, color: '#000000', width: '100%' }}
                   numberOfLines={2}
                 >
                   {event.title}
@@ -368,9 +372,9 @@ export default function EventDetailScreen() {
               );
             })()}
           </View>
-
+            //charts
           {/* Charts */}
-          {topMarketsForCharts.length > 0 && (
+          {/* {topMarketsForCharts.length > 0 && (
             <View className="mt-2">
               <MultiMarketChart
                 title="."
@@ -380,7 +384,7 @@ export default function EventDetailScreen() {
                 onInteractionEnd={() => setChartScrollEnabled(true)}
               />
             </View>
-          )}
+          )} */}
 
           {/* Top 4 by odds + Show more */}
           <View className="mt-6 px-4">
@@ -466,7 +470,7 @@ export default function EventDetailScreen() {
             <Text
               key={`sticky-${dx},${dy}`}
               className="text-[24px] font-bold leading-7"
-              style={{ position: 'absolute', left: dx, top: dy, color: '#000', width: '100%' }}
+              style={{ position: 'absolute', left: dx, top: dy, color: '#000000', width: '100%' }}
               numberOfLines={2}
             >
               {event.title}

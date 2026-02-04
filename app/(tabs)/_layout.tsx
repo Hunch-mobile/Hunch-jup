@@ -4,14 +4,8 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { Tabs } from "expo-router";
-import { useEffect } from "react";
-import { Dimensions, Pressable, StyleSheet, View } from "react-native";
-import Animated, {
-  interpolate,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
+import { useEffect, useRef } from "react";
+import { Animated, Dimensions, Easing, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Import theme
@@ -25,17 +19,21 @@ const TAB_CONFIG = [
 ] as const;
 
 const TAB_COUNT = TAB_CONFIG.length;
-const NAVBAR_HORIZONTAL_MARGIN = 44; // Wider and more prominent
+const NAVBAR_HORIZONTAL_MARGIN = 44; // symmetric outer margin
+const NAVBAR_LEFT_MARGIN = NAVBAR_HORIZONTAL_MARGIN;
+const NAVBAR_RIGHT_MARGIN = NAVBAR_HORIZONTAL_MARGIN;
 const NAVBAR_HEIGHT = 72;
-const NAVBAR_WIDTH = Dimensions.get('window').width - (NAVBAR_HORIZONTAL_MARGIN * 2);
-const TAB_WIDTH = NAVBAR_WIDTH / TAB_COUNT;
-const INDICATOR_WIDTH = 62;
-const INDICATOR_HEIGHT = 54;
-const INDICATOR_VERTICAL_PADDING = (NAVBAR_HEIGHT - INDICATOR_HEIGHT) / 2;
+const NAVBAR_SCALE = 1.08;
+const NAVBAR_WIDTH = Dimensions.get("window").width - NAVBAR_LEFT_MARGIN - NAVBAR_RIGHT_MARGIN;
+const NAVBAR_INNER_HORIZONTAL_PADDING = 18; // equal padding left/right inside pill
 const defaultProfileImage = require("@/assets/default.jpeg");
+const homeIcon = require("@/assets/images/home.png");
 
-// Clean minimalist tab bar
-function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+/**
+ * Custom bottom tab bar with sliding pill indicator.
+ * All tabs show icon only (home, feed, profile).
+ */
+function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { user } = usePrivy();
 
@@ -44,47 +42,60 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const rawProfileImageUrl = (twitterAccount as any)?.profile_picture_url;
   const profileImageUrl = rawProfileImageUrl?.replace('_normal', '');
 
-  // Shared value for smooth indicator animation
-  const activeIndex = useSharedValue(state.index);
+  // Animate active tab index for smooth pill transitions
+  const activeIndexAnim = useRef(new Animated.Value(state.index)).current;
 
-  // Update activeIndex when tab changes
   useEffect(() => {
-    activeIndex.value = withSpring(state.index, {
-      damping: 15,
-      stiffness: 300,
-      mass: 0.5,
-    });
-  }, [state.index]);
+    Animated.timing(activeIndexAnim, {
+      toValue: state.index,
+      duration: 260,
+      useNativeDriver: false,
+      easing: Easing.out(Easing.cubic),
+    }).start();
+  }, [state.index, activeIndexAnim]);
 
-  // Animated style for sliding indicator position
-  const animatedIndicatorStyle = useAnimatedStyle(() => {
-    const inputRange = state.routes.map((_, i) => i);
-    const outputRange = inputRange.map(
-      (i) => i * TAB_WIDTH + (TAB_WIDTH - INDICATOR_WIDTH) / 2
-    );
-    const translateX = interpolate(
-      activeIndex.value,
-      inputRange,
-      outputRange
-    );
+  // Each tab takes up an equal segment of the inner width
+  const segmentWidthValue =
+    (NAVBAR_WIDTH - NAVBAR_INNER_HORIZONTAL_PADDING * 2) / TAB_COUNT;
+  const segmentWidth = new Animated.Value(segmentWidthValue);
 
-    return {
-      transform: [{ translateX }],
-    };
-  });
+  const baseCenterOffset =
+    NAVBAR_INNER_HORIZONTAL_PADDING + (segmentWidthValue - 48) / 2;
+
+  // Pill centered under the active tab (fixed 48px width)
+  const activePillTranslateX = Animated.add(
+    Animated.multiply(activeIndexAnim, segmentWidth),
+    new Animated.Value(baseCenterOffset)
+  );
 
   return (
-    <View style={[styles.floatingContainer, { bottom: Math.max(insets.bottom, 0) + 4 }]}>
-      {/* Clean white background with subtle shadow */}
-      <View style={styles.tabBarContainer}>
-        {/* Sliding indicator - minimalist black rounded rectangle */}
-        <Animated.View style={[styles.indicatorContainer, animatedIndicatorStyle]}>
-          <View style={styles.indicatorBackground} />
-        </Animated.View>
-      </View>
-
-      {/* Tab buttons - clean icons */}
-      <View style={styles.tabsContainer}>
+    <View
+      style={[
+        styles.floatingContainer,
+        {
+          bottom: Math.max(insets.bottom, 0) + 4,
+          transform: [{ scale: NAVBAR_SCALE }],
+        },
+      ]}
+    >
+      {/* Tab buttons */}
+      <Animated.View
+        style={[
+          styles.tabsContainer,
+          { paddingHorizontal: NAVBAR_INNER_HORIZONTAL_PADDING },
+        ]}
+      >
+        {/* Sliding active pill */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.activePill,
+            {
+              left: 0,
+              transform: [{ translateX: activePillTranslateX }],
+            },
+          ]}
+        />
         {state.routes.map((route, index) => {
           const isFocused = state.index === index;
           const tabConfig = TAB_CONFIG.find(t => t.name === route.name);
@@ -123,12 +134,12 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             />
           );
         })}
-      </View>
+      </Animated.View>
     </View>
   );
 }
 
-// Minimalist tab button
+// Minimalist tab button (icon only for all tabs)
 function TabButton({
   focused,
   iconName,
@@ -146,23 +157,10 @@ function TabButton({
   onPress: () => void;
   onLongPress: () => void;
 }) {
-  const scaleValue = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: scaleValue.value }],
-    };
-  });
-
   const handlePressIn = () => {
     if (process.env.EXPO_OS === 'ios') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    scaleValue.value = withSpring(0.92, { damping: 15, stiffness: 300 });
-  };
-
-  const handlePressOut = () => {
-    scaleValue.value = withSpring(1, { damping: 15, stiffness: 300 });
   };
 
   return (
@@ -170,24 +168,29 @@ function TabButton({
       onPress={onPress}
       onLongPress={onLongPress}
       onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
       style={styles.tabButton}
       android_ripple={null}
     >
-      <Animated.View style={[styles.iconWrapper, animatedStyle]}>
+      <View style={styles.iconWrapper}>
         {routeName === 'profile' ? (
           <Image
             source={profileImageUrl ? { uri: profileImageUrl } : defaultProfileImage}
-            style={styles.profileImage}
+            style={[styles.profileImage, focused && styles.profileImageActive]}
+          />
+        ) : routeName === 'index' ? (
+          <Image
+            source={homeIcon}
+            style={[styles.homeIcon, { tintColor: focused ? Theme.textInverse : Theme.textSecondary }]}
+            contentFit="contain"
           />
         ) : (
           <Ionicons
-            name={focused ? iconName as any : iconOutline as any}
+            name={routeName === 'social' ? (iconName as any) : (focused ? (iconName as any) : (iconOutline as any))}
             size={26}
             color={focused ? Theme.textInverse : Theme.textSecondary}
           />
         )}
-      </Animated.View>
+      </View>
     </Pressable>
   );
 }
@@ -199,7 +202,7 @@ export default function TabLayout() {
         headerShown: false,
         tabBarShowLabel: false,
       }}
-      tabBar={(props) => <FloatingTabBar {...props} />}
+      tabBar={(props) => <CustomTabBar {...props} />}
     >
       <Tabs.Screen name="index" options={{ title: "Home" }} />
       <Tabs.Screen name="social" options={{ title: "Feed" }} />
@@ -211,48 +214,24 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   floatingContainer: {
     position: 'absolute',
-    left: NAVBAR_HORIZONTAL_MARGIN,
-    right: NAVBAR_HORIZONTAL_MARGIN,
+    left: NAVBAR_LEFT_MARGIN,
+    right: NAVBAR_RIGHT_MARGIN,
     height: NAVBAR_HEIGHT,
     backgroundColor: Theme.bgMain,
     borderRadius: NAVBAR_HEIGHT / 2,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: 'rgba(0,0,0,0.06)',
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.20,
-    shadowRadius: 24,
-    elevation: 14,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.14,
+    shadowRadius: 22,
+    elevation: 12,
   },
-  tabBarContainer: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
-    borderRadius: NAVBAR_HEIGHT / 2,
-    overflow: 'hidden',
-    // Shadows are on floatingContainer so they aren't clipped
-  },
-  // Indicator styles - minimalist black pill
-  indicatorContainer: {
-    position: 'absolute',
-    top: INDICATOR_VERTICAL_PADDING,
-    left: 0,
-    width: INDICATOR_WIDTH,
-    height: INDICATOR_HEIGHT,
-    borderRadius: INDICATOR_HEIGHT / 2,
-    zIndex: 0,
-  },
-  indicatorBackground: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000000',
-    borderRadius: INDICATOR_HEIGHT / 2,
-  },
-  // Tab container
   tabsContainer: {
     ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    zIndex: 1,
+    justifyContent: 'flex-start',
   },
   tabButton: {
     flex: 1,
@@ -260,12 +239,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: '100%',
   },
+  activePill: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#000000',
+  },
   iconWrapper: {
     width: 48,
     height: 48,
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  homeIcon: {
+    width: 26,
+    height: 26,
   },
   profileImage: {
     width: 30,
@@ -273,5 +264,8 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     borderWidth: 2,
     borderColor: Theme.textSecondary,
+  },
+  profileImageActive: {
+    borderColor: Theme.textInverse,
   },
 });

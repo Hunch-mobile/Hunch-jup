@@ -1,15 +1,20 @@
+import { Theme } from '@/constants/theme';
 import { CandleData } from '@/lib/types';
 import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, ClipPath, Defs, Image, Line, LinearGradient, Path, Stop } from 'react-native-svg';
 
+const CHART_GREEN = '#10ff1f';
+
 interface LightChartProps {
     candles: CandleData[];
     width: number;
     height: number;
-    isYes?: boolean; // true = green, false = noColor or black
+    isYes?: boolean; // true = green, false = noColor or black (used when colorByTrend is false)
     /** When isYes is false, use this color. Default black for screens; pass '#ef4444' for drawer. */
     noColor?: string;
+    /** When true, color by trend for selected timeframe: green if up, pink if down */
+    colorByTrend?: boolean;
     entryTimestamp?: number; // seconds
     entryAvatarUri?: string;
     scrubIndex?: number | null;
@@ -28,6 +33,7 @@ export const LightChart: React.FC<LightChartProps> = ({
     height,
     isYes = true,
     noColor,
+    colorByTrend = false,
     entryTimestamp,
     entryAvatarUri,
     scrubIndex,
@@ -126,9 +132,17 @@ export const LightChart: React.FC<LightChartProps> = ({
         return { path, areaPath, lastPoint, gridLines, entryPoint, points, stride };
     }, [candles, width, height, entryTimestamp]);
 
-    // Colors based on trade side. NO: noColor (e.g. red in drawer) or black on screens
-    const lineColor = isYes ? '#22c55e' : (noColor ?? '#000000');
-    const gradientId = `light-gradient-${isYes ? 'yes' : 'no'}`;
+    // Color by trend (up = green, down = pink) for selected timeframe, or by trade side
+    const trendUp = useMemo(() => {
+        if (!candles || candles.length < 2) return true;
+        const first = candles[0].close;
+        const last = candles[candles.length - 1].close;
+        return last >= first;
+    }, [candles]);
+    const lineColor = colorByTrend
+        ? (trendUp ? CHART_GREEN : Theme.chartNegative)
+        : (isYes ? Theme.success : (noColor ?? Theme.error));
+    const gradientId = `light-gradient-${colorByTrend ? (trendUp ? 'up' : 'down') : (isYes ? 'yes' : 'no')}`;
 
     // Render placeholder if no data
     if (!candles || candles.length === 0 || !chartData.path) {

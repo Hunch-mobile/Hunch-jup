@@ -1,4 +1,5 @@
 import { Theme } from '@/constants/theme';
+import { useUser } from '@/contexts/UserContext';
 import { api, marketsApi } from '@/lib/api';
 import { formatVolume, getMarketDisplayTitle, getScoredEventsForRail } from '@/lib/marketUtils';
 import { CandleData, Event, Market } from '@/lib/types';
@@ -6,9 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useUser } from '@/contexts/UserContext';
+import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AnimatedPrice from './AnimatedPrice';
+import { MarketRailSkeleton } from './skeletons';
 import { MiniChart } from './MiniChart';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -108,7 +109,7 @@ const RailCard = ({
                             transition={200}
                         />
                     ) : (
-                        <View className="w-14 h-14 rounded-xl bg-app-elevated justify-center items-center">
+                        <View className="w-14 h-14 rounded-xl bg-app-card justify-center items-center">
                             <Ionicons name="stats-chart" size={20} color={Theme.textDisabled} />
                         </View>
                     )}
@@ -130,12 +131,12 @@ const RailCard = ({
                         <AnimatedPrice
                             value={typeof displayPrice === 'number' ? displayPrice : 0}
                             format="cents"
-                            style={{ fontSize: 26, fontWeight: '800', color: isPositive ? Theme.chartPositive : Theme.chartNegative }}
+                            style={{ fontSize: 26, fontWeight: '800', color: isPositive ? '#32de12' : Theme.chartNegative }}
                         />
                         {(priceChange || isInteracting) && (
-                            <View className={`flex-row items-center px-2 py-1 rounded-md gap-0.5 ${isPositive ? 'bg-yellow-500/15' : 'bg-pink-500/15'}`}>
-                                <Ionicons name={isPositive ? 'caret-up' : 'caret-down'} size={10} color={isPositive ? Theme.chartPositive : Theme.chartNegative} />
-                                <Text className="text-xs font-bold" style={{ color: isPositive ? Theme.chartPositive : Theme.chartNegative }}>
+                            <View className={`flex-row items-center px-2 py-1 rounded-md gap-0.5 ${isPositive ? 'bg-[#10ff1f]/15' : 'bg-pink-500/15'}`}>
+                                <Ionicons name={isPositive ? 'caret-up' : 'caret-down'} size={10} color={isPositive ? '#32de12' : Theme.chartNegative} />
+                                <Text className="text-xs font-bold" style={{ color: isPositive ? '#32de12' : Theme.chartNegative }}>
                                     {isPositive ? '+' : ''}{displayChangePercent}%
                                 </Text>
                             </View>
@@ -266,11 +267,7 @@ export const MarketRail = () => {
     }, []);
 
     if (loading) {
-        return (
-            <View className="py-10 items-center">
-                <ActivityIndicator size="small" color={Theme.accent} />
-            </View>
-        );
+        return <MarketRailSkeleton />;
     }
 
     if (railItems.length === 0) return null;
@@ -287,7 +284,7 @@ export const MarketRail = () => {
     };
 
     return (
-        <View className="py-5 bg-app-bg">
+        <View className="py-5 ">
 
             {/* <FlatList
                 horizontal
@@ -320,7 +317,7 @@ const styles = StyleSheet.create({
         borderRadius: 20,
         marginHorizontal: CARD_MARGIN,
         overflow: 'hidden',
-        shadowColor: '#000',
+        shadowColor: '#000000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.1,
         shadowRadius: 12,

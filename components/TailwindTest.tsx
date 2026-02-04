@@ -28,7 +28,7 @@ export default function TailwindTest() {
             <View className="mt-6 flex-row gap-3">
                 <View className="h-12 w-12 rounded-full bg-red-500" />
                 <View className="h-12 w-12 rounded-full bg-yellow-500" />
-                <View className="h-12 w-12 rounded-full bg-green-500" />
+                <View className="h-12 w-12 rounded-full bg-[#00e003]" />
                 <View className="h-12 w-12 rounded-full bg-blue-500" />
             </View>
         </View>

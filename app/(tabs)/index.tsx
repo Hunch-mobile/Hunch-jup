@@ -1,20 +1,21 @@
+import { EventCarousel } from "@/components/EventCarousel";
+import { EventMarketImageCarousel } from "@/components/EventMarketImageCarousel";
 import { FilterPills } from "@/components/FilterPills";
+import { MarketCard } from "@/components/MarketCard";
 import { MarketRail } from "@/components/MarketRail";
+import { HomeFeedSkeleton, ListFooterSkeleton } from "@/components/skeletons";
 import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import { MiniNewsCarousel } from "@/components/MiniNewsCarousel";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, marketsApi } from "@/lib/api";
-import { formatPercent } from "@/lib/marketUtils";
 import { Event, EventEvidence, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
 import { useFundSolanaWallet } from "@privy-io/expo/ui";
 import { Connection, clusterApiUrl } from "@solana/web3.js";
-import { Image } from "expo-image";
-import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, FlatList, Text, TouchableOpacity, View } from "react-native";
+import { Animated, FlatList, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // Filter active events (events with at least one active market)
@@ -39,138 +40,6 @@ const getTopMarketByVolume = (markets: Market[] | undefined): Market | null => {
   return activeMarkets
     .slice()
     .sort((a, b) => (b.volume || 0) - (a.volume || 0))[0] || null;
-};
-
-const EventCarousel = ({ items }: { items: Event[] }) => {
-  const renderEventItem = ({ item }: { item: Event }) => {
-    const topMarket = getTopMarketByVolume(item.markets);
-    return (
-      <TouchableOpacity
-        className="w-[220px] mr-3 bg-app-card rounded-xl overflow-hidden"
-        activeOpacity={0.7}
-        onPress={() => router.push({ pathname: '/event/[ticker]', params: { ticker: item.ticker } })}
-      >
-        {item.imageUrl ? (
-          <Image
-            source={{ uri: item.imageUrl }}
-            style={{ width: '100%', height: 110 }}
-            contentFit="cover"
-            transition={200}
-          />
-        ) : (
-          <View className="w-full h-[110px] bg-app-card justify-center items-center">
-            <Ionicons name="image-outline" size={22} color={Theme.textDisabled} />
-          </View>
-        )}
-        <View className="px-3 py-3">
-          <Text className="text-[14px] font-semibold text-txt-primary" numberOfLines={2}>
-            {item.title}
-          </Text>
-          {topMarket && (
-            <View className="flex-row items-center justify-between mt-1">
-              <Text className="text-[12px] text-txt-secondary flex-1 mr-2" numberOfLines={1}>
-                {topMarket.yesSubTitle || topMarket.title}
-              </Text>
-              <Text className="text-[12px] font-bold text-txt-primary">
-                {formatPercent(topMarket.yesBid)}
-              </Text>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  return (
-    <View className="py-4">
-      <View className="px-5 mb-2">
-        <Text className="text-[14px] font-semibold text-txt-primary">Events</Text>
-      </View>
-      <FlatList
-        data={items}
-        keyExtractor={(item) => item.ticker}
-        renderItem={renderEventItem}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20 }}
-      />
-    </View>
-  );
-};
-
-const MarketCard = ({
-  item,
-  onPress,
-  eventTitle,
-}: {
-  item: Market;
-  onPress: () => void;
-  eventTitle?: string;
-}) => {
-  const marketSubTitle = item.yesSubTitle || item.title;
-  const yesBid = item.yesBid ? parseFloat(item.yesBid) * 100 : null;
-  const noBid = item.noBid ? parseFloat(item.noBid) * 100 : null;
-
-  return (
-    <TouchableOpacity
-      className="py-4 px-5 bg-transparent"
-      activeOpacity={0.7}
-      onPress={onPress}
-    >
-      <View className="flex-row items-start gap-4">
-        {/* Left - Market Icon */}
-        {item.image_url ? (
-          <View className="w-[70px] h-[70px] rounded-[10px] bg-app-card overflow-hidden">
-            <Image
-              source={{ uri: item.image_url }}
-              style={{ width: '100%', height: '100%' }}
-              contentFit="cover"
-              transition={200}
-            />
-          </View>
-        ) : (
-          <View className="w-[70px] h-[70px] rounded-[10px] bg-app-card justify-center items-center">
-            <Ionicons name="stats-chart" size={24} color={Theme.textPrimary} />
-          </View>
-        )}
-
-        {/* Right Content */}
-        <View className="flex-1 gap-1.5">
-          {eventTitle ? (
-            <Text className="text-[12px] text-txt-secondary" numberOfLines={1}>
-              {eventTitle}
-            </Text>
-          ) : null}
-          <Text className="text-[15px] font-bold text-txt-primary leading-5" numberOfLines={2}>
-            {marketSubTitle}
-          </Text>
-
-          {/* Market Prices */}
-          <View className="gap-1 mt-1">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-[13px] text-txt-secondary">Yes</Text>
-              <Text className="text-[13px] font-bold text-txt-primary">
-                {yesBid !== null ? formatPercent(item.yesBid) : '—'}
-              </Text>
-            </View>
-            <View className="flex-row items-center justify-between">
-              <Text className="text-[13px] text-txt-secondary">No</Text>
-              <Text className="text-[13px] font-bold text-txt-primary">
-                {noBid !== null ? formatPercent(item.noBid) : '—'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Volume */}
-          {item.volume && item.volume > 0 && (
-            <Text className="text-[11px] text-txt-disabled mt-0.5">
-              Vol: ${(item.volume / 1000).toFixed(1)}K
-            </Text>
-          )}
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
 };
 
 // Default categories fallback
@@ -209,7 +78,7 @@ export default function HomeScreen() {
   const { fundWallet } = useFundSolanaWallet();
   const { wallets } = useEmbeddedSolanaWallet();
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedCategory, setSelectedCategory] = useState('Hot');
   const [events, setEvents] = useState<Event[]>([]);
   const [markets, setMarkets] = useState<Market[]>([]);
   const [newsItems, setNewsItems] = useState<EventEvidence[]>([]);
@@ -422,14 +291,44 @@ export default function HomeScreen() {
       const sortedEvents = sortByVolume(activeEvents);
 
       // Sort markets by volume (highest first)
-      const sortedMarkets = [...fetchedMarkets].sort((a, b) => (b.volume || 0) - (a.volume || 0));
+      // For "Hot" keep only markets with real images, for other categories allow imageless too
+      const sortedMarkets = [...fetchedMarkets]
+        .filter((m: any) => {
+          if (category === 'Hot') {
+            return (
+              typeof m?.image_url === 'string' &&
+              m.image_url.startsWith('http') &&
+              !m.image_url.toLowerCase().includes('kalshi-fallback-images')
+            );
+          }
+          // For other categories, allow markets even without images, but still drop known bad fallbacks
+          if (typeof m?.image_url === 'string') {
+            return !m.image_url.toLowerCase().includes('kalshi-fallback-images');
+          }
+          return true;
+        })
+        .sort((a, b) => (b.volume || 0) - (a.volume || 0));
 
       if (reset) {
         setEvents(sortedEvents);
         setMarkets(sortedMarkets);
       } else {
         setEvents(prev => [...prev, ...sortedEvents]);
-        setMarkets(prev => [...prev, ...sortedMarkets]);
+        setMarkets(prev =>
+          [...prev, ...sortedMarkets].filter((m: any) => {
+            if (category === 'Hot') {
+              return (
+                typeof m?.image_url === 'string' &&
+                m.image_url.startsWith('http') &&
+                !m.image_url.toLowerCase().includes('kalshi-fallback-images')
+              );
+            }
+            if (typeof m?.image_url === 'string') {
+              return !m.image_url.toLowerCase().includes('kalshi-fallback-images');
+            }
+            return true;
+          })
+        );
       }
 
       setCursor(newCursor);
@@ -505,7 +404,21 @@ export default function HomeScreen() {
     const EVENTS_PER_CAROUSEL = 7;
     let newsInserted = false;
 
-    if (markets.length === 0) {
+    const marketsWithImages = markets.filter((m: any) => {
+      if (typeof m?.image_url !== 'string') return false;
+      if (!m.image_url.startsWith('http')) return false;
+      if (m.image_url.toLowerCase().includes('kalshi-fallback-images')) return false;
+      return true;
+    });
+
+    const marketsWithoutImages = markets.filter((m: any) => {
+      if (typeof m?.image_url !== 'string') return true;
+      if (!m.image_url.startsWith('http')) return true;
+      if (m.image_url.toLowerCase().includes('kalshi-fallback-images')) return true;
+      return false;
+    });
+
+    if (marketsWithImages.length === 0) {
       if (events.length > 0) {
         items.push({ type: 'eventCarousel', data: events.slice(0, EVENTS_PER_CAROUSEL) });
       }
@@ -515,8 +428,8 @@ export default function HomeScreen() {
     let eventCursor = 0;
     let itemIndex = 0;
 
-    for (let i = 0; i < markets.length; i++) {
-      items.push({ type: 'market', data: markets[i] });
+    for (let i = 0; i < marketsWithImages.length; i++) {
+      items.push({ type: 'market', data: marketsWithImages[i] });
       itemIndex++;
 
       if (!newsInserted && newsItems.length > 0 && itemIndex % NEWS_INTERVAL === 0) {
@@ -539,6 +452,13 @@ export default function HomeScreen() {
       }
     }
 
+    // For non-"Hot" categories, append markets without images after the image-rich feed
+    if (selectedCategory !== 'Hot' && marketsWithoutImages.length > 0) {
+      marketsWithoutImages.forEach((m) => {
+        items.push({ type: 'market', data: m });
+      });
+    }
+
     if (eventCursor < events.length) {
       items.push({
         type: 'eventCarousel',
@@ -547,7 +467,7 @@ export default function HomeScreen() {
     }
 
     return items;
-  }, [events, markets, newsItems]);
+  }, [events, markets, newsItems, selectedCategory]);
 
   const renderFeedItem = ({ item }: { item: FeedItem }) => {
     if (item.type === 'news') {
@@ -570,15 +490,11 @@ export default function HomeScreen() {
 
   const renderFooter = () => {
     if (!loadingMore) return null;
-    return (
-      <View className="py-4 items-center">
-        <ActivityIndicator size="small" color={Theme.accentSubtle} />
-      </View>
-    );
+    return <ListFooterSkeleton />;
   };
 
   return (
-    <View className="flex-1 bg-app-bg">
+    <View className="flex-1 bg-white">
       <SafeAreaView className="flex-1" edges={['top']}>
         {/* Header with Portfolio Value / PnL / Add Cash (collapses on scroll) */}
         <Animated.View className="px-5 pt-2 pb-2 flex-row items-center justify-between">
@@ -635,9 +551,7 @@ export default function HomeScreen() {
 
         {/* Scrollable content: Filters + MarketRail + Events + News */}
         {loading ? (
-          <View className="flex-1 justify-center items-center">
-            <ActivityIndicator size="large" color={Theme.accentSubtle} />
-          </View>
+          <HomeFeedSkeleton />
         ) : error ? (
           <View className="flex-1 justify-center items-center">
             <Text className="text-status-error text-base mb-3">{error}</Text>
@@ -686,15 +600,12 @@ export default function HomeScreen() {
                   onCategoryChange={handleCategoryChange}
                   preferredCategories={getPreferredCategories()}
                 />
+                <EventMarketImageCarousel items={events.slice(0, 10)} />
                 <MarketRail />
               </>
             }
             ListFooterComponent={renderFooter}
-            ItemSeparatorComponent={({ leadingItem }) =>
-              leadingItem?.type === 'market' ? (
-                <View className="h-px bg-border opacity-50" />
-              ) : null
-            }
+            ItemSeparatorComponent={() => null}
             ListEmptyComponent={
               <View className="flex-1 justify-center items-center py-20">
                 <Ionicons name="search-outline" size={48} color={Theme.textDisabled} />

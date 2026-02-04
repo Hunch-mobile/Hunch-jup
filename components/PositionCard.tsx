@@ -16,6 +16,23 @@ const formatPercent = (value: number | null | undefined) => {
     return `${value.toFixed(1)}%`;
 };
 
+const formatOpenedAt = (trades: { createdAt: string }[]): string => {
+    if (!trades?.length) return '';
+    const createdDates = trades.map((t) => new Date(t.createdAt).getTime());
+    const earliest = new Date(Math.min(...createdDates));
+    const now = new Date();
+    const sameDay = earliest.toDateString() === now.toDateString();
+    if (sameDay) {
+        return earliest.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (earliest.toDateString() === yesterday.toDateString()) {
+        return `Yesterday ${earliest.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+    }
+    return earliest.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+};
+
 interface PositionCardProps {
     position: AggregatedPosition;
     isPrevious?: boolean;
@@ -36,10 +53,11 @@ export default function PositionCard({
             ? (pnlValue / position.totalCostBasis) * 100
             : null
     );
-    const pnlColor = pnlValue !== null ? (pnlValue >= 0 ? '#22c55e' : '#ef4444') : Theme.textDisabled;
+    const pnlColor = pnlValue !== null ? (pnlValue >= 0 ? '#32de12' : '#FF10F0') : Theme.textDisabled;
     const pnlText = pnlValue !== null
         ? `${pnlValue >= 0 ? '+' : '-'}${formatCurrency(Math.abs(pnlValue))}`
         : '—';
+    const openedAt = formatOpenedAt(position.trades || []);
 
     const [eventTitle, setEventTitle] = useState<string | null>(null);
 
@@ -58,16 +76,23 @@ export default function PositionCard({
             activeOpacity={0.7}
         >
             <View className="rounded-2xl p-4 overflow-hidden relative" style={{ backgroundColor: '#F5F5F5' }}>
-                <Text className="text-xl font-bold mb-2" numberOfLines={1}>
-                    {formatCurrency(position.totalCostBasis)}{" "}
+                <View className="flex-row justify-between items-start gap-3 mb-2">
+                    <Text className="text-xl font-bold flex-1" numberOfLines={1}>
+                        {formatCurrency(position.totalCostBasis)}{" "}
                     <Text
-                        className={isYes ? "text-lime-500 text-2xl font-extrabold" : "text-red-500 text-2xl font-extrabold"}
+                        className={isYes ? "text-[#32de12] text-2xl font-extrabold" : "text-[#FF10F0] text-2xl font-extrabold"}
                         style={{ fontFamily: 'BBHSansHegarty' }}
                     >
                         {isYes ? 'YES' : 'NO'}
-                    </Text>{" "}
-                    on {subtitle || position.market?.subtitle}
-                </Text>
+                        </Text>{" "}
+                        on {subtitle || position.market?.subtitle}
+                    </Text>
+                    {openedAt ? (
+                        <Text className="text-xs text-txt-disabled shrink-0">
+                            {openedAt}
+                        </Text>
+                    ) : null}
+                </View>
                 <View className="flex-row items-center gap-3 mb-3">
                     <View className="w-12 h-12 rounded-xl overflow-hidden border border-border bg-app-elevated">
                         <Image

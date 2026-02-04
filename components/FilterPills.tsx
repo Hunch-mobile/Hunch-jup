@@ -85,29 +85,31 @@ const styles = StyleSheet.create({
     contentContainer: {
         paddingHorizontal: 16,
         gap: 8,
+        alignItems: 'center',
     },
     pill: {
         paddingHorizontal: 16,
         paddingVertical: 4,
-        borderRadius: 20,
-        borderWidth: 1,
+        minHeight: 32,
+        justifyContent: 'center',
     },
     pillSelected: {
-        backgroundColor: Theme.textPrimary,
-        borderColor: Theme.textPrimary,
+        backgroundColor: 'transparent',
     },
     pillUnselected: {
-        backgroundColor: Theme.bgCard,
-        borderColor: Theme.bgCard,
+        backgroundColor: 'transparent',
     },
-    pillText: {
-        fontSize: 20,
-        fontWeight: '400',
-    },
+    pillText: {},
     pillTextSelected: {
-        color: Theme.bgMain,
+        color: Theme.textPrimary,
+        fontSize: 22,
+        fontWeight: '700',
+        lineHeight: 28,
     },
     pillTextUnselected: {
         color: Theme.textSecondary,
+        fontSize: 17,
+        fontWeight: '400',
+        lineHeight: 22,
     },
 });

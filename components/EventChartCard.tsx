@@ -187,17 +187,17 @@ export const EventChartCard: React.FC<EventChartCardProps> = ({
 
             {/* Price Row */}
             <View style={styles.priceRow}>
-                <Text style={[styles.price, { color: isPositive ? Theme.chartPositive : Theme.chartNegative }]}>
+                <Text style={[styles.price, { color: isPositive ? '#32de12' : Theme.chartNegative }]}>
                     {formatCents(displayPrice)}
                 </Text>
                 {(priceChange || isInteracting) && (
-                    <View style={[styles.changeChip, { backgroundColor: isPositive ? 'rgba(255, 217, 61, 0.15)' : 'rgba(255, 107, 157, 0.15)' }]}>
+                    <View style={[styles.changeChip, { backgroundColor: isPositive ? 'rgba(16, 255, 31, 0.15)' : 'rgba(255, 16, 240, 0.15)' }]}>
                         <Ionicons
                             name={isPositive ? 'caret-up' : 'caret-down'}
                             size={10}
-                            color={isPositive ? Theme.chartPositive : Theme.chartNegative}
+                            color={isPositive ? '#32de12' : Theme.chartNegative}
                         />
-                        <Text style={[styles.changeText, { color: isPositive ? Theme.chartPositive : Theme.chartNegative }]}>
+                        <Text style={[styles.changeText, { color: isPositive ? '#32de12' : Theme.chartNegative }]}>
                             {isPositive ? '+' : ''}{displayChangePercent}%
                         </Text>
                     </View>

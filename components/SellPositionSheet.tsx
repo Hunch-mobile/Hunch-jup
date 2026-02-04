@@ -1,6 +1,7 @@
 import { Theme } from '@/constants/theme';
 import { AggregatedPosition } from '@/lib/types';
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -110,7 +111,9 @@ export default function SellPositionSheet({
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <Pressable className="flex-1 bg-black/70 justify-end" onPress={onClose}>
+            <Pressable className="flex-1 justify-end" onPress={onClose} style={StyleSheet.absoluteFill}>
+                <BlurView intensity={25} tint="default" style={StyleSheet.absoluteFill} />
+                <View style={styles.backdropTint} />
                 <KeyboardAvoidingView
                     behavior={Platform.OS === "ios" ? "padding" : "height"}
                     keyboardVerticalOffset={Platform.OS === "ios" ? 16 : 0}
@@ -146,9 +149,9 @@ export default function SellPositionSheet({
                             <View className="bg-app-card rounded-xl p-4 mb-4 border border-border">
                                 <View className="flex-row items-center justify-between mb-3">
                                     <View className="flex-row items-center gap-2">
-                                        <View className={`px-2 py-1 rounded-md ${isYes ? 'bg-green-500/15' : 'bg-red-500/15'}`}>
+                                        <View className={`px-2 py-1 rounded-md ${isYes ? 'bg-[#2596be]/15' : 'bg-[#FF10F0]/15'}`}>
                                             <Text
-                                                className={`text-xs font-bold ${isYes ? 'text-green-500' : 'text-red-500'}`}
+                                                className={`text-xs font-bold ${isYes ? 'text-[#2596be]' : 'text-[#FF10F0]'}`}
                                                 style={{ fontFamily: 'BBHSansHegarty' }}
                                             >
                                                 {isYes ? 'YES' : 'NO'}
@@ -190,8 +193,8 @@ export default function SellPositionSheet({
 
                             {/* Error Message */}
                             {error && (
-                                <View className="bg-red-500/10 rounded-xl p-3 mb-4 border border-red-500/20">
-                                    <Text className="text-red-500 text-sm text-center">{error}</Text>
+                                <View className="bg-[#FF10F0]/10 rounded-xl p-3 mb-4 border border-[#FF10F0]/20">
+                                    <Text className="text-[#FF10F0] text-sm text-center">{error}</Text>
                                 </View>
                             )}
 
@@ -203,7 +206,7 @@ export default function SellPositionSheet({
                                 className={`mt-2 ${!canSell ? 'opacity-60' : ''}`}
                             >
                                 <LinearGradient
-                                    colors={canSell ? ['#ef4444', '#dc2626'] : [Theme.bgElevated, Theme.bgElevated]}
+                                    colors={canSell ? ['#FF10F0', '#FF1493'] : [Theme.bgElevated, Theme.bgElevated]}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 1, y: 1 }}
                                     style={styles.ctaGrad}
@@ -229,13 +232,17 @@ export default function SellPositionSheet({
 }
 
 const styles = StyleSheet.create({
+    backdropTint: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    },
     sheet: {
         backgroundColor: Theme.bgCard,
         borderTopLeftRadius: 28,
         borderTopRightRadius: 28,
         paddingHorizontal: 20,
         paddingTop: 8,
-        shadowColor: '#000',
+    shadowColor: '#000000',
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: 0.25,
         shadowRadius: 16,

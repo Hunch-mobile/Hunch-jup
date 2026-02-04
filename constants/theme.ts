@@ -6,7 +6,11 @@
 import { Platform } from 'react-native';
 
 // Minimal accent - used sparingly for critical actions only
-const minimalAccent = '#000000'; // Pure black for primary actions
+const minimalAccent = '#000000'; // Dark black for primary actions
+
+// Brand neons
+export const NEON_GREEN = '#00e003';
+export const NEON_PINK = '#FF10F0';
 
 // Clean monochrome palette
 export const Theme = {
@@ -18,7 +22,7 @@ export const Theme = {
   bgMain: '#FFFFFF', // Pure white background
   bgCard: '#FAFAFA', // Very light gray for cards
   bgElevated: '#F5F5F5', // Light gray for elevated elements
-  bgDark: '#000000', // Pure black for dark elements
+  bgDark: '#000000', // Dark black for dark elements
 
   // Borders - Subtle and clean
   border: '#E5E5E5', // Light gray border
@@ -26,14 +30,14 @@ export const Theme = {
   borderDark: '#D0D0D0', // Slightly darker border for emphasis
 
   // Text hierarchy - High contrast
-  textPrimary: '#000000', // Pure black for primary text
+  textPrimary: '#000000', // Dark black for primary text
   textSecondary: '#666666', // Medium gray for secondary text
   textDisabled: '#999999', // Light gray for disabled text
   textInverse: '#FFFFFF', // White text on dark backgrounds
 
   // State colors - Minimal and clean
-  success: '#000000', // Black for success (minimal approach)
-  error: '#DC2626', // Subtle red for errors only
+  success: NEON_GREEN, // Neon green for success
+  error: NEON_PINK, // Neon pink for errors
   warning: '#666666', // Gray for warnings
 
   // Component-specific - Subtle overlays
@@ -47,18 +51,18 @@ export const Theme = {
   glassEffect: 'rgba(255, 255, 255, 0.9)', // Glass morphism effect
 
   // Legacy support - Monochrome versions
-  successMuted: 'rgba(0, 0, 0, 0.08)',
-  errorMuted: 'rgba(220, 38, 38, 0.08)',
+  successMuted: 'rgba(0, 224, 3, 0.08)', // Neon green muted
+  errorMuted: 'rgba(255, 16, 240, 0.08)', // Neon pink muted
 
   // Chart colors - Vibrant palette for mini charts
-  chartPositive: '#FFD93D',       // Bright yellow for positive trends
-  chartNegative: '#000000',       // Black for negative trends
-  chartNeutral: '#22c55e',        // Green for neutral
-  chartGradientStart: '#FFD93D',  // Yellow gradient start
-  chartGradientEnd: '#FF6B9D',    // Pink gradient end
-  chartLine: '#F97316',           // Orange for main line
-  chartDot: '#FBBF24',            // Amber for data points
-  chartBackground: 'rgba(255, 217, 61, 0.1)', // Subtle yellow background
+  chartPositive: NEON_GREEN,       // Neon green for positive trends
+  chartNegative: NEON_PINK,        // Neon pink for negative trends
+  chartNeutral: NEON_GREEN,        // Neon green for neutral
+  chartGradientStart: NEON_GREEN,  // Green gradient start
+  chartGradientEnd: NEON_PINK,     // Pink gradient end
+  chartLine: NEON_GREEN,           // Main line in green
+  chartDot: NEON_GREEN,            // Data points in green
+  chartBackground: 'rgba(0, 224, 3, 0.08)', // Subtle green background
 };
 
 export const Colors = {

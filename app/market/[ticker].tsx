@@ -1,4 +1,5 @@
 import CustomKeypad from "@/components/CustomKeypad";
+import { MarketDetailSkeleton } from "@/components/skeletons";
 import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
@@ -12,7 +13,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Keyboard, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Keyboard, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function MarketDetailScreen() {
@@ -165,9 +166,7 @@ export default function MarketDetailScreen() {
       <View className="flex-1 bg-app-bg">
         <LinearGradient colors={[Theme.bgMain, '#0D1117', Theme.bgCard]} style={StyleSheet.absoluteFillObject} />
         <SafeAreaView className="flex-1">
-          <View className="flex-1 justify-center items-center">
-            <ActivityIndicator size="large" color={Theme.accentSubtle} />
-          </View>
+          <MarketDetailSkeleton />
         </SafeAreaView>
       </View>
     );
@@ -266,7 +265,7 @@ export default function MarketDetailScreen() {
             {/* Side Selector */}
             <View className="flex-row gap-2.5 mb-5">
               <TouchableOpacity
-                className={`flex-1 flex-row items-center justify-between py-3.5 px-4 rounded-[14px] border-2 ${selectedSide === 'yes' ? 'bg-green-500/10 border-green-500/40' : 'bg-app-elevated border-transparent'
+                className={`flex-1 flex-row items-center justify-between py-3.5 px-4 rounded-[14px] border-2 ${selectedSide === 'yes' ? 'bg-[#39FF14]/10 border-[#39FF14]/40' : 'bg-app-elevated border-transparent'
                   }`}
                 onPress={() => { setSelectedSide('yes'); Haptics.selectionAsync(); }}
                 activeOpacity={0.8}
@@ -283,7 +282,7 @@ export default function MarketDetailScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                className={`flex-1 flex-row items-center justify-between py-3.5 px-4 rounded-[14px] border-2 ${selectedSide === 'no' ? 'bg-red-400/10 border-red-400/40' : 'bg-app-elevated border-transparent'
+                className={`flex-1 flex-row items-center justify-between py-3.5 px-4 rounded-[14px] border-2 ${selectedSide === 'no' ? 'bg-[#FF10F0]/10 border-[#FF10F0]/40' : 'bg-app-elevated border-transparent'
                   }`}
                 onPress={() => { setSelectedSide('no'); Haptics.selectionAsync(); }}
                 activeOpacity={0.8}

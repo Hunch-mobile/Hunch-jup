@@ -1,5 +1,6 @@
 import { Theme } from '@/constants/theme';
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -37,36 +38,46 @@ export default function TradeQuoteSheet({
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <Pressable className="flex-1 bg-black/90 justify-center items-center p-5" onPress={onClose}>
+            <Pressable className="flex-1 justify-center items-center p-5" onPress={onClose} style={StyleSheet.absoluteFill}>
+                <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+                <View style={styles.backdropTint} />
                 <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.kav}>
                     <Pressable
                         style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}
                         onPress={(e) => e.stopPropagation()}
                     >
+                        {/* Order placed heading */}
+                        <Text className="text-lg font-semibold text-txt-secondary mb-2">Order placed</Text>
+
                         {/* Success Icon */}
-                        <View className="items-center mb-8 relative">
-                            <View className={`absolute w-[100px] h-[100px] rounded-full opacity-30 ${isYes ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <View className="items-center mb-6 relative">
+                            <View className={`absolute w-[100px] h-[100px] rounded-full opacity-30 ${isYes ? 'bg-[#00e003]' : 'bg-[#FF10F0]'}`} />
                             <LinearGradient
                                 colors={isYes ? ['#00FF88', '#00CC6E'] : ['#FF3B5C', '#CC2E49']}
                                 className="w-20 h-20 rounded-full justify-center items-center"
                             >
-                                <Ionicons name="checkmark-sharp" size={40} color="#000" />
+                                <Ionicons name="checkmark-sharp" size={40} color="#000000" />
                             </LinearGradient>
                         </View>
 
-                        {/* Trade Summary */}
-                        <View className="items-center mb-8">
+                        {/* Order details */}
+                        <View className="items-center mb-6">
                             <Text className="text-5xl font-extrabold text-txt-primary tracking-tight mb-3">
                                 ${tradeInfo.amount}
                             </Text>
-                            <View className="flex-row items-center gap-2">
+                            <View className="flex-row items-center gap-2 mb-2">
                                 <Text className="text-base text-txt-secondary font-medium">on</Text>
-                                <View className={`px-4 py-1.5 rounded-full ${isYes ? 'bg-green-500/15' : 'bg-red-500/15'}`}>
+                                <View className={`px-4 py-1.5 rounded-full ${isYes ? 'bg-[#00e003]/15' : 'bg-[#FF10F0]/15'}`}>
                                     <Text className="text-[15px] font-bold text-txt-primary tracking-wide">
                                         {tradeInfo.side.toUpperCase()}
                                     </Text>
                                 </View>
                             </View>
+                            {tradeInfo.marketTitle && tradeInfo.marketTitle !== 'Market' && (
+                                <Text className="text-sm text-txt-secondary text-center px-2" numberOfLines={2}>
+                                    {tradeInfo.marketTitle}
+                                </Text>
+                            )}
                         </View>
 
                         {/* Quote Input */}
@@ -123,6 +134,10 @@ export default function TradeQuoteSheet({
 
 // Minimal styles for sheet and gradient sizing
 const styles = StyleSheet.create({
+    backdropTint: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    },
     kav: {
         width: "100%",
         maxWidth: 440,

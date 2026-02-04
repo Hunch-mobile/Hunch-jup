@@ -62,7 +62,7 @@ export const AnimatedPrice: React.FC<AnimatedPriceProps> = ({
     // Determine color based on value change direction
     const getColor = (): string => {
         if (value > previousValue.current) {
-            return Theme.chartPositive;
+            return '#32de12';
         } else if (value < previousValue.current) {
             return Theme.chartNegative;
         }

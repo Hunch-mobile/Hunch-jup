@@ -99,9 +99,9 @@ export default function PositionActionSheet({
                                 {marketTitle}
                             </Text>
                             <View className="flex-row items-center gap-2 mt-1">
-                                <View className={`px-2 py-0.5 rounded-md ${isYes ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                                <View className={`px-2 py-0.5 rounded-md ${isYes ? 'bg-[#2596be]/10' : 'bg-[#FF10F0]/10'}`}>
                                     <Text
-                                        className={`text-xs font-bold ${isYes ? 'text-green-500' : 'text-red-500'}`}
+                                        className={`text-xs font-bold ${isYes ? 'text-[#2596be]' : 'text-[#FF10F0]'}`}
                                         style={{ fontFamily: 'BBHSansHegarty' }}
                                     >
                                         {isYes ? 'YES' : 'NO'}
@@ -130,17 +130,17 @@ export default function PositionActionSheet({
                             {/* Sell Position */}
                             {canSell && (
                                 <TouchableOpacity
-                                    className="flex-row items-center justify-between py-3.5 px-2 bg-red-500/5 rounded-xl border border-red-500/10"
+                                    className="flex-row items-center justify-between py-3.5 px-2 bg-[#FF10F0]/5 rounded-xl border border-[#FF10F0]/10"
                                     onPress={() => { onSell(position); onClose(); }}
                                     activeOpacity={0.7}
                                 >
                                     <View className="flex-row items-center gap-3.5">
-                                        <View className="w-8 h-8 rounded-full bg-red-500/10 justify-center items-center">
-                                            <Ionicons name="trending-down" size={18} color="#ef4444" />
+                                        <View className="w-8 h-8 rounded-full bg-[#FF10F0]/10 justify-center items-center">
+                                            <Ionicons name="trending-down" size={18} color="#FF10F0" />
                                         </View>
-                                        <Text className="text-base font-semibold text-red-500">Sell Position</Text>
+                                        <Text className="text-base font-semibold text-[#FF10F0]">Sell Position</Text>
                                     </View>
-                                    <Ionicons name="chevron-forward" size={20} color="#ef4444" />
+                                    <Ionicons name="chevron-forward" size={20} color="#FF10F0" />
                                 </TouchableOpacity>
                             )}
                         </View>
@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 24,
         paddingHorizontal: 20,
         paddingTop: 8,
-        shadowColor: '#000',
+        shadowColor: '#000000',
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: 0.25,
         shadowRadius: 16,

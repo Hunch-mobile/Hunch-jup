@@ -1,6 +1,7 @@
 import { Theme } from "@/constants/theme";
+import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Dimensions, Modal, Pressable, Text, TouchableOpacity, View } from "react-native";
+import { Dimensions, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type CustomKeypadProps = {
   visible: boolean;
@@ -90,7 +91,9 @@ export default function CustomKeypad({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable className="flex-1 justify-end" onPress={onClose}>
+      <Pressable className="flex-1 justify-end" onPress={onClose} style={StyleSheet.absoluteFill}>
+        <BlurView intensity={25} tint="default" style={StyleSheet.absoluteFill} />
+        <View style={styles.backdropTint} />
         <View
           className="bg-app-bg rounded-t-3xl px-4 pt-4"
           style={{ 
@@ -175,3 +178,9 @@ export default function CustomKeypad({
   );
 }
 
+const styles = StyleSheet.create({
+  backdropTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+});

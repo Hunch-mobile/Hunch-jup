@@ -1,10 +1,12 @@
 import { Theme } from '@/constants/theme';
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from 'expo-blur';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Animated,
     Dimensions,
+    Easing,
     Keyboard,
     Modal,
     Platform,
@@ -49,15 +51,15 @@ export default function CopyTradeSheet({
             Animated.parallel([
                 Animated.timing(fadeAnim, {
                     toValue: 1,
-                    duration: 200,
+                    duration: 280,
                     useNativeDriver: true,
+                    easing: Easing.out(Easing.cubic),
                 }),
-                Animated.spring(slideAnim, {
+                Animated.timing(slideAnim, {
                     toValue: 0,
+                    duration: 320,
                     useNativeDriver: true,
-                    damping: 20,
-                    mass: 0.8,
-                    stiffness: 100,
+                    easing: Easing.out(Easing.cubic),
                 }),
             ]).start();
         } else {
@@ -96,12 +98,15 @@ export default function CopyTradeSheet({
             statusBarTranslucent
         >
             <TouchableWithoutFeedback onPress={handleClose}>
-                <Animated.View
-                    style={[
-                        styles.backdrop,
-                        { opacity: fadeAnim }
-                    ]}
-                />
+                <View style={StyleSheet.absoluteFill}>
+                    <BlurView intensity={25} tint="default" style={StyleSheet.absoluteFill} />
+                    <Animated.View
+                        style={[
+                            styles.backdrop,
+                            { opacity: fadeAnim }
+                        ]}
+                    />
+                </View>
             </TouchableWithoutFeedback>
 
             <View style={styles.sheetContainer} pointerEvents="box-none">
@@ -123,7 +128,7 @@ export default function CopyTradeSheet({
                         </View>
                         <View className="flex-row items-center gap-3">
                             <View className="items-end">
-                                <Text className="text-xs text-txt-disabled uppercase tracking-wide">Balance</Text>
+                                <Text className="text-xs text-txt-disabled tracking-wide">Your balance</Text>
                                 <Text className="text-lg font-bold text-txt-primary">${balance.toFixed(2)}</Text>
                             </View>
                             <TouchableOpacity
@@ -135,10 +140,9 @@ export default function CopyTradeSheet({
                         </View>
                     </View>
 
-                    {/* Inputs */}
-                    <View className="gap-5 mb-8">
-                        {/* Per Trade Input */}
-                        <View>
+                    {/* Inputs - spaced and aligned */}
+                    <View style={styles.inputsSection}>
+                        <View style={styles.inputBlock}>
                             <Text className="text-sm font-medium text-txt-secondary mb-2 uppercase tracking-wide">
                                 Per Trade
                             </Text>
@@ -156,8 +160,7 @@ export default function CopyTradeSheet({
                             </View>
                         </View>
 
-                        {/* Total Cap Input */}
-                        <View>
+                        <View style={styles.inputBlock}>
                             <Text className="text-sm font-medium text-txt-secondary mb-2 uppercase tracking-wide">
                                 Total Cap
                             </Text>
@@ -177,7 +180,7 @@ export default function CopyTradeSheet({
                     </View>
 
                     {/* Buttons */}
-                    <View className="flex-row gap-3">
+                    <View className="flex-row gap-3 mt-6">
                         <TouchableOpacity
                             className="flex-1 py-3.5 rounded-xl border border-border items-center justify-center bg-transparent"
                             onPress={handleClose}
@@ -226,8 +229,7 @@ const styles = StyleSheet.create({
         padding: 24,
         paddingBottom: Platform.OS === 'ios' ? 40 : 24,
         width: '100%',
-        minHeight: SCREEN_HEIGHT * 0.8,
-        shadowColor: "#000",
+        shadowColor: "#000000",
         shadowOffset: {
             width: 0,
             height: -4,
@@ -235,5 +237,12 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 8,
         elevation: 10,
+    },
+    inputsSection: {
+        gap: 20,
+        marginTop: 8,
+    },
+    inputBlock: {
+        width: '100%',
     },
 });

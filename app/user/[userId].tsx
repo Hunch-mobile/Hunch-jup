@@ -1,4 +1,5 @@
 import CopyTradeSheet from "@/components/CopyTradeSheet";
+import { PositionsSkeleton, UserProfileSkeleton } from "@/components/skeletons";
 import PositionCard from "@/components/PositionCard";
 import SellPositionSheet from "@/components/SellPositionSheet";
 import TradeQuoteSheet from "@/components/TradeQuoteSheet";
@@ -165,7 +166,7 @@ const TradeItem = ({
     const pnlText = pnlInfo && Number.isFinite(pnlDollar)
         ? `${pnlInfo.isPositive ? '+' : ''}$${Math.abs(pnlDollar).toFixed(0)}`
         : '—';
-    const pnlColor = pnlInfo ? (pnlInfo.isPositive ? '#22c55e' : '#ef4444') : Theme.textDisabled;
+    const pnlColor = pnlInfo ? (pnlInfo.isPositive ? '#32de12' : '#FF10F0') : Theme.textDisabled;
     const gradientColors = pnlInfo
         ? (pnlInfo.isPositive
             ? ['#ECFDF5', '#F0FDF4', '#FFFFFF'] as const
@@ -200,7 +201,7 @@ const TradeItem = ({
                             <Text className="text-2xl font-extrabold text-txt-primary">
                                 ${Number.isFinite(totalValue) ? totalValue.toFixed(2) : parseFloat(trade.amount).toFixed(2)}
                             </Text>
-                            <Text className={`text-2xl font-extrabold ${isYes ? 'text-green-500' : 'text-red-500'}`}>
+                            <Text className={`text-2xl font-extrabold ${isYes ? 'text-[#32de12]' : 'text-[#FF10F0]'}`}>
                                 {isYes ? 'Yes' : 'No'}
                             </Text>
                         </View>
@@ -236,15 +237,15 @@ const TradeItem = ({
                         {/* Sell Button for own profile's active positions */}
                         {showSellButton && onSell && market && (
                             <TouchableOpacity
-                                className="mt-3 bg-red-500/10 rounded-xl py-2.5 flex-row items-center justify-center gap-2 border border-red-500/20"
+                                className="mt-3 bg-[#FF10F0]/10 rounded-xl py-2.5 flex-row items-center justify-center gap-2 border border-[#FF10F0]/20"
                                 onPress={(e) => {
                                     e.stopPropagation();
                                     onSell();
                                 }}
                                 activeOpacity={0.7}
                             >
-                                <Ionicons name="trending-down" size={16} color="#ef4444" />
-                                <Text className="text-red-500 font-semibold text-sm">Sell Position</Text>
+                                <Ionicons name="trending-down" size={16} color="#FF10F0" />
+                                <Text className="text-[#FF10F0] font-semibold text-sm">Sell Position</Text>
                             </TouchableOpacity>
                         )}
                     </LinearGradient>
@@ -667,10 +668,7 @@ export default function UserProfileScreen() {
         return (
             <View className="flex-1 bg-app-bg">
                 <SafeAreaView className="flex-1">
-                    <View className="flex-1 justify-center items-center px-10">
-                        <ActivityIndicator size="large" color={Theme.accentSubtle} />
-                        <Text className="text-txt-secondary text-sm mt-3">Loading profile...</Text>
-                    </View>
+                    <UserProfileSkeleton />
                 </SafeAreaView>
             </View>
         );
@@ -801,9 +799,7 @@ export default function UserProfileScreen() {
                                 {/* Active */}
                                 <View style={styles.listPane}>
                                     {isLoadingPositions ? (
-                                        <View className="py-10 items-center">
-                                            <ActivityIndicator size="small" color={Theme.accentSubtle} />
-                                        </View>
+                                        <PositionsSkeleton />
                                     ) : activePositions.length === 0 ? (
                                         <View className="p-10 items-center gap-3">
                                             <Ionicons name="bar-chart-outline" size={32} color={Theme.textDisabled} />
@@ -825,9 +821,7 @@ export default function UserProfileScreen() {
                                 {/* Previous */}
                                 <View style={styles.listPane}>
                                     {isLoadingPositions ? (
-                                        <View className="py-10 items-center">
-                                            <ActivityIndicator size="small" color={Theme.accentSubtle} />
-                                        </View>
+                                        <PositionsSkeleton />
                                     ) : previousPositions.length === 0 ? (
                                         <View className="p-10 items-center gap-3">
                                             <Ionicons name="time-outline" size={32} color={Theme.textDisabled} />

@@ -3,6 +3,7 @@ import PositionActionSheet from "@/components/PositionActionSheet";
 import PositionCard from "@/components/PositionCard";
 import SellPositionSheet from "@/components/SellPositionSheet";
 import SettingsSheet from "@/components/SettingsSheet";
+import { PositionsSkeleton, ProfileSkeleton } from "@/components/skeletons";
 import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
@@ -16,7 +17,7 @@ import { clusterApiUrl, Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -24,6 +25,7 @@ const defaultProfileImage = require("@/assets/default.jpeg");
 
 type TradeTab = 'positions' | 'copying';
 type PositionFilter = 'active' | 'previous';
+type SortDirection = 'profits' | 'losses';
 
 const formatCurrency = (value: number | null | undefined, fractionDigits = 2) => {
     if (value === null || value === undefined || !Number.isFinite(value)) return '—';
@@ -48,6 +50,7 @@ export default function ProfileScreen() {
     const [trades, setTrades] = useState<Trade[]>([]);
     const [activeTab, setActiveTab] = useState<TradeTab>('positions');
     const [positionFilter, setPositionFilter] = useState<PositionFilter>('active');
+    const [sortDirection, setSortDirection] = useState<SortDirection | null>(null);
     const [settingsVisible, setSettingsVisible] = useState(false);
     const [solBalance, setSolBalance] = useState<number | null>(null);
     const [solUsdPrice, setSolUsdPrice] = useState<number | null>(null);
@@ -251,6 +254,30 @@ export default function ProfileScreen() {
     const activePositions = positions.active;
     const previousPositions = positions.previous;
 
+    const getPnlValue = useCallback((p: AggregatedPosition): number => {
+        const pnl =
+            (p as any).totalPnL ??
+            (p as any).profitLoss ??
+            (p as any).unrealizedPnL ??
+            (p as any).realizedPnL ??
+            0;
+        return typeof pnl === 'number' && Number.isFinite(pnl) ? pnl : 0;
+    }, []);
+
+    const displayedPositions = useMemo(() => {
+        if (positionFilter === 'previous') return previousPositions;
+        if (sortDirection === 'profits') {
+            return [...activePositions].sort((a, b) => getPnlValue(b) - getPnlValue(a));
+        }
+        if (sortDirection === 'losses') {
+            return [...activePositions].sort((a, b) => getPnlValue(a) - getPnlValue(b));
+        }
+        return activePositions;
+    }, [positionFilter, sortDirection, activePositions, previousPositions, getPnlValue]);
+
+    const displayedCount =
+        positionFilter === 'previous' ? previousPositions.length : activePositions.length;
+
     const handleLogout = async () => {
         await logout();
         setBackendUser(null);
@@ -414,9 +441,7 @@ export default function ProfileScreen() {
         return (
             <View className="flex-1 bg-app-bg">
                 <SafeAreaView className="flex-1" edges={['top']}>
-                    <View className="flex-1 justify-center items-center px-5">
-                        <ActivityIndicator size="large" color={Theme.textPrimary} />
-                    </View>
+                    <ProfileSkeleton />
                 </SafeAreaView>
             </View>
         );
@@ -532,9 +557,9 @@ export default function ProfileScreen() {
                                         left: 0,
                                         height: 2,
                                         width: tabWidth,
-                                        backgroundColor: '#000',
+                                        backgroundColor: '#000000',
                                         transform: [{ translateX: indicatorAnim }],
-                                    }}
+                                    }}  
                                 />
                                 <TouchableOpacity
                                     className="flex-1 items-center py-3 relative"
@@ -548,7 +573,7 @@ export default function ProfileScreen() {
                                                     width: 8,
                                                     height: 8,
                                                     borderRadius: 4,
-                                                    backgroundColor: '#22c55e',
+                                                    backgroundColor: Theme.success,
                                                     opacity: pulseAnim,
                                                     transform: [{ scale: pulseAnim }],
                                                 }}
@@ -558,7 +583,7 @@ export default function ProfileScreen() {
                                             className="text-base font-bold"
                                             style={{ color: activeTab === 'positions' ? Theme.textPrimary : Theme.textSecondary }}
                                         >
-                                            POSITIONS{activeTab === 'positions' ? ` (${positionFilter === 'active' ? activePositions.length : previousPositions.length})` : ''}
+                                            POSITIONS{activeTab === 'positions' ? ` (${displayedCount})` : ''}
                                         </Text>
                                     </View>
                                 </TouchableOpacity>
@@ -583,48 +608,111 @@ export default function ProfileScreen() {
                                 {/* Positions Tab with Filter */}
                                 <View style={styles.listPane}>
                                     {activeTab === 'positions' && (
-                                        <View className="flex-row items-center justify-end mb-4 px-1">
-                                            <TouchableOpacity
-                                                className="px-4 py-2 relative"
-                                                onPress={() => {
-                                                    setPositionFilter(positionFilter === 'active' ? 'previous' : 'active');
-                                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                                }}
-                                                activeOpacity={0.7}
-                                            >
-                                                <Text
-                                                    className="text-sm font-semibold"
-                                                    style={{ color: Theme.textPrimary }}
-                                                >
-                                                    {positionFilter === 'active' ? 'Active' : 'Previous'}
-                                                </Text>
-                                                <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-black" />
-                                            </TouchableOpacity>
+                                        <View className="flex-row items-center justify-between mb-4">
+                                            <View className="flex-row gap-2">
+                                                {([
+                                                    { key: 'active', label: 'Active' },
+                                                    { key: 'previous', label: 'Previous' },
+                                                ] as const).map((item) => {
+                                                    const selected = positionFilter === item.key;
+                                                    return (
+                                                        <TouchableOpacity
+                                                            key={item.key}
+                                                            onPress={() => {
+                                                                setPositionFilter(item.key);
+                                                                setSortDirection(null);
+                                                                Haptics.selectionAsync();
+                                                            }}
+                                                            activeOpacity={0.75}
+                                                            style={[
+                                                                {
+                                                                    paddingHorizontal: 12,
+                                                                    paddingVertical: 8,
+                                                                    borderRadius: 999,
+                                                                    backgroundColor: selected ? '#000000' : '#E5E7EB',
+                                                                },
+                                                            ]}
+                                                        >
+                                                            <Text
+                                                                className="text-[13px] font-semibold"
+                                                                style={{ color: selected ? Theme.textInverse : Theme.textPrimary }}
+                                                            >
+                                                                {item.label}
+                                                            </Text>
+                                                        </TouchableOpacity>
+                                                    );
+                                                })}
+                                            </View>
+
+                                            {/* Sort pill with toggle arrow (extreme right) */}
+                                            {(() => {
+                                                const isUp = sortDirection !== 'losses'; // default / profits = up
+                                                const pnlColor =
+                                                    sortDirection === 'profits'
+                                                        ? '#00e000'
+                                                        : sortDirection === 'losses'
+                                                            ? '#FF10F0'
+                                                            : Theme.textPrimary;
+                                                return (
+                                                    <TouchableOpacity
+                                                        onPress={() => {
+                                                            // Only sorts active positions
+                                                            setPositionFilter('active');
+                                                            setSortDirection((prev) => {
+                                                                if (prev === null) return 'profits';
+                                                                return prev === 'profits' ? 'losses' : 'profits';
+                                                            });
+                                                            Haptics.selectionAsync();
+                                                        }}
+                                                        activeOpacity={0.75}
+                                                        style={[
+                                                            {   
+                                                                paddingHorizontal: 12,
+                                                                paddingVertical: 8,
+                                                                borderRadius: 999,
+                                                                flexDirection: 'row',
+                                                                alignItems: 'center',
+                                                                gap: 6,
+                                                            },
+                                                        ]}
+                                                    >
+                                                       
+                                                        <Ionicons
+                                                            name={isUp ? 'caret-up-outline' : 'caret-down-outline'}
+                                                            size={18}
+                                                            color={pnlColor}
+                                                        />
+                                                         <Text
+                                                            className="text-[18px] font-semibold"
+                                                            style={{ color: pnlColor }}
+                                                        >
+                                                            PnL
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                );
+                                            })()}
                                         </View>
                                     )}
                                     <View className="pb-10">
                                         {isLoadingPositions ? (
-                                            <View className="p-10 items-center gap-3">
-                                                <ActivityIndicator size="small" color={Theme.textPrimary} />
-                                                <Text className="text-sm text-txt-disabled">Loading positions...</Text>
-                                            </View>
-                                        ) : (positionFilter === 'active' ? activePositions : previousPositions).length === 0 ? (
+                                            <PositionsSkeleton />
+                                        ) : displayedPositions.length === 0 ? (
                                             <View className="p-10 items-center gap-3">
                                                 <Ionicons 
-                                                    name={positionFilter === 'active' ? 'bar-chart-outline' : 'time-outline'} 
+                                                    name={positionFilter === 'previous' ? 'time-outline' : 'bar-chart-outline'} 
                                                     size={32} 
                                                     color={Theme.textDisabled} 
                                                 />
-                                                <Text className="text-sm text-txt-disabled">No {positionFilter} positions</Text>
+                                                <Text className="text-sm text-txt-disabled">No positions</Text>
                                             </View>
                                         ) : (
                                             <View className="">
-                                                {(positionFilter === 'active' ? activePositions : previousPositions).map((position, index) => (
+                                                {displayedPositions.map((position, index) => (
                                                     <PositionCard
                                                         key={`${positionFilter}-${position.marketTicker}-${position.side}-${index}`}
                                                         position={position}
                                                         isPrevious={positionFilter === 'previous'}
-                                                        onPress={() => positionFilter === 'active' 
+                                                        onPress={() => positionFilter !== 'previous'
                                                             ? handleOpenActionSheet(position)
                                                             : router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })
                                                         }

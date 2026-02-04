@@ -218,10 +218,10 @@ export default function CreditCard({
                 >
                   {copied ? (
                     <>
-                      <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-4 h-4 text-[#00e003]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
-                      <span className="text-xs text-green-500">Copied!</span>
+                      <span className="text-xs text-[#00e003]">Copied!</span>
                     </>
                   ) : (
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -599,7 +599,7 @@ export default function WithdrawModal({
           {/* Status */}
           {status && (
             <div className={`px-3 py-2 rounded-lg text-sm ${status.type === 'success'
-              ? 'bg-green-500/10 text-green-400'
+              ? 'bg-[#00e003]/10 text-[#00e003]'
               : status.type === 'error'
                 ? 'bg-red-500/10 text-red-400'
                 : 'bg-blue-500/10 text-blue-400'

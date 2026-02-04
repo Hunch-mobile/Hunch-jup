@@ -1,5 +1,6 @@
 import { Theme } from '@/constants/theme';
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -96,7 +97,9 @@ export default function WithdrawSheet({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable className="flex-1 bg-black/50 justify-end" onPress={onClose}>
+      <Pressable className="flex-1 justify-end" onPress={onClose} style={StyleSheet.absoluteFill}>
+        <BlurView intensity={25} tint="default" style={StyleSheet.absoluteFill} />
+        <View style={styles.backdropTint} />
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           keyboardVerticalOffset={Platform.OS === "ios" ? 16 : 0}
@@ -129,7 +132,7 @@ export default function WithdrawSheet({
                 {/* To Address */}
                 <View className="gap-2.5">
                   <Text className="text-[11px] font-semibold text-txt-secondary uppercase tracking-wider">To Address</Text>
-                  <View className={`bg-white rounded-2xl border-2 px-4 h-[56px] justify-center ${errors.toAddress ? 'border-red-500' : 'border-[#E5E7EB]'}`}>
+                  <View className={`bg-white rounded-2xl border-2 px-4 h-[56px] justify-center ${errors.toAddress ? 'border-[#FF10F0]' : 'border-[#E5E7EB]'}`}>
                     <TextInput
                       value={toAddress}
                       onChangeText={setToAddress}
@@ -141,20 +144,20 @@ export default function WithdrawSheet({
                       className="text-txt-primary text-[16px]"
                     />
                   </View>
-                  {errors.toAddress && <Text className="text-red-500 text-xs mt-1 font-medium">{errors.toAddress}</Text>}
+                  {errors.toAddress && <Text className="text-[#FF10F0] text-xs mt-1 font-medium">{errors.toAddress}</Text>}
                 </View>
 
                 {/* Amount */}
                 <View className="gap-2.5">
                   <Text className="text-[11px] font-semibold text-txt-secondary uppercase tracking-wider">Amount</Text>
-                  <View className={`bg-white rounded-2xl border-2 px-4 h-[56px] justify-center ${errors.amount ? 'border-red-500' : 'border-[#E5E7EB]'}`}>
+                  <View className={`bg-white rounded-2xl border-2 px-4 h-[56px] justify-center ${errors.amount ? 'border-[#FF10F0]' : 'border-[#E5E7EB]'}`}>
                     <Pressable onPress={() => setAmountKeypadOpen(true)}>
                       <Text className="text-txt-primary text-[16px] font-medium">
                         {amount || "0.00"}
                       </Text>
                     </Pressable>
                   </View>
-                  {errors.amount && <Text className="text-red-500 text-xs mt-1 font-medium">{errors.amount}</Text>}
+                  {errors.amount && <Text className="text-[#FF10F0] text-xs mt-1 font-medium">{errors.amount}</Text>}
                 </View>
 
                 {/* Submit */}
@@ -166,7 +169,7 @@ export default function WithdrawSheet({
                 >
                   {canSubmit ? (
                     <LinearGradient
-                      colors={['#000', '#1F2937']}
+                      colors={['#000000', '#1F2937']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.ctaGrad}
@@ -204,6 +207,10 @@ export default function WithdrawSheet({
 
 // Minimal styles for sheet and gradient
 const styles = StyleSheet.create({
+  backdropTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
   sheet: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 28,
@@ -211,7 +218,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 8,
     overflow: "hidden",
-    shadowColor: '#000',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,

@@ -1,3 +1,4 @@
+import { SuggestedFollowersSkeleton } from "@/components/skeletons";
 import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
 import { User } from "@/lib/types";
@@ -5,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Image, Text, TouchableOpacity, View } from "react-native";
+import { Image, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function SuggestedFollowersScreen() {
@@ -100,9 +101,7 @@ export default function SuggestedFollowersScreen() {
 
                     {/* Users List */}
                     {loading ? (
-                        <View className="flex-1 items-center justify-center">
-                            <ActivityIndicator size="large" color="#18181B" />
-                        </View>
+                        <SuggestedFollowersSkeleton />
                     ) : topUsers.length === 0 ? (
                         <View className="flex-1 items-center justify-center">
                             <Text className="text-gray-400 text-center">

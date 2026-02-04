@@ -9,10 +9,10 @@ interface NewsCardProps {
 }
 
 const classificationConfig: Record<string, { color: string; label: string }> = {
-    CONFIRMATION: { color: '#22c55e', label: 'SIGNAL' },
+    CONFIRMATION: { color: '#32de12', label: 'SIGNAL' },
     REQUIREMENT: { color: '#f59e0b', label: 'UPDATE' },
     DELAY: { color: '#f97316', label: 'DELAYED' },
-    RISK: { color: '#ef4444', label: 'ALERT' },
+    RISK: { color: '#FF10F0', label: 'ALERT' },
     NONE: { color: '#6b7280', label: 'NEWS' },
 };
 

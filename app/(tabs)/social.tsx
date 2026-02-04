@@ -1,17 +1,18 @@
 import LightChart from '@/components/LightChart';
 import { MarketTradeSheet } from '@/components/MarketTradeSheet';
 import NewsCard from '@/components/NewsCard';
+import { ListFooterSkeleton, SocialFeedSkeleton } from '@/components/skeletons';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, getMarketDetails, marketsApi } from "@/lib/api";
 import { User as BackendUser, CandleData, Event, EventEvidence, Market, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clusterApiUrl, Connection } from "@solana/web3.js";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, FlatList, Image, PanResponder, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -189,7 +190,7 @@ const FeedCard = ({
         [candles, isYes]
     );
     const pnlText = priceChange ? `${priceChange.isPositive ? '+' : ''}${priceChange.changePercent}%` : (isYes ? '+0.0%' : '-0.0%');
-    const pnlColor = priceChange ? (priceChange.isPositive ? '#22c55e' : '#ef4444') : (isYes ? '#22c55e' : '#ef4444');
+    const pnlColor = priceChange ? (priceChange.isPositive ? '#32de12' : '#FF10F0') : (isYes ? '#32de12' : '#FF10F0');
     const pnlPercentValue = priceChange ? Number(priceChange.changePercent) : NaN;
     const pnlDollar = Number.isFinite(pnlPercentValue) && Number.isFinite(totalBought)
         ? (totalBought * pnlPercentValue) / 100
@@ -243,9 +244,9 @@ const FeedCard = ({
                 </TouchableOpacity>
                 <View className="flex-1">
                     <View className="flex-row items-start justify-between">
-                        <Text className="text-txt-primary font-bold text-[14px]" numberOfLines={1}>
+                            <Text className="text-txt-primary font-bold text-[14px]" numberOfLines={1}>
                             {handle}{' '}
-                            <Text style={{ color: isSell ? '#ef4444' : '#22c55e', fontWeight: '800' }}>
+                            <Text style={{ color: isSell ? '#FF10F0' : '#32de12', fontWeight: '800' }}>
                                 {isSell ? 'sold' : 'bought'}
                             </Text>
                         </Text>
@@ -268,7 +269,7 @@ const FeedCard = ({
 
                 <View className="flex-row items-center gap-3 mb-3.5">
                     <Text
-                        className={`text-[32px] font-black ${isYes ? 'text-[#41d93b]' : 'text-[#ef4444]'}`}
+                        className={`text-[32px] font-black ${isYes ? 'text-[#32de12]' : 'text-[#FF10F0]'}`}
                         style={{ fontFamily: 'BBHSansHegarty' }}
                     >
                         {isYes ? 'YES' : 'NO'}
@@ -297,7 +298,7 @@ const FeedCard = ({
                             candles={chartCandles}
                             width={FEED_CARD_CHART_WIDTH}
                             height={FEED_CARD_CHART_HEIGHT}
-                            isYes={isYes}
+                            colorByTrend={true}
                             entryTimestamp={entryTimestamp}
                             entryAvatarUri={avatarUrl || undefined}
                         />
@@ -1090,10 +1091,7 @@ export default function SocialScreen() {
                                     return (
                                         <View key={pageMode} style={styles.listPane}>
                                             {isLoadingFeed && tradeItems.length === 0 ? (
-                                                <View className="flex-1 justify-center items-center gap-3">
-                                                    <ActivityIndicator size="large" color={Theme.accentSubtle} />
-                                                    <Text className="text-sm text-txt-secondary">Loading feed...</Text>
-                                                </View>
+                                                <SocialFeedSkeleton />
                                             ) : (
                                                 <FlatList
                                                     data={mixedFeed}
@@ -1123,11 +1121,7 @@ export default function SocialScreen() {
                                                     onEndReachedThreshold={0.6}
                                                     ListEmptyComponent={() => renderEmptyState(pageMode)}
                                                     ListFooterComponent={
-                                                        isLoadingMore ? (
-                                                            <View className="py-4">
-                                                                <ActivityIndicator size="small" color={Theme.accentSubtle} />
-                                                            </View>
-                                                        ) : null
+                                                        isLoadingMore ? <ListFooterSkeleton /> : null
                                                     }
                                                 />
                                             )}
@@ -1164,7 +1158,7 @@ export default function SocialScreen() {
                     width: 56,
                     height: 56,
                     borderRadius: 12,
-                    shadowColor: '#000',
+                    shadowColor: '#000000',
                     shadowOffset: { width: 0, height: 4 },
                     shadowOpacity: 0.3,
                     shadowRadius: 8,
@@ -1186,11 +1180,9 @@ export default function SocialScreen() {
                         borderRadius: 12,
                         justifyContent: 'center',
                         alignItems: 'center',
-                        borderWidth: 2,
-                        borderColor: '#000',
                     }}
                 >
-                    <Text style={{ fontSize: 32, fontWeight: '500', color: '#000', lineHeight: 32 }}>+</Text>
+                    <Text style={{ fontSize: 32, fontWeight: '500', color: '#000000', lineHeight: 32 }}>+</Text>
                 </LinearGradient>
             </TouchableOpacity>
         </View>

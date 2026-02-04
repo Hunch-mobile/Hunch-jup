@@ -1,5 +1,6 @@
 import CustomKeypad from '@/components/CustomKeypad';
 import LightChart from '@/components/LightChart';
+import { Toast } from '@/components/Toast';
 import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
 import { api, getEventDetails, marketsApi } from "@/lib/api";
@@ -259,6 +260,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
             setShowQuoteSheet(false);
             setLastTradeId(null);
             if (onRefreshFeed) onRefreshFeed();
+            onClose();
             return;
         }
 
@@ -266,6 +268,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
             setShowQuoteSheet(false);
             setLastTradeId(null);
             if (onRefreshFeed) onRefreshFeed();
+            onClose();
             return;
         }
 
@@ -277,6 +280,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
             setShowQuoteSheet(false);
             setLastTradeId(null);
             if (onRefreshFeed) onRefreshFeed();
+            onClose();
         }
     };
 
@@ -425,7 +429,6 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
             if (onTradeSuccess) {
                 onTradeSuccess(tradeData, displayInfo, savedTrade.id);
             }
-            onClose();
         } catch (error: any) {
             console.error('Trade error:', error);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -543,12 +546,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                         <Text
                                             className="text-2xl font-bold"
                                             style={{
-                                                color: (() => {
-                                                    const price = scrubPrice ?? chartCandles[chartCandles.length - 1]?.close;
-                                                    const firstPrice = chartCandles[0]?.close;
-                                                    if (typeof price !== 'number' || typeof firstPrice !== 'number') return '#6B7280';
-                                                    return price >= firstPrice ? '#22c55e' : '#ef4444';
-                                                })()
+                                                color: selectedSide === 'yes' ? '#32de12' : Theme.chartNegative,
                                             }}
                                         >
                                             {(() => {
@@ -586,8 +584,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                                 candles={chartCandles}
                                                 width={SCREEN_WIDTH - 40}
                                                 height={SHEET_CHART_HEIGHT}
-                                                isYes={selectedSide === 'yes'}
-                                                noColor="#ef4444"
+                                                colorByTrend={true}
                                                 scrubIndex={scrubIndex}
                                                 showFill={true}
                                                 showGlow={false}
@@ -630,18 +627,20 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                 {/* Yes/No Toggle */}
                                 <View className="flex-row gap-3 mb-4 px-4">
                                     <TouchableOpacity
-                                        className={`flex-1 py-3.5 rounded-2xl border-[1.5px] ${selectedSide === 'yes' ? 'bg-[#dcfce7] border-[#dcfce7]' : 'bg-gray-50 border-gray-100'}`}
+                                        className={`flex-1 py-3.5 rounded-2xl border-[1.5px] ${selectedSide === 'yes' ? 'border-[#10ff1f]' : 'bg-gray-50 border-gray-200'}`}
+                                        style={selectedSide === 'yes' ? { backgroundColor: '#34f011' } : undefined}
                                         onPress={() => { setSelectedSide('yes'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
                                         activeOpacity={0.7}
                                     >
-                                        <Text className={`text-center font-bold text-base ${selectedSide === 'yes' ? 'text-[#16a34a]' : 'text-txt-disabled'}`}>Yes</Text>
+                                        <Text className="text-center font-bold text-2xl" style={{ color: selectedSide === 'yes' ? '#FFFFFF' : Theme.textDisabled }}>YES</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
-                                        className={`flex-1 py-3.5 rounded-2xl border-[1.5px] ${selectedSide === 'no' ? 'bg-[#fee2e2] border-[#fee2e2]' : 'bg-gray-50 border-gray-100'}`}
+                                        className={`flex-1 py-3.5 rounded-2xl border-[1.5px] ${selectedSide === 'no' ? 'border-[#FF10F0]' : 'bg-gray-50 border-gray-200'}`}
+                                        style={selectedSide === 'no' ? { backgroundColor: '#FF10F0' } : undefined}
                                         onPress={() => { setSelectedSide('no'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
                                         activeOpacity={0.7}
                                     >
-                                        <Text className={`text-center font-bold text-base ${selectedSide === 'no' ? 'text-[#dc2626]' : 'text-txt-disabled'}`}>No</Text>
+                                        <Text className="text-center font-bold text-2xl" style={{ color: selectedSide === 'no' ? '#FFFFFF' : Theme.textDisabled }}>NO</Text>
                                     </TouchableOpacity>
                                 </View>
 
@@ -657,7 +656,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                         {betAmount > 0 && (
                                             <View className="items-end">
                                                 <Text className="text-txt-secondary text-[10px] uppercase">To win</Text>
-                                                <Text className="text-[#22c55e] text-2xl font-extrabold">
+                                                <Text className="text-[#52e717] text-2xl font-extrabold">
                                                     ${(betAmount * (100 / estimatedProbability)).toFixed(2)}
                                                 </Text>
                                             </View>
@@ -686,12 +685,14 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                 onChange={(next) => { setAmount(next.replace(',', '.')); setTradeError(null); }}
                 onClose={() => setAmountKeypadOpen(false)}
             />
+            <Toast visible={isTrading} message="Order processing..." />
             <TradeQuoteSheet
                 visible={showQuoteSheet && !!lastTradeInfo}
                 onClose={() => {
                     setShowQuoteSheet(false);
                     setLastTradeId(null);
                     if (onRefreshFeed) onRefreshFeed();
+                    onClose();
                 }}
                 onSubmit={async (quoteText) => {
                     await finalizeTrade(quoteText);
@@ -700,6 +701,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                     setShowQuoteSheet(false);
                     setLastTradeId(null);
                     if (onRefreshFeed) onRefreshFeed();
+                    onClose();
                 }}
                 tradeInfo={lastTradeInfo || { side: 'yes', amount: '0', marketTitle: 'Market' }}
             />

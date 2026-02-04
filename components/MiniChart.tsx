@@ -142,13 +142,13 @@ export const MiniChart: React.FC<InteractiveChartProps> = ({
         return { prices, minPrice, maxPrice, path, areaPath, points };
     }, [candles, width, height]);
 
-    // Determine trend direction
+    // Determine trend direction (up = green, down = pink) for selected timeframe
     const isPositive = useMemo(() => {
         if (!chartData.prices || chartData.prices.length < 2) return true;
         return chartData.prices[chartData.prices.length - 1] >= chartData.prices[0];
     }, [chartData.prices]);
 
-    const lineColor = isPositive ? Theme.chartPositive : Theme.chartNegative;
+    const lineColor = isPositive ? '#10ff1f' : Theme.chartNegative;
     const gradientId = `gradient-${isPositive ? 'positive' : 'negative'}`;
 
     // Handle touch events - smooth sliding

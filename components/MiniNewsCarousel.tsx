@@ -89,7 +89,7 @@ export const MiniNewsCarousel = ({ items }: MiniNewsCarouselProps) => {
 const styles = StyleSheet.create({
     container: {
         paddingVertical: 16,
-        backgroundColor: Theme.bgMain,
+        backgroundColor: Theme.bgCard,
     },
     header: {
         flexDirection: 'row',

@@ -30,8 +30,8 @@ const TIME_FILTER_OPTIONS: { key: TimeFilter; label: string; seconds: number }[]
     { key: 'all', label: 'All', seconds: 365 * 24 * 60 * 60 },
 ];
 
-// Yellow, cyan, green, black
-const MARKET_COLORS = ['#FACC15', '#22D3EE', '#22c55e', '#000000'];
+const CHART_GREEN = '#10ff1f';
+const CHART_PINK = Theme.chartNegative;
 
 // Cache for candle data
 const candleCache = new Map<string, { data: CandleData[]; timestamp: number }>();
@@ -107,19 +107,20 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
             const periodInterval = timeFilter === '24h' ? 1 : timeFilter === '1w' ? 60 : 1440;
 
             await Promise.all(
-                markets.slice(0, 4).map(async (market, index) => {
+                markets.slice(0, 4).map(async (market) => {
                     const yesMint = getYesMint(market);
-                    const color = MARKET_COLORS[index % MARKET_COLORS.length];
 
                     if (!yesMint) {
-                        results.push({ market, candles: [], color, loading: false });
+                        results.push({ market, candles: [], color: CHART_GREEN, loading: false });
                         return;
                     }
 
                     const cacheKey = `${yesMint}-${timeFilter}`;
                     const cached = candleCache.get(cacheKey);
                     if (cached && Date.now() - cached.timestamp < CANDLE_CACHE_DURATION) {
-                        results.push({ market, candles: cached.data, color, loading: false });
+                        const data = cached.data;
+                        const color = data.length >= 2 && data[data.length - 1].close >= data[0].close ? CHART_GREEN : CHART_PINK;
+                        results.push({ market, candles: data, color, loading: false });
                         return;
                     }
 
@@ -132,13 +133,14 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
 
                         if (data && data.length > 0) {
                             candleCache.set(cacheKey, { data, timestamp: Date.now() });
+                            const color = data[data.length - 1].close >= data[0].close ? CHART_GREEN : CHART_PINK;
                             results.push({ market, candles: data, color, loading: false });
                         } else {
-                            results.push({ market, candles: [], color, loading: false });
+                            results.push({ market, candles: [], color: CHART_GREEN, loading: false });
                         }
                     } catch (error) {
                         console.error(`Failed to fetch candles for ${market.ticker}:`, error);
-                        results.push({ market, candles: [], color, loading: false });
+                        results.push({ market, candles: [], color: CHART_GREEN, loading: false });
                     }
                 })
             );
@@ -327,6 +329,8 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
         return m;
     }, [marketData]);
 
+    const fallbackColor = (i: number) => (i % 2 === 0 ? CHART_GREEN : CHART_PINK);
+
     const toggleMarket = useCallback((ticker: string) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setSelectedTickers((prev) => {
@@ -341,7 +345,7 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
         <View style={styles.selectionChips}>
             {markets.map((m, i) => {
                 const sel = selectedTickers.has(m.ticker);
-                const color = tickerToColor.get(m.ticker) ?? MARKET_COLORS[i % MARKET_COLORS.length];
+                const color = tickerToColor.get(m.ticker) ?? fallbackColor(i);
                 const lab = (m.yesSubTitle || m.title || '').length > 18
                     ? (m.yesSubTitle || m.title || '').substring(0, 18) + '…'
                     : (m.yesSubTitle || m.title || '');
@@ -755,7 +759,7 @@ const styles = StyleSheet.create({
         borderRadius: 8,
     },
     timeFilterPillSelected: {
-        backgroundColor: '#000',
+        backgroundColor: '#000000',
     },
     timeFilterText: {
         fontSize: 12,
