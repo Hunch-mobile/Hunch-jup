@@ -244,7 +244,7 @@ const FeedCard = ({
                 </TouchableOpacity>
                 <View className="flex-1">
                     <View className="flex-row items-start justify-between">
-                            <Text className="text-txt-primary font-bold text-[14px]" numberOfLines={1}>
+                        <Text className="text-txt-primary font-bold text-[14px]" numberOfLines={1}>
                             {handle}{' '}
                             <Text style={{ color: isSell ? '#FF10F0' : '#32de12', fontWeight: '800' }}>
                                 {isSell ? 'sold' : 'bought'}
@@ -615,7 +615,7 @@ export default function SocialScreen() {
 
             const finalResults = marketMatches.slice(0, 50);
             setSearchMarketResults(finalResults);
-            
+
             // Save to previous searches (limit to 10 most recent)
             if (finalResults.length > 0) {
                 try {
@@ -649,10 +649,10 @@ export default function SocialScreen() {
         setFollowingInProgress(prev => new Set([...prev, userId]));
         try {
             if (followingIds.has(userId)) {
-                await api.unfollowUser(backendUser.id, userId);
+                await api.unfollowUser(userId);
                 setFollowingIds(prev => { const s = new Set(prev); s.delete(userId); return s; });
             } else {
-                await api.followUser(backendUser.id, userId);
+                await api.followUser(userId);
                 setFollowingIds(prev => new Set([...prev, userId]));
             }
             loadFeed({ targetMode: mode, reset: true });

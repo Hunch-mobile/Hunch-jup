@@ -7,6 +7,7 @@ import { PositionsSkeleton, ProfileSkeleton } from "@/components/skeletons";
 import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
+import { useCopyTrading } from "@/hooks/useCopyTrading";
 import { api, marketsApi } from "@/lib/api";
 import { executeTrade, toRawAmount, USDC_MINT } from "@/lib/tradeService";
 import { AggregatedPosition, Trade, User } from "@/lib/types";
@@ -74,6 +75,9 @@ export default function ProfileScreen() {
     const [showQuoteSheet, setShowQuoteSheet] = useState(false);
     const [lastTradeInfo, setLastTradeInfo] = useState<{ side: 'yes' | 'no'; amount: string; marketTitle: string } | null>(null);
     const [lastTradeId, setLastTradeId] = useState<string | null>(null);
+
+    // Copy trading data
+    const { copySettings, fetchAllCopySettings, disableCopyTrading, isLoading: copySettingsLoading } = useCopyTrading();
 
     const finalizeTrade = async (quote?: string) => {
         if (!lastTradeId) {
@@ -249,7 +253,8 @@ export default function ProfileScreen() {
     useEffect(() => {
         loadSolBalance();
         loadUsdcBalance();
-    }, [loadSolBalance, loadUsdcBalance]);
+        fetchAllCopySettings();
+    }, [loadSolBalance, loadUsdcBalance, fetchAllCopySettings]);
 
     const activePositions = positions.active;
     const previousPositions = positions.previous;
@@ -559,7 +564,7 @@ export default function ProfileScreen() {
                                         width: tabWidth,
                                         backgroundColor: '#000000',
                                         transform: [{ translateX: indicatorAnim }],
-                                    }}  
+                                    }}
                                 />
                                 <TouchableOpacity
                                     className="flex-1 items-center py-3 relative"
@@ -596,7 +601,7 @@ export default function ProfileScreen() {
                                         className="text-base font-bold"
                                         style={{ color: activeTab === 'copying' ? Theme.textPrimary : Theme.textSecondary }}
                                     >
-                                        COPYING{activeTab === 'copying' ? ' (0)' : ''}
+                                        COPYING{activeTab === 'copying' ? ` (${copySettings.length})` : ''}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
@@ -666,7 +671,7 @@ export default function ProfileScreen() {
                                                         }}
                                                         activeOpacity={0.75}
                                                         style={[
-                                                            {   
+                                                            {
                                                                 paddingHorizontal: 12,
                                                                 paddingVertical: 8,
                                                                 borderRadius: 999,
@@ -676,13 +681,13 @@ export default function ProfileScreen() {
                                                             },
                                                         ]}
                                                     >
-                                                       
+
                                                         <Ionicons
                                                             name={isUp ? 'caret-up-outline' : 'caret-down-outline'}
                                                             size={18}
                                                             color={pnlColor}
                                                         />
-                                                         <Text
+                                                        <Text
                                                             className="text-[18px] font-semibold"
                                                             style={{ color: pnlColor }}
                                                         >
@@ -698,10 +703,10 @@ export default function ProfileScreen() {
                                             <PositionsSkeleton />
                                         ) : displayedPositions.length === 0 ? (
                                             <View className="p-10 items-center gap-3">
-                                                <Ionicons 
-                                                    name={positionFilter === 'previous' ? 'time-outline' : 'bar-chart-outline'} 
-                                                    size={32} 
-                                                    color={Theme.textDisabled} 
+                                                <Ionicons
+                                                    name={positionFilter === 'previous' ? 'time-outline' : 'bar-chart-outline'}
+                                                    size={32}
+                                                    color={Theme.textDisabled}
                                                 />
                                                 <Text className="text-sm text-txt-disabled">No positions</Text>
                                             </View>
@@ -726,10 +731,63 @@ export default function ProfileScreen() {
                                 {/* Copying */}
                                 <View style={styles.listPane}>
                                     <View className="pb-10">
-                                        <View className="p-10 items-center gap-3">
-                                            <Ionicons name="copy-outline" size={32} color={Theme.textDisabled} />
-                                            <Text className="text-sm text-txt-disabled">Copy trades will appear here</Text>
-                                        </View>
+                                        {copySettings.length > 0 ? (
+                                            <View className="gap-3 p-4">
+                                                {copySettings.map((setting) => (
+                                                    <View
+                                                        key={setting.id}
+                                                        className="bg-app-card rounded-xl p-4 border border-border"
+                                                    >
+                                                        <View className="flex-row items-center justify-between mb-3">
+                                                            <View className="flex-row items-center gap-3">
+                                                                <View className="w-10 h-10 rounded-full bg-app-elevated items-center justify-center">
+                                                                    <Ionicons name="person" size={20} color={Theme.textSecondary} />
+                                                                </View>
+                                                                <View>
+                                                                    <Text className="text-base font-semibold text-txt-primary">
+                                                                        {setting.leader?.displayName || `User ${setting.leaderId.slice(0, 8)}...`}
+                                                                    </Text>
+                                                                    <Text className="text-xs text-txt-secondary">Copying trades</Text>
+                                                                </View>
+                                                            </View>
+                                                            <TouchableOpacity
+                                                                onPress={async () => {
+                                                                    try {
+                                                                        await disableCopyTrading(setting.leaderId);
+                                                                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                                                                    } catch (error) {
+                                                                        console.error('Failed to stop copy trading:', error);
+                                                                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                                                                    }
+                                                                }}
+                                                                className="px-3 py-1.5 bg-red-500/20 rounded-lg"
+                                                            >
+                                                                <Text className="text-xs font-medium text-red-500">Stop</Text>
+                                                            </TouchableOpacity>
+                                                        </View>
+                                                        <View className="flex-row gap-4">
+                                                            <View className="flex-1 bg-app-elevated rounded-lg p-3">
+                                                                <Text className="text-xs text-txt-disabled mb-1">Per Trade</Text>
+                                                                <Text className="text-lg font-bold text-txt-primary">
+                                                                    ${setting.amountPerTrade.toFixed(2)}
+                                                                </Text>
+                                                            </View>
+                                                            <View className="flex-1 bg-app-elevated rounded-lg p-3">
+                                                                <Text className="text-xs text-txt-disabled mb-1">Total Cap</Text>
+                                                                <Text className="text-lg font-bold text-txt-primary">
+                                                                    ${setting.maxTotalAmount.toFixed(2)}
+                                                                </Text>
+                                                            </View>
+                                                        </View>
+                                                    </View>
+                                                ))}
+                                            </View>
+                                        ) : (
+                                            <View className="p-10 items-center gap-3">
+                                                <Ionicons name="copy-outline" size={32} color={Theme.textDisabled} />
+                                                <Text className="text-sm text-txt-disabled">Copy trades will appear here</Text>
+                                            </View>
+                                        )}
                                     </View>
                                 </View>
                             </Animated.View>

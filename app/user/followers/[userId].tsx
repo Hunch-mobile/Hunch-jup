@@ -1,6 +1,8 @@
+import CopySettingsModal from '@/components/CopySettingsModal';
 import { FollowersSkeleton } from '@/components/skeletons';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
+import { useCopyTrading } from '@/hooks/useCopyTrading';
 import { api } from "@/lib/api";
 import { Follow, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
@@ -29,14 +31,18 @@ const UserRow = ({
     isFollowing,
     inProgress,
     isSelf,
+    isCopying,
     onFollow,
+    onCopyClick,
     onPress
 }: {
     item: UserItem;
     isFollowing: boolean;
     inProgress: boolean;
     isSelf: boolean;
+    isCopying: boolean;
     onFollow: () => void;
+    onCopyClick: () => void;
     onPress: () => void;
 }) => {
     const displayName = item.displayName || `${item.walletAddress.slice(0, 6)}...${item.walletAddress.slice(-4)}`;
@@ -56,24 +62,27 @@ const UserRow = ({
             </View>
             <View className="flex-1">
                 <Text className="text-[15px] font-semibold  mb-0.5">{displayName}</Text>
-                </View>
+            </View>
             {!isSelf && (
-                <TouchableOpacity
-                    className={`py-2 px-5 rounded-xl min-w-[100px] items-center justify-center ${isFollowing ? 'bg-slate-200  ' : 'bg-txt-primary'
-                        } ${inProgress ? 'opacity-60' : ''}`}
-                    onPress={(e) => { e.stopPropagation(); onFollow(); }}
-                    disabled={inProgress}
-                >
-                    {inProgress ? (
-                        <ActivityIndicator size="small" color={Theme.textPrimary} />
-                    ) : (
-                        <Text
-                            className={`text-[13px] ${isFollowing ? 'font-lg text-txt-primary ' : 'font-semibold text-txt-inverse'}`}
-                        >
-                            {isFollowing ? "Following" : "Follow"}
-                        </Text>
-                    )}
-                </TouchableOpacity>
+                <View className="flex-row gap-2">
+                    {/* Follow Button */}
+                    <TouchableOpacity
+                        className={`py-2 px-5 rounded-xl min-w-[100px] items-center justify-center ${isFollowing ? 'bg-slate-200  ' : 'bg-txt-primary'
+                            } ${inProgress ? 'opacity-60' : ''}`}
+                        onPress={(e) => { e.stopPropagation(); onFollow(); }}
+                        disabled={inProgress}
+                    >
+                        {inProgress ? (
+                            <ActivityIndicator size="small" color={Theme.textPrimary} />
+                        ) : (
+                            <Text
+                                className={`text-[13px] ${isFollowing ? 'font-lg text-txt-primary ' : 'font-semibold text-txt-inverse'}`}
+                            >
+                                {isFollowing ? "Following" : "Follow"}
+                            </Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
             )}
         </TouchableOpacity>
     );
@@ -91,6 +100,12 @@ export default function FollowersFollowingScreen() {
     const [loadingFollowing, setLoadingFollowing] = useState(true);
     const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
     const [followingInProgress, setFollowingInProgress] = useState<Set<string>>(new Set());
+
+    // Copy trading state
+    const { copySettings, fetchAllCopySettings } = useCopyTrading();
+    const [copyingLeaderIds, setCopyingLeaderIds] = useState<Set<string>>(new Set());
+    const [selectedLeaderForCopy, setSelectedLeaderForCopy] = useState<UserItem | null>(null);
+    const [copyModalVisible, setCopyModalVisible] = useState(false);
 
     const initialTab = (tab as TabType) || 'followers';
     const slideAnim = useRef(new Animated.Value(initialTab === 'following' ? -SCREEN_WIDTH : 0)).current;
@@ -141,9 +156,22 @@ export default function FollowersFollowingScreen() {
             loadViewedUser();
             loadFollowers();
             loadFollowing();
-            if (backendUser) loadMyFollowingList();
+            if (backendUser) {
+                loadMyFollowingList();
+                loadCopySettings();
+            }
         }
     }, [userId, backendUser]);
+
+    const loadCopySettings = async () => {
+        if (!backendUser) return;
+        try {
+            const settings = await fetchAllCopySettings();
+            setCopyingLeaderIds(new Set(settings.map(s => s.leaderId)));
+        } catch (error) {
+            console.error('Failed to load copy settings:', error);
+        }
+    };
 
     const loadViewedUser = async () => {
         try {
@@ -203,10 +231,10 @@ export default function FollowersFollowingScreen() {
         setFollowingInProgress(prev => new Set([...prev, targetUserId]));
         try {
             if (followingIds.has(targetUserId)) {
-                await api.unfollowUser(backendUser.id, targetUserId);
+                await api.unfollowUser(targetUserId);
                 setFollowingIds(prev => { const s = new Set(prev); s.delete(targetUserId); return s; });
             } else {
-                await api.followUser(backendUser.id, targetUserId);
+                await api.followUser(targetUserId);
                 setFollowingIds(prev => new Set([...prev, targetUserId]));
             }
         } catch (error) {
@@ -278,7 +306,12 @@ export default function FollowersFollowingScreen() {
                                             isFollowing={followingIds.has(item.id)}
                                             inProgress={followingInProgress.has(item.id)}
                                             isSelf={backendUser?.id === item.id}
+                                            isCopying={copyingLeaderIds.has(item.id)}
                                             onFollow={() => handleFollowUser(item.id)}
+                                            onCopyClick={() => {
+                                                setSelectedLeaderForCopy(item);
+                                                setCopyModalVisible(true);
+                                            }}
                                             onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: item.id } })}
                                         />
                                     )}
@@ -307,7 +340,12 @@ export default function FollowersFollowingScreen() {
                                             isFollowing={followingIds.has(item.id)}
                                             inProgress={followingInProgress.has(item.id)}
                                             isSelf={backendUser?.id === item.id}
+                                            isCopying={copyingLeaderIds.has(item.id)}
                                             onFollow={() => handleFollowUser(item.id)}
+                                            onCopyClick={() => {
+                                                setSelectedLeaderForCopy(item);
+                                                setCopyModalVisible(true);
+                                            }}
                                             onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: item.id } })}
                                         />
                                     )}
@@ -319,6 +357,22 @@ export default function FollowersFollowingScreen() {
                     </Animated.View>
                 </View>
             </SafeAreaView>
+
+            {/* Copy Settings Modal */}
+            <CopySettingsModal
+                isOpen={copyModalVisible}
+                onClose={() => {
+                    setCopyModalVisible(false);
+                    setSelectedLeaderForCopy(null);
+                }}
+                leaderId={selectedLeaderForCopy?.id || ''}
+                leaderName={selectedLeaderForCopy?.displayName || ''}
+                onSave={() => {
+                    loadCopySettings();
+                    setCopyModalVisible(false);
+                    setSelectedLeaderForCopy(null);
+                }}
+            />
         </View>
     );
 }

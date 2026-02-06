@@ -105,7 +105,7 @@ export interface SyncUserRequest {
 }
 
 export interface CreateTradeRequest {
-    userId: string;
+    userId?: string; // Optional - backend derives from auth token
     marketTicker: string;
     eventTicker?: string;
     side: 'yes' | 'no';
@@ -121,6 +121,44 @@ export interface CreateTradeRequest {
 
 export interface ApiError {
     error: string;
+}
+
+// Copy Trading Settings Types
+export interface CopySettings {
+    id: string;
+    followerId: string;
+    leaderId: string;
+    amountPerTrade: number;
+    maxTotalAmount: number;
+    spentAmount: number;
+    isActive: boolean;
+    expiresAt?: string;
+    createdAt: string;
+    updatedAt: string;
+    leader?: User;
+}
+
+export interface CreateCopySettingsRequest {
+    leaderId: string;
+    amountPerTrade: number;
+    maxTotalAmount: number;
+    expiresAt?: string;
+    delegationSignature?: string;
+    signedMessage?: string;
+}
+
+// Auth Error Types
+export type AuthErrorCode = 'MISSING_TOKEN' | 'INVALID_TOKEN' | 'USER_NOT_FOUND' | 'DELEGATION_REQUIRED';
+
+export interface AuthError {
+    code: AuthErrorCode;
+    error: string;
+}
+
+// Delegation Status Types (for copy trading)
+export interface DelegationStatus {
+    hasValidDelegation: boolean;
+    signedAt: string | null;
 }
 
 // Markets API Types (DFlow External API)

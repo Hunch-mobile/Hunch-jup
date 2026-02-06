@@ -62,9 +62,9 @@ export default function SuggestedFollowersScreen() {
         // Fire API request in background (no loading state)
         try {
             if (wasFollowing) {
-                await api.unfollowUser(backendUser.id, userId);
+                await api.unfollowUser(userId);
             } else {
-                await api.followUser(backendUser.id, userId);
+                await api.followUser(userId);
             }
         } catch (error) {
             console.error("Failed to follow/unfollow:", error);

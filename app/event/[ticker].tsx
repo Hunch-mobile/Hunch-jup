@@ -1,5 +1,5 @@
-import { EventDetailSkeleton } from '@/components/skeletons';
 import { MarketTradeSheet } from '@/components/MarketTradeSheet';
+import { EventDetailSkeleton } from '@/components/skeletons';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { marketsApi } from "@/lib/api";
@@ -78,7 +78,7 @@ const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => voi
           <Text className="text-2xl font-semibold text-txt-primary leading-[28px]" numberOfLines={2}>
             {displayTitle}
           </Text>
-          
+
           {item.volume != null && item.volume > 0 && (
             <Text className="text-lg font-medium text-txt-disabled mt-1.5" style={{ opacity: 0.6 }}>
               ${(item.volume / 1000).toFixed(1)}K vol
@@ -372,7 +372,7 @@ export default function EventDetailScreen() {
               );
             })()}
           </View>
-            //charts
+          {/* Charts section (currently commented out) */}
           {/* Charts */}
           {/* {topMarketsForCharts.length > 0 && (
             <View className="mt-2">

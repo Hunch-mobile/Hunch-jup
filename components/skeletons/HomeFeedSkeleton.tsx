@@ -3,15 +3,21 @@ import { Dimensions, View } from "react-native";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-export function HomeFeedSkeleton() {
+interface HomeFeedSkeletonProps {
+  showFilters?: boolean;
+}
+
+export function HomeFeedSkeleton({ showFilters = true }: HomeFeedSkeletonProps = {}) {
   return (
     <View className="flex-1 px-5">
       {/* Filter pills */}
-      <View className="flex-row gap-2 mb-4 overflow-hidden">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <Skeleton key={i} width={60 + i * 15} height={36} borderRadius={999} />
-        ))}
-      </View>
+      {showFilters && (
+        <View className="flex-row gap-2 mb-4 overflow-hidden">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} width={60 + i * 15} height={36} borderRadius={999} />
+          ))}
+        </View>
+      )}
 
       {/* Event carousel */}
       <View className="mb-5">

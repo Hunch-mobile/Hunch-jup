@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Hunch",
-    "slug": "expo-starter",
+    "slug": "hunch-inc",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -19,14 +19,16 @@
     "ios": {
       "usesAppleSignIn": true,
       "supportsTablet": true,
-      "bundleIdentifier": "dev.privy.example",
+      "bundleIdentifier": "com.hunch.run",
       "associatedDomains": [
+        "webcredentials:hunch.run",
         "webcredentials:hunch.run"
       ],
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
+        },
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -34,12 +36,16 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "dev.privy.example"
+      "package": "com.hunch.run"
     },
     "extra": {
       "privyAppId": "cmiq91u0h006jl70cuyb6az3f",
       "privyClientId": "client-WY6TPKUhXLQRQM8fGYrMc36tyhszpq7DLgCcHmDWgas7T",
-      "passkeyAssociatedDomain": "https://hunch.run"
+      "passkeyAssociatedDomain": "https://hunch.run",
+      "router": {},
+      "eas": {
+        "projectId": "15a1e77b-4e67-4077-84d7-e63e3c91ba27"
+      }
     },
     "plugins": [
       "expo-router",

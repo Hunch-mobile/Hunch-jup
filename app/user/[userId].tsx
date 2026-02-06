@@ -1,10 +1,12 @@
+import CopySettingsModal from "@/components/CopySettingsModal";
 import CopyTradeSheet from "@/components/CopyTradeSheet";
-import { PositionsSkeleton, UserProfileSkeleton } from "@/components/skeletons";
 import PositionCard from "@/components/PositionCard";
 import SellPositionSheet from "@/components/SellPositionSheet";
+import { PositionsSkeleton, UserProfileSkeleton } from "@/components/skeletons";
 import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
+import { useCopyTrading } from "@/hooks/useCopyTrading";
 import { api, getMarketDetails, marketsApi } from "@/lib/api";
 import { executeTrade, toRawAmount, USDC_MINT } from "@/lib/tradeService";
 import { AggregatedPosition, CandleData, Event, Market, Trade, User } from "@/lib/types";
@@ -289,6 +291,11 @@ export default function UserProfileScreen() {
     const [copySheetVisible, setCopySheetVisible] = useState(false);
     const [usdcBalance, setUsdcBalance] = useState<number>(0);
 
+    // Copy trading hook
+    const { enableCopyTrading, isLoading: copyTradingLoading, isSigningDelegation, fetchAllCopySettings, copySettings } = useCopyTrading();
+    const [copyModalVisible, setCopyModalVisible] = useState(false);
+    const [isCopying, setIsCopying] = useState(false);
+
     const slideAnim = useRef(new Animated.Value(0)).current;
     const loadedEventTickers = useRef(new Set<string>());
     const loadedCandleTickers = useRef(new Set<string>());
@@ -370,10 +377,20 @@ export default function UserProfileScreen() {
             loadProfile();
             loadTrades();
             loadPositions();
-            if (currentUser && !isOwnProfile) checkFollowStatus();
+            if (currentUser && !isOwnProfile) {
+                checkFollowStatus();
+                // Load copy settings
+                fetchAllCopySettings();
+            }
         }
         loadUsdcBalance();
     }, [userId, currentUser, loadUsdcBalance]);
+
+    useEffect(() => {
+        if (copySettings && userId) {
+            setIsCopying(copySettings.some(s => s.leaderId === userId));
+        }
+    }, [copySettings, userId]);
 
     const loadProfile = async () => {
         try {
@@ -440,10 +457,10 @@ export default function UserProfileScreen() {
         setFollowLoading(true);
         try {
             if (wasFollowing) {
-                await api.unfollowUser(currentUser.id, userId as string);
+                await api.unfollowUser(userId as string);
                 setProfile(prev => prev ? { ...prev, followerCount: Math.max(0, prev.followerCount - 1) } : prev);
             } else {
-                await api.followUser(currentUser.id, userId as string);
+                await api.followUser(userId as string);
                 setProfile(prev => prev ? { ...prev, followerCount: prev.followerCount + 1 } : prev);
             }
         } catch (error) {
@@ -861,15 +878,15 @@ export default function UserProfileScreen() {
                     pointerEvents="box-none"
                 >
                     <TouchableOpacity
-                        className="flex-row items-center gap-2 px-6 py-3.5 rounded-xl bg-black"
+                        className={`flex-row items-center gap-2 px-6 py-3.5 rounded-xl ${isCopying ? 'bg-green-500' : 'bg-black'}`}
                         onPress={() => {
                             Haptics.selectionAsync();
-                            setCopySheetVisible(true);
+                            setCopyModalVisible(true);
                         }}
                         activeOpacity={0.8}
                     >
-                        <Ionicons name="copy-outline" size={18} color="white" />
-                        <Text className="text-base font-semibold text-white">Copy Trade</Text>
+                        <Ionicons name={isCopying ? "checkmark-circle" : "copy-outline"} size={18} color="white" />
+                        <Text className="text-base font-semibold text-white">{isCopying ? 'Copying' : 'Copy Trade'}</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -908,10 +925,34 @@ export default function UserProfileScreen() {
                 onClose={() => setCopySheetVisible(false)}
                 username={username}
                 balance={usdcBalance}
-                onConfirm={(perTrade, totalCap) => {
-                    console.log('Copy Trade Config:', { perTrade, totalCap });
-                    setCopySheetVisible(false);
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                loading={copyTradingLoading || isSigningDelegation}
+                onConfirm={async (perTrade, totalCap) => {
+                    try {
+                        await enableCopyTrading(
+                            userId as string,
+                            username,
+                            {
+                                amountPerTrade: parseFloat(perTrade),
+                                maxTotalAmount: parseFloat(totalCap),
+                            }
+                        );
+                        setCopySheetVisible(false);
+                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    } catch (error: any) {
+                        console.error('Failed to enable copy trading:', error);
+                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                    }
+                }}
+            />
+            {/* Copy Settings Modal */}
+            <CopySettingsModal
+                isOpen={copyModalVisible}
+                onClose={() => setCopyModalVisible(false)}
+                leaderId={userId as string}
+                leaderName={profile?.displayName || 'User'}
+                onSave={() => {
+                    fetchAllCopySettings();
+                    setCopyModalVisible(false);
                 }}
             />
         </View>

@@ -3,9 +3,9 @@ import { EventMarketImageCarousel } from "@/components/EventMarketImageCarousel"
 import { FilterPills } from "@/components/FilterPills";
 import { MarketCard } from "@/components/MarketCard";
 import { MarketRail } from "@/components/MarketRail";
-import { HomeFeedSkeleton, ListFooterSkeleton } from "@/components/skeletons";
 import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import { MiniNewsCarousel } from "@/components/MiniNewsCarousel";
+import { HomeFeedSkeleton, ListFooterSkeleton } from "@/components/skeletons";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, marketsApi } from "@/lib/api";
@@ -18,29 +18,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, FlatList, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Filter active events (events with at least one active market)
-const isEventActive = (event: Event): boolean => {
-  const activeMarkets = event.markets?.filter(
-    market => market.status === 'active'
-  ) || [];
-  return activeMarkets.length > 0;
-};
-
-// Sort events by volume (highest first)
-const sortByVolume = (events: Event[]): Event[] => {
-  return [...events].sort((a, b) => (b.volume || 0) - (a.volume || 0));
-};
-
-
-
-const getTopMarketByVolume = (markets: Market[] | undefined): Market | null => {
-  if (!markets || markets.length === 0) return null;
-  const activeMarkets = markets.filter((market) => market.status === 'active');
-  if (activeMarkets.length === 0) return null;
-  return activeMarkets
-    .slice()
-    .sort((a, b) => (b.volume || 0) - (a.volume || 0))[0] || null;
-};
 
 // Default categories fallback
 const DEFAULT_CATEGORIES = [
@@ -83,6 +60,7 @@ export default function HomeScreen() {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [newsItems, setNewsItems] = useState<EventEvidence[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterLoading, setFilterLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -170,10 +148,13 @@ export default function HomeScreen() {
     }
   }, [preferences, categories]);
 
-  // Load events when category changes
+  // Load events when category changes (only on initial mount, not on filter clicks)
   useEffect(() => {
-    loadEventsForCategory(selectedCategory, true);
-  }, [selectedCategory]);
+    // Only load if it's the initial load (loading is true)
+    if (loading) {
+      loadEventsForCategory(selectedCategory, true, false);
+    }
+  }, []);
 
   // Load portfolio value
   const loadPortfolioValue = useCallback(async () => {
@@ -246,13 +227,18 @@ export default function HomeScreen() {
     }
   };
 
-  const loadEventsForCategory = async (category: string, reset: boolean = false) => {
+  const loadEventsForCategory = async (category: string, reset: boolean = false, isFilterChange: boolean = false) => {
     if (isLoadingRef.current && !reset) return;
     isLoadingRef.current = true;
 
     try {
       if (reset) {
-        setLoading(true);
+        // Only show full loading on initial load, not on filter changes
+        if (isFilterChange) {
+          setFilterLoading(true);
+        } else {
+          setLoading(true);
+        }
         setError(null);
         setCursor(undefined);
         setHasMore(true);
@@ -260,79 +246,32 @@ export default function HomeScreen() {
         setLoadingMore(true);
       }
 
-      let fetchedEvents: Event[] = [];
-      let fetchedMarkets: Market[] = [];
-      let newCursor: string | undefined;
-
       // Map 'Hot' to 'All' for the API, keep other categories as is
       const apiCategory = category === 'Hot' ? 'All' : category;
 
-      // 1. Fetch Events using the new consolidated endpoint
-      try {
-        const result = await marketsApi.fetchHomeFeed(
-          20,
-          reset ? undefined : cursor,
-          apiCategory
-        );
-        fetchedEvents = result.events;
-        newCursor = result.cursor;
-      } catch (err) {
-        console.error("Failed to fetch home feed:", err);
-        throw err;
-      }
+      // Fetch using the optimized consolidated endpoint
+      // Backend now handles filtering, sorting, and market extraction
+      const result = await marketsApi.fetchHomeFeed(
+        20,
+        reset ? undefined : cursor,
+        apiCategory
+      );
 
-      // 2. Derive top-volume markets from events (one per event)
-      fetchedMarkets = fetchedEvents
-        .map((event) => getTopMarketByVolume(event.markets))
-        .filter((market): market is Market => !!market);
-
-      // Filter and sort events
-      const activeEvents = fetchedEvents.filter(isEventActive);
-      const sortedEvents = sortByVolume(activeEvents);
-
-      // Sort markets by volume (highest first)
-      // For "Hot" keep only markets with real images, for other categories allow imageless too
-      const sortedMarkets = [...fetchedMarkets]
-        .filter((m: any) => {
-          if (category === 'Hot') {
-            return (
-              typeof m?.image_url === 'string' &&
-              m.image_url.startsWith('http') &&
-              !m.image_url.toLowerCase().includes('kalshi-fallback-images')
-            );
-          }
-          // For other categories, allow markets even without images, but still drop known bad fallbacks
-          if (typeof m?.image_url === 'string') {
-            return !m.image_url.toLowerCase().includes('kalshi-fallback-images');
-          }
-          return true;
-        })
-        .sort((a, b) => (b.volume || 0) - (a.volume || 0));
+      // Events and topMarkets are now pre-processed by the backend
+      const fetchedEvents = result.events || [];
+      const fetchedMarkets = result.topMarkets || [];
 
       if (reset) {
-        setEvents(sortedEvents);
-        setMarkets(sortedMarkets);
+        setEvents(fetchedEvents);
+        setMarkets(fetchedMarkets);
       } else {
-        setEvents(prev => [...prev, ...sortedEvents]);
-        setMarkets(prev =>
-          [...prev, ...sortedMarkets].filter((m: any) => {
-            if (category === 'Hot') {
-              return (
-                typeof m?.image_url === 'string' &&
-                m.image_url.startsWith('http') &&
-                !m.image_url.toLowerCase().includes('kalshi-fallback-images')
-              );
-            }
-            if (typeof m?.image_url === 'string') {
-              return !m.image_url.toLowerCase().includes('kalshi-fallback-images');
-            }
-            return true;
-          })
-        );
+        setEvents(prev => [...prev, ...fetchedEvents]);
+        setMarkets(prev => [...prev, ...fetchedMarkets]);
       }
 
-      setCursor(newCursor);
-      setHasMore(!!newCursor && activeEvents.length > 0);
+      setCursor(result.cursor);
+      // Use metadata.hasMore from backend instead of client-side calculation
+      setHasMore(result.metadata?.hasMore ?? false);
     } catch (err) {
       console.error("Failed to fetch events:", err);
       if (reset) {
@@ -340,13 +279,17 @@ export default function HomeScreen() {
       }
     } finally {
       setLoading(false);
+      setFilterLoading(false);
       setLoadingMore(false);
       isLoadingRef.current = false;
     }
   };
 
+
   const handleCategoryChange = useCallback((category: string) => {
     setSelectedCategory(category);
+    // Trigger filter change loading
+    loadEventsForCategory(category, true, true);
   }, []);
 
   const handleLoadMore = useCallback(() => {
@@ -550,72 +493,77 @@ export default function HomeScreen() {
         </Animated.View>
 
         {/* Scrollable content: Filters + MarketRail + Events + News */}
-        {loading ? (
-          <HomeFeedSkeleton />
-        ) : error ? (
-          <View className="flex-1 justify-center items-center">
-            <Text className="text-status-error text-base mb-3">{error}</Text>
-            <TouchableOpacity
-              className="bg-txt-primary py-2.5 px-5 rounded-lg"
-              onPress={handleRefresh}
-            >
-              <Text className="text-txt-inverse text-sm font-semibold">Retry</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <FlatList
-            data={feedItems}
-            keyExtractor={(item, index) => {
-              if (item.type === 'news') return `news-${index}`;
-              if (item.type === 'market') return `market-${item.data.ticker}`;
-              if (item.type === 'eventCarousel') return `event-carousel-${index}`;
-              return `item-${index}`;
-            }}
-            renderItem={renderFeedItem}
-            contentContainerStyle={{ paddingBottom: 80 }}
-            showsVerticalScrollIndicator={false}
-            refreshing={loading}
-            onRefresh={handleRefresh}
-            onScroll={(event) => {
-              const offsetY = event.nativeEvent.contentOffset.y;
-              const shouldCollapse = offsetY > 40;
-              setHeaderCollapsed((prev) => {
-                if (prev === shouldCollapse) return prev;
-                Animated.timing(headerAnim, {
-                  toValue: shouldCollapse ? 1 : 0,
-                  duration: 200,
-                  useNativeDriver: true,
-                }).start();
-                return shouldCollapse;
-              });
-            }}
-            scrollEventThrottle={16}
-            onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.5}
-            ListHeaderComponent={
-              <>
-                <FilterPills
-                  categories={categories}
-                  selectedCategory={selectedCategory}
-                  onCategoryChange={handleCategoryChange}
-                  preferredCategories={getPreferredCategories()}
-                />
-                <EventMarketImageCarousel items={events.slice(0, 10)} />
-                <MarketRail />
-              </>
-            }
-            ListFooterComponent={renderFooter}
-            ItemSeparatorComponent={() => null}
-            ListEmptyComponent={
-              <View className="flex-1 justify-center items-center py-20">
-                <Ionicons name="search-outline" size={48} color={Theme.textDisabled} />
-                <Text className="text-txt-secondary text-base mt-4">
-                  No events or markets found
-                </Text>
-              </View>
-            }
+        <>
+          {/* Filters always visible */}
+          <FilterPills
+            categories={categories}
+            selectedCategory={selectedCategory}
+            onCategoryChange={handleCategoryChange}
+            preferredCategories={getPreferredCategories()}
           />
-        )}
+
+          {/* Content with loading states */}
+          {loading || filterLoading ? (
+            <HomeFeedSkeleton showFilters={false} />
+          ) : error ? (
+            <View className="flex-1 justify-center items-center">
+              <Text className="text-status-error text-base mb-3">{error}</Text>
+              <TouchableOpacity
+                className="bg-txt-primary py-2.5 px-5 rounded-lg"
+                onPress={handleRefresh}
+              >
+                <Text className="text-txt-inverse text-sm font-semibold">Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <FlatList
+              data={feedItems}
+              keyExtractor={(item, index) => {
+                if (item.type === 'news') return `news-${index}`;
+                if (item.type === 'market') return `market-${item.data.ticker}`;
+                if (item.type === 'eventCarousel') return `event-carousel-${index}`;
+                return `item-${index}`;
+              }}
+              renderItem={renderFeedItem}
+              contentContainerStyle={{ paddingBottom: 80 }}
+              showsVerticalScrollIndicator={false}
+              refreshing={false}
+              onRefresh={handleRefresh}
+              onScroll={(event) => {
+                const offsetY = event.nativeEvent.contentOffset.y;
+                const shouldCollapse = offsetY > 40;
+                setHeaderCollapsed((prev) => {
+                  if (prev === shouldCollapse) return prev;
+                  Animated.timing(headerAnim, {
+                    toValue: shouldCollapse ? 1 : 0,
+                    duration: 200,
+                    useNativeDriver: true,
+                  }).start();
+                  return shouldCollapse;
+                });
+              }}
+              scrollEventThrottle={16}
+              onEndReached={handleLoadMore}
+              onEndReachedThreshold={0.5}
+              ListHeaderComponent={
+                <>
+                  <EventMarketImageCarousel items={events.slice(0, 10)} />
+                  <MarketRail />
+                </>
+              }
+              ListFooterComponent={renderFooter}
+              ItemSeparatorComponent={() => null}
+              ListEmptyComponent={
+                <View className="flex-1 justify-center items-center py-20">
+                  <Ionicons name="search-outline" size={48} color={Theme.textDisabled} />
+                  <Text className="text-txt-secondary text-base mt-4">
+                    No events or markets found
+                  </Text>
+                </View>
+              }
+            />
+          )}
+        </>
       </SafeAreaView>
 
       <MarketTradeSheet

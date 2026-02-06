@@ -1,4 +1,4 @@
-import { CandleData, CreateTradeRequest, Event, EventEvidence, EventsResponse, EvidenceResponse, Follow, Market, MarketsResponse, PositionsResponse, Series, SeriesResponse, SyncUserRequest, TagsResponse, Trade, User } from './types';
+import { AuthError, CandleData, CopySettings, CreateCopySettingsRequest, CreateTradeRequest, DelegationStatus, Event, EventEvidence, EventsResponse, EvidenceResponse, Follow, Market, MarketsResponse, PositionsResponse, Series, SeriesResponse, SyncUserRequest, TagsResponse, Trade, User } from './types';
 
 const API_BASE_URL = 'https://hunchdotrun-roan.vercel.app';
 const METADATA_API_BASE_URL = 'https://a.prediction-markets-api.dflow.net';
@@ -11,6 +11,13 @@ if (!DFLOW_API_KEY) {
     console.log('[API] ✓ DFLOW_API_KEY is configured');
 }
 
+// Auth token getter - must be set by the app before making authenticated calls
+let _getAccessToken: (() => Promise<string | null>) | null = null;
+
+export const setAccessTokenGetter = (getter: () => Promise<string | null>) => {
+    _getAccessToken = getter;
+};
+
 // Helper to safely parse JSON responses
 const safeJsonParse = async (response: Response) => {
     const text = await response.text();
@@ -22,6 +29,36 @@ const safeJsonParse = async (response: Response) => {
     } catch {
         return null;
     }
+};
+
+// Check if error is an auth error
+const isAuthError = (error: any): error is AuthError => {
+    return error?.code && ['MISSING_TOKEN', 'INVALID_TOKEN', 'USER_NOT_FOUND', 'DELEGATION_REQUIRED'].includes(error.code);
+};
+
+// Authenticated fetch helper - auto-injects Privy JWT
+const authenticatedFetch = async (
+    url: string,
+    options: RequestInit = {}
+): Promise<Response> => {
+    if (!_getAccessToken) {
+        throw new Error('Access token getter not configured. Call setAccessTokenGetter first.');
+    }
+
+    const accessToken = await _getAccessToken();
+    if (!accessToken) {
+        const error: AuthError = { code: 'MISSING_TOKEN', error: 'No access token available' };
+        throw error;
+    }
+
+    const headers = new Headers(options.headers);
+    headers.set('Authorization', `Bearer ${accessToken}`);
+    headers.set('Content-Type', 'application/json');
+
+    return fetch(url, {
+        ...options,
+        headers,
+    });
 };
 
 export const api = {
@@ -93,28 +130,28 @@ export const api = {
         return response.json();
     },
 
-    // Follow endpoints
-    followUser: async (followerId: string, followingId: string): Promise<Follow> => {
-        const response = await fetch(`${API_BASE_URL}/api/follow`, {
+    // Follow endpoints (authenticated - followerId derived from JWT token)
+    followUser: async (followingId: string): Promise<Follow> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/follow`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ followerId, followingId }),
+            body: JSON.stringify({ followingId }),
         });
         if (!response.ok) {
             const error = await response.json();
+            if (isAuthError(error)) throw error;
             throw new Error(error.error || 'Failed to follow user');
         }
         return response.json();
     },
 
-    unfollowUser: async (followerId: string, followingId: string): Promise<{ success: boolean }> => {
-        const response = await fetch(`${API_BASE_URL}/api/follow`, {
+    unfollowUser: async (followingId: string): Promise<{ success: boolean }> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/follow`, {
             method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ followerId, followingId }),
+            body: JSON.stringify({ followingId }),
         });
         if (!response.ok) {
             const error = await response.json();
+            if (isAuthError(error)) throw error;
             throw new Error(error.error || 'Failed to unfollow user');
         }
         return response.json();
@@ -138,15 +175,17 @@ export const api = {
         return response.json();
     },
 
-    // Trade endpoints
+    // Trade endpoints (authenticated - userId derived from JWT token)
     createTrade: async (data: CreateTradeRequest): Promise<Trade> => {
-        const response = await fetch(`${API_BASE_URL}/api/trades`, {
+        // Remove userId from body - backend derives from auth token
+        const { userId, ...tradeData } = data;
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/trades`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
+            body: JSON.stringify(tradeData),
         });
         if (!response.ok) {
             const error = await response.json();
+            if (isAuthError(error)) throw error;
             throw new Error(error.error || 'Failed to create trade');
         }
         return response.json();
@@ -226,6 +265,83 @@ export const api = {
         }
         const data: EvidenceResponse = await response.json();
         return data.evidence || [];
+    },
+
+    // Delegation Status endpoint (authenticated)
+    getDelegationStatus: async (): Promise<DelegationStatus> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/users/delegation-status`, {
+            method: 'GET',
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to get delegation status');
+        }
+        return response.json();
+    },
+
+    // Copy Trading Settings endpoints (authenticated)
+    createCopySettings: async (settings: CreateCopySettingsRequest): Promise<CopySettings> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/copy-settings`, {
+            method: 'POST',
+            body: JSON.stringify(settings),
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to create copy settings');
+        }
+        return response.json();
+    },
+
+    getCopySettings: async (leaderId?: string): Promise<CopySettings[]> => {
+        const url = leaderId
+            ? `${API_BASE_URL}/api/copy-settings?leaderId=${leaderId}`
+            : `${API_BASE_URL}/api/copy-settings`;
+        const response = await authenticatedFetch(url, {
+            method: 'GET',
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to get copy settings');
+        }
+        const data = await response.json();
+        // API returns single object when leaderId specified, array when not
+        return Array.isArray(data) ? data : [data];
+    },
+
+    deleteCopySettings: async (leaderId: string): Promise<{ success: boolean }> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/copy-settings`, {
+            method: 'DELETE',
+            body: JSON.stringify({ leaderId }),
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to delete copy settings');
+        }
+        return response.json();
+    },
+
+    updateCopySettings: async (
+        followerId: string,
+        leaderId: string,
+        action: 'toggle'
+    ): Promise<CopySettings> => {
+        const response = await authenticatedFetch(
+            `${API_BASE_URL}/api/copy-settings/${followerId}/${leaderId}`,
+            {
+                method: 'PATCH',
+                body: JSON.stringify({ action }),
+            }
+        );
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to update copy settings');
+        }
+        return response.json();
     },
 };
 
@@ -478,12 +594,17 @@ export const marketsApi = {
         return data.events || [];
     },
 
-    // Consolidated Home Feed
+    // Consolidated Home Feed - uses optimized backend processing
     fetchHomeFeed: async (
         limit: number = 20,
         cursor?: string,
         category?: string
-    ): Promise<{ events: Event[]; cursor?: string }> => {
+    ): Promise<{
+        events: Event[];
+        topMarkets: Market[];
+        cursor?: string;
+        metadata?: { totalEvents: number; hasMore: boolean };
+    }> => {
         const params = new URLSearchParams({
             limit: limit.toString(),
         });
@@ -497,7 +618,7 @@ export const marketsApi = {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 12000);
         const response = await fetch(
-            `https://hunchdotrun-roan.vercel.app/api/home-feed?${params.toString()}`,
+            `http://hunchdotrun-roan.vercel.app/api/home-feed?${params.toString()}`,
             { signal: controller.signal }
         ).finally(() => {
             clearTimeout(timeoutId);
@@ -508,8 +629,14 @@ export const marketsApi = {
         }
 
         const data = await response.json();
-        return { events: data.events || [], cursor: data.cursor };
+        return {
+            events: data.events || [],
+            topMarkets: data.topMarkets || [],
+            cursor: data.cursor,
+            metadata: data.metadata,
+        };
     },
+
 
     // Filter outcome mints
     filterOutcomeMints: async (addresses: string[]): Promise<string[]> => {
