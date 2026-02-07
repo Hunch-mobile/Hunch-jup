@@ -42,7 +42,9 @@ const authenticatedFetch = async (
     options: RequestInit = {}
 ): Promise<Response> => {
     if (!_getAccessToken) {
-        throw new Error('Access token getter not configured. Call setAccessTokenGetter first.');
+        // Auth not initialized yet - treat as missing token
+        const error: AuthError = { code: 'MISSING_TOKEN', error: 'Authentication not initialized' };
+        throw error;
     }
 
     const accessToken = await _getAccessToken();
@@ -209,17 +211,18 @@ export const api = {
         return response.json();
     },
 
-    updateTradeQuote: async (tradeId: string, quote: string): Promise<Trade> => {
-        const response = await fetch(`${API_BASE_URL}/api/trades/${tradeId}/quote`, {
+    updateTradeQuote: async (tradeId: string, quote: string): Promise<Trade | null> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/trades`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ quote }),
+            body: JSON.stringify({ tradeId, quote }),
         });
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to update trade quote');
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to update trade quote');
         }
-        return response.json();
+        // Handle empty responses (204 No Content or empty body)
+        const result = await safeJsonParse(response);
+        return result as Trade | null;
     },
 
     // Feed endpoint
@@ -692,7 +695,7 @@ export const marketsApi = {
         if (options?.endTs) queryParams.append('endTs', options.endTs.toString());
         if (options?.periodInterval) queryParams.append('periodInterval', options.periodInterval.toString());
 
-        const url = `${METADATA_API_BASE_URL}/api/v1/market/by-mint/${mintAddress}/candlesticks${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+        const url = `${API_BASE_URL}/api/dflow/candlesticks/${mintAddress}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
 
         try {
             console.log(`[fetchCandlesticksByMint] Calling: ${url}`);
@@ -701,26 +704,25 @@ export const marketsApi = {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-api-key': DFLOW_API_KEY,
                 },
             });
 
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error(`[fetchCandlesticksByMint] API Error (${response.status}) for mint ${mintAddress}:`, errorText);
+                // console.error(`[fetchCandlesticksByMint] API Error (${response.status}) for mint ${mintAddress}:`, errorText);
                 return [];
             }
 
             const data: any = await response.json();
-            console.log(`[fetchCandlesticksByMint] Response for mint ${mintAddress.substring(0, 8)}...:`, {
-                hasCandlesticks: !!data.candlesticks,
-                count: data.candlesticks?.length || 0,
-                firstCandle: data.candlesticks?.[0] || null
-            });
+            // console.log(`[fetchCandlesticksByMint] Response for mint ${mintAddress.substring(0, 8)}...:`, {
+            //     hasCandlesticks: !!data.candlesticks,
+            //     count: data.candlesticks?.length || 0,
+            //     firstCandle: data.candlesticks?.[0] || null
+            // });
 
             // Validate response structure
             if (!data.candlesticks || !Array.isArray(data.candlesticks)) {
-                console.warn(`[fetchCandlesticksByMint] Invalid response structure for mint ${mintAddress}:`, data);
+                // console.warn(`[fetchCandlesticksByMint] Invalid response structure for mint ${mintAddress}:`, data);
                 return [];
             }
 
@@ -734,7 +736,7 @@ export const marketsApi = {
                 .filter((candle: any) => {
                     // Validate basic candle structure
                     if (!candle.end_period_ts || !candle.price) {
-                        console.warn(`[fetchCandlesticksByMint] Invalid candle structure:`, candle);
+                        // console.warn(`[fetchCandlesticksByMint] Invalid candle structure:`, candle);
                         return false;
                     }
                     return true;
@@ -767,7 +769,7 @@ export const marketsApi = {
                 })
                 .filter((candle: any) => candle !== null); // Remove any null entries
 
-            console.log(`[fetchCandlesticksByMint] Transformed ${candlesticks.length} candles. Price range: ${Math.min(...candlesticks.map((c: CandleData) => c.low)).toFixed(4)} - ${Math.max(...candlesticks.map((c: CandleData) => c.high)).toFixed(4)}`);
+            // console.log(`[fetchCandlesticksByMint] Transformed ${candlesticks.length} candles. Price range: ${Math.min(...candlesticks.map((c: CandleData) => c.low)).toFixed(4)} - ${Math.max(...candlesticks.map((c: CandleData) => c.high)).toFixed(4)}`);
 
             return candlesticks;
         } catch (error) {

@@ -551,7 +551,7 @@ export default function UserProfileScreen() {
                 inputMint: outcomeMint,
                 outputMint: USDC_MINT,
                 amount: rawAmount,
-                slippageBps: 50,
+                slippageBps: 100,
             });
 
             const usdcReceived = (parseInt(order.outAmount) / 1_000_000).toFixed(2);

@@ -2,20 +2,37 @@ Here's the **complete trade flow** (buy, sell, withdraw/redeem) with all endpoin
 
 ---
 
+## IMPORTANT: Sponsored Order Flow
+
+All orders **MUST** go through your Next.js backend at `/api/dflow/quote`. The backend:
+1. Requests the order from DFlow with `sponsor` set
+2. Signs the transaction with `SPONSOR_PRIVATE_KEY`
+3. Returns the **sponsor-signed** transaction
+
+**Never call DFlow directly for orders** - the transaction won't have the sponsor signature and will fail on-chain.
+
+---
+
 ## 1. PLACING A TRADE (BUY)
 
 ### Frontend Flow
 
-**Step 1: Get quote/order from DFlow**
+**Step 1: Get sponsor-signed order from backend**
 ```typescript
+import { requestOrder, executeTrade, USDC_MINT, toRawAmount } from '@/lib/tradeService';
+
+// Convert human amount to smallest unit
+const rawAmount = toRawAmount(100, 6); // $100 → "100000000"
+
 // User enters amount, clicks "Buy Yes" or "Buy No"
 const order = await requestOrder({
   userPublicKey: walletAddress,
   inputMint: USDC_MINT,  // "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
   outputMint: outcomeMint, // yesMint or noMint from market.accounts
-  amount: "100000000",  // Raw amount (100 USDC = 100,000,000 in smallest unit)
-  slippageBps: 100  // 1% slippage
+  amount: rawAmount,  // Raw amount (100 USDC = "100000000" in smallest unit)
+  slippageBps: 100  // 1% slippage (recommended)
 });
+// ⚠️ The returned transaction is ALREADY sponsor-signed!
 ```
 
 **Backend endpoint hit:**
@@ -26,7 +43,7 @@ GET /api/dflow/quote?userPublicKey=...&inputMint=USDC&outputMint=OUTCOME_MINT&am
 **Response:**
 ```json
 {
-  "transaction": "base64_encoded_transaction_bytes",
+  "transaction": "base64_encoded_transaction_bytes (SPONSOR-SIGNED)",
   "executionMode": "sync",  // or "async"
   "inAmount": "100000000",  // USDC spent
   "outAmount": "153846153",  // Tokens received
@@ -40,17 +57,31 @@ GET /api/dflow/quote?userPublicKey=...&inputMint=USDC&outputMint=OUTCOME_MINT&am
 
 ---
 
-**Step 2: Sign and send transaction**
+**Step 2: User signs (sign-only) and send**
 ```typescript
-const txBytes = new Uint8Array(Buffer.from(order.transaction, 'base64'));
+import { deserializeTransaction, signAndSendWithPrivy } from '@/lib/tradeService';
 
-// Use Privy's signAndSendTransaction (or your wallet SDK)
-const result = await signAndSendTransaction({
-  transaction: txBytes,
-  wallet: solanaWallet,
+// Decode base64 → VersionedTransaction (sponsor already signed)
+const transaction = deserializeTransaction(order.transaction);
+
+// User signs with Privy (signTransaction, NOT signAndSendTransaction)
+// Then we send with our RPC (skipPreflight: true, maxRetries: 3)
+const signature = await signAndSendWithPrivy(provider, transaction, connection);
+```
+
+**Or use the all-in-one function with retry:**
+```typescript
+// Recommended: Uses executeTrade which handles the full flow with retry
+const { signature, order } = await executeTrade({
+  provider,
+  connection,
+  userPublicKey: backendUser.walletAddress,
+  inputMint: USDC_MINT,
+  outputMint: outcomeMint,
+  amount: rawAmount,
+  slippageBps: 100,
+  maxRetries: 2, // Auto-retry with fresh quote on blockhash expiry
 });
-
-const signature = result.signature; // Base58 transaction signature
 ```
 
 ---
@@ -62,7 +93,8 @@ const signature = result.signature; // Base58 transaction signature
 - No additional waiting needed
 
 **If executionMode = "async":**
-- Poll order status:
+- `executeTrade` handles this automatically
+- Or poll manually:
 ```typescript
 const maxAttempts = 20;
 let attempts = 0;

@@ -81,64 +81,64 @@ export function EventMarketImageCarousel({ items }: EventMarketImageCarouselProp
 
           {/* Market image strip (center) */}
           <View className="flex-row justify-center items-center flex-1 ">
-          {topImages.length >= 2 ? (
-            topImages.map((m, index) => {
-              // Fan out like a bouquet: slight rotation + vertical offset per index
-              // Support up to 4 images with a spreading pattern
-              const positions = [
-                { rotate: "-14deg", offsetY: 6 },
-                { rotate: "-6deg", offsetY: 2 },
-                { rotate: "6deg", offsetY: 2 },
-                { rotate: "14deg", offsetY: 6 },
-              ] as const;
+            {topImages.length >= 2 ? (
+              topImages.map((m, index) => {
+                // Fan out like a bouquet: slight rotation + vertical offset per index
+                // Support up to 4 images with a spreading pattern
+                const positions = [
+                  { rotate: "-14deg", offsetY: 6 },
+                  { rotate: "-6deg", offsetY: 2 },
+                  { rotate: "6deg", offsetY: 2 },
+                  { rotate: "14deg", offsetY: 6 },
+                ] as const;
 
-              const config = positions[index] ?? { rotate: "0deg", offsetY: 0 };
+                const config = positions[index] ?? { rotate: "0deg", offsetY: 0 };
 
-              return (
-                <View
-                  key={m.ticker}
-                  style={{
-                    marginLeft: index === 0 ? 0 : -24,
-                    borderRadius: 20,
-                    overflow: "hidden",
-                    borderWidth: 1,
-                    borderColor: "rgba(255,255,255,0.5)",
-                    width: 80,
-                    height: 80,
-                    transform: [
-                      { rotate: config.rotate },
-                      { translateY: config.offsetY },
-                    ],
-                  }}
-                >
-                  <Image
-                    source={{ uri: m.image_url! }}
-                    style={{ width: "100%", height: "100%" }}
-                    contentFit="cover"
-                    transition={150}
-                  />
-                </View>
-              );
-            })
-          ) : item.imageUrl && topImages.length < 2 ? (
-            <View
-              style={{
-                borderRadius: 24,
-                overflow: "hidden",
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.5)",
-                width: CARD_WIDTH * 0.7,
-                height: 120,
-              }}
-            >
-              <Image
-                source={{ uri: item.imageUrl }}
-                style={{ width: "100%", height: "100%" }}
-                contentFit="cover"
-                transition={200}
-              />
-            </View>
-          ) : null}
+                return (
+                  <View
+                    key={m.ticker}
+                    style={{
+                      marginLeft: index === 0 ? 0 : -24,
+                      borderRadius: 20,
+                      overflow: "hidden",
+                      borderWidth: 1,
+                      borderColor: "rgba(255,255,255,0.5)",
+                      width: 80,
+                      height: 80,
+                      transform: [
+                        { rotate: config.rotate },
+                        { translateY: config.offsetY },
+                      ],
+                    }}
+                  >
+                    <Image
+                      source={{ uri: m.image_url! }}
+                      style={{ width: "100%", height: "100%" }}
+                      contentFit="cover"
+                      transition={150}
+                    />
+                  </View>
+                );
+              })
+            ) : item.imageUrl && topImages.length < 2 ? (
+              <View
+                style={{
+                  borderRadius: 24,
+                  overflow: "hidden",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.5)",
+                  width: CARD_WIDTH * 0.7,
+                  height: 120,
+                }}
+              >
+                <Image
+                  source={{ uri: item.imageUrl }}
+                  style={{ width: "100%", height: "100%" }}
+                  contentFit="cover"
+                  transition={200}
+                />
+              </View>
+            ) : null}
           </View>
 
           {/* Volume pill + count (bottom right) */}
@@ -168,7 +168,7 @@ export function EventMarketImageCarousel({ items }: EventMarketImageCarouselProp
   if (!filteredItems || filteredItems.length === 0) return null;
 
   return (
-    <View className="pt-4" style={{ height: CARD_MIN_HEIGHT + 24 }}>
+    <View className="pt-4 mb-4" style={{ height: CARD_MIN_HEIGHT + 24 }}>
       <FlatList
         data={filteredItems}
         keyExtractor={(item) => item.ticker}

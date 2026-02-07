@@ -2,7 +2,7 @@ import { EventCarousel } from "@/components/EventCarousel";
 import { EventMarketImageCarousel } from "@/components/EventMarketImageCarousel";
 import { FilterPills } from "@/components/FilterPills";
 import { MarketCard } from "@/components/MarketCard";
-import { MarketRail } from "@/components/MarketRail";
+
 import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import { MiniNewsCarousel } from "@/components/MiniNewsCarousel";
 import { HomeFeedSkeleton, ListFooterSkeleton } from "@/components/skeletons";
@@ -548,7 +548,7 @@ export default function HomeScreen() {
               ListHeaderComponent={
                 <>
                   <EventMarketImageCarousel items={events.slice(0, 10)} />
-                  <MarketRail />
+
                 </>
               }
               ListFooterComponent={renderFooter}

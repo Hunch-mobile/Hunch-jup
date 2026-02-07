@@ -4,7 +4,7 @@ import { Toast } from '@/components/Toast';
 import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
 import { api, getEventDetails, marketsApi } from "@/lib/api";
-import { executeTrade, fromRawAmount, toRawAmount, USDC_MINT } from "@/lib/tradeService";
+import { executeTrade, fromRawAmount, requestOrder, toRawAmount, USDC_MINT } from "@/lib/tradeService";
 import { User as BackendUser, CandleData, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { Connection } from "@solana/web3.js";
@@ -235,6 +235,74 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
     const [isLoadingCandles, setIsLoadingCandles] = useState(false);
     const [eventTitle, setEventTitle] = useState<string | null>(propEventTitle || null);
 
+    // Quote state
+    const [quoteOutAmount, setQuoteOutAmount] = useState<number | null>(null);
+    const [isFetchingQuote, setIsFetchingQuote] = useState(false);
+    const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Debounced quote fetching
+    useEffect(() => {
+        if (!visible || !market || !backendUser || !amount || parseFloat(amount) <= 0) {
+            setQuoteOutAmount(null);
+            return;
+        }
+
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+        }
+
+        setIsFetchingQuote(true);
+        debounceTimerRef.current = setTimeout(async () => {
+            try {
+                let outcomeMint: string | undefined;
+                if (market.accounts) {
+                    const usdcAccount = market.accounts[USDC_MINT];
+                    if (usdcAccount) {
+                        outcomeMint = selectedSide === 'yes' ? usdcAccount.yesMint : usdcAccount.noMint;
+                    }
+                }
+                if (!outcomeMint) {
+                    outcomeMint = selectedSide === 'yes' ? market.yesMint : market.noMint;
+                }
+
+                if (!outcomeMint) {
+                    setIsFetchingQuote(false);
+                    return;
+                }
+
+                const rawAmount = toRawAmount(Number(amount), 6);
+                const order = await requestOrder({
+                    userPublicKey: backendUser.walletAddress,
+                    inputMint: USDC_MINT,
+                    outputMint: outcomeMint,
+                    amount: rawAmount,
+                    slippageBps: 100,
+                });
+
+                setQuoteOutAmount(Number(order.outAmount));
+            } catch (error: any) {
+                console.error("Failed to fetch quote:", error);
+
+                const errorMessage = error?.message || "";
+                if (errorMessage.includes("Zero out amount") || errorMessage.includes("500")) {
+                    setTradeError("Amount too low");
+                } else {
+                    setTradeError(null); // Don't show error for other fetch failures, just clear quote
+                }
+
+                setQuoteOutAmount(null);
+            } finally {
+                setIsFetchingQuote(false);
+            }
+        }, 500); // 500ms debounce
+
+        return () => {
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
+        };
+    }, [amount, selectedSide, market, backendUser, visible]);
+
     // Fetch event title when sheet opens
     useEffect(() => {
         if (!visible || !market?.eventTicker || propEventTitle) {
@@ -409,6 +477,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                 transactionSig: signature,
                 executedInAmount: order.inAmount,
                 executedOutAmount: order.outAmount,
+                entryPrice,
                 isDummy: false,
             };
 
@@ -653,24 +722,28 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                                 {amount || "0.00"}
                                             </Text>
                                         </Pressable>
-                                        {betAmount > 0 && (
+                                        {betAmount > 0 && !tradeError && (
                                             <View className="items-end">
-                                                <Text className="text-txt-secondary text-[10px] uppercase">To win</Text>
-                                                <Text className="text-[#52e717] text-2xl font-extrabold">
-                                                    ${(betAmount * (100 / estimatedProbability)).toFixed(2)}
-                                                </Text>
+                                                <Text className="text-txt-secondary text-[10px] uppercase">To Win</Text>
+                                                {isFetchingQuote ? (
+                                                    <ActivityIndicator size="small" color={Theme.accent} />
+                                                ) : (
+                                                    <Text className="text-[#52e717] text-2xl font-extrabold">
+                                                        ${quoteOutAmount ? (quoteOutAmount / 1000000).toFixed(2) : (betAmount * (100 / estimatedProbability)).toFixed(2)}
+                                                    </Text>
+                                                )}
                                             </View>
                                         )}
                                     </View>
                                     {tradeError && (
-                                        <Text className="text-status-error text-xs mt-1">{tradeError}</Text>
+                                        <Text className="text-[#FF10F0] text-xs font-medium mt-1 ml-1">{tradeError}</Text>
                                     )}
                                 </View>
                                 <View className="px-4 mt-6">
                                     <SwipeToTrade
                                         onSwipeComplete={handleTrade}
                                         isLoading={isTrading}
-                                        disabled={isTrading || !amount || Number(amount) <= 0}
+                                        disabled={isTrading || !amount || Number(amount) <= 0 || !!tradeError}
                                         amount={amount}
                                     />
                                 </View>

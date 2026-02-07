@@ -116,6 +116,7 @@ export interface CreateTradeRequest {
     transactionSig?: string;
     executedInAmount?: string;  // Raw amount of tokens/USDC sent
     executedOutAmount?: string; // Raw amount of tokens/USDC received
+    entryPrice?: string;
     isDummy?: boolean;
 }
 
