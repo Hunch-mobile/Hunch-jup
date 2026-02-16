@@ -1,14 +1,16 @@
+import FakeNotificationStack from "@/components/FakeNotificationStack";
 import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
 import { Ionicons } from "@expo/vector-icons";
 import { useLoginWithOAuth, usePrivy } from "@privy-io/expo";
+import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { ActivityIndicator, Animated, Dimensions, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 export default function LoginScreen() {
     const { user, isReady } = usePrivy();
@@ -16,15 +18,16 @@ export default function LoginScreen() {
     const [error, setError] = useState("");
     const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
-    const [showApple, setShowApple] = useState(false);
+    const [drawerOpen, setDrawerOpen] = useState(false);
     const [walletPendingRetry, setWalletPendingRetry] = useState(false);
     const syncLockRef = useRef(false);
-    const slideAnim = useRef(new Animated.Value(-70)).current;
+    const insets = useSafeAreaInsets();
 
-    // Animation refs for mascot
+    // Animation refs
     const mascotScale = useRef(new Animated.Value(0.8)).current;
     const mascotOpacity = useRef(new Animated.Value(0)).current;
     const buttonSlide = useRef(new Animated.Value(100)).current;
+    const drawerSlide = useRef(new Animated.Value(300)).current;
 
 
 
@@ -198,13 +201,23 @@ export default function LoginScreen() {
     }, [isReady, user, backendUser, walletPendingRetry]);
 
     useEffect(() => {
-        Animated.spring(slideAnim, {
-            toValue: showApple ? 0 : -70,
+        Animated.spring(drawerSlide, {
+            toValue: drawerOpen ? 0 : 300,
             useNativeDriver: true,
-            tension: 100,
-            friction: 8,
+            tension: 65,
+            friction: 11,
         }).start();
-    }, [showApple]);
+    }, [drawerOpen]);
+
+    const openDrawer = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setDrawerOpen(true);
+    };
+
+    const closeDrawer = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setDrawerOpen(false);
+    };
 
     const handleLogin = (provider: "google" | "twitter" | "apple") => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -222,104 +235,40 @@ export default function LoginScreen() {
 
     return (
         <View style={styles.container}>
-            <SafeAreaView style={styles.safeArea}>
+            {/* Full-screen hero image */}
+            <Animated.View
+                style={[
+                    styles.heroContainer,
+                    {
+                        opacity: mascotOpacity,
+                        transform: [{ scale: mascotScale }],
+                    }
+                ]}
+            >
+                <Image
+                    source={require('@/assets/images/image.png')}
+                    style={styles.heroImage}
+                    resizeMode="contain"
+                />
+            </Animated.View>
+
+            <View style={styles.bottomArea}>
                 <View style={styles.content}>
-                    {/* Mascot Image with Animation */}
-                    <Animated.View
-                        style={[
-                            styles.mascotContainer,
-                            {
-                                opacity: mascotOpacity,
-                                transform: [{ scale: mascotScale }],
-                            }
-                        ]}
-                    >
-                        <View style={styles.mascotShadow}>
-                            <Image
-                                source={require('@/assets/hunch.jpg')}
-                                style={styles.mascotImage}
-                                resizeMode="contain"
-                            />
-                        </View>
-                    </Animated.View>
-
-                    {/* Taglines */}
-                    <View style={styles.taglineContainer}>
-                        <Text style={styles.tagline}>
-                            Predict with frens
-                        </Text>
-                        <Text style={styles.taglineBold}>
-                            Copy Trade
-                        </Text>
-                        <Text style={styles.taglineExtraBold}>
-                            Win
-                        </Text>
-                    </View>
-
-                    {/* Login Buttons - positioned at bottom */}
+                    <FakeNotificationStack />
+                    {/* Continue Button */}
                     <Animated.View
                         style={[
                             styles.buttonContainer,
                             { transform: [{ translateY: buttonSlide }] }
                         ]}
                     >
-                        {/* Continue with X - Primary Button */}
                         <TouchableOpacity
-                            style={styles.primaryButton}
-                            onPress={() => handleLogin("twitter")}
-                            disabled={loadingProvider !== null}
+                            style={styles.continueButton}
+                            onPress={openDrawer}
                             activeOpacity={0.85}
                         >
-                            {loadingProvider === "twitter" ? (
-                                <ActivityIndicator size="small" color="#FFD700" />
-                            ) : (
-                                <>
-                                    <Text style={styles.primaryButtonText}>
-                                        Continue with X
-                                    </Text>
-                                </>
-                            )}
+                            <Text style={styles.continueButtonText}>Continue</Text>
                         </TouchableOpacity>
-
-                        {/* More options toggle */}
-                        <TouchableOpacity
-                            style={styles.toggleButton}
-                            onPress={() => setShowApple(!showApple)}
-                            activeOpacity={0.7}
-                        >
-                            <Text style={styles.toggleText}>More options</Text>
-                            <Ionicons
-                                name={showApple ? "chevron-up" : "chevron-down"}
-                                size={18}
-                                color="#000000"
-                            />
-                        </TouchableOpacity>
-
-                        {/* Continue with Apple - Revealed */}
-                        <View style={styles.appleButtonWrapper}>
-                            <Animated.View
-                                style={{
-                                    transform: [{ translateY: slideAnim }],
-                                }}
-                            >
-                                <TouchableOpacity
-                                    style={styles.secondaryButton}
-                                    onPress={() => handleLogin("apple")}
-                                    disabled={loadingProvider !== null || !showApple}
-                                    activeOpacity={0.85}
-                                >
-                                    {loadingProvider === "apple" ? (
-                                        <ActivityIndicator size="small" color="#FFD700" />
-                                    ) : (
-                                        <>
-                                            <Text style={styles.secondaryButtonText}>
-                                                Continue with Apple
-                                            </Text>
-                                        </>
-                                    )}
-                                </TouchableOpacity>
-                            </Animated.View>
-                        </View>
                     </Animated.View>
 
                     {/* Error Message */}
@@ -341,7 +290,64 @@ export default function LoginScreen() {
                         </View>
                     ) : null}
                 </View>
-            </SafeAreaView>
+            </View>
+
+            {/* Login Drawer */}
+            <Modal
+                visible={drawerOpen}
+                transparent
+                animationType="none"
+                onRequestClose={closeDrawer}
+            >
+                <View style={styles.drawerOverlay}>
+                    <Pressable style={styles.drawerDismissArea} onPress={closeDrawer}>
+                        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+                        <View style={styles.drawerBackdrop} />
+                    </Pressable>
+                    <Animated.View
+                        style={[
+                            styles.drawer,
+                            {
+                                paddingBottom: Math.max(insets.bottom, 24),
+                                transform: [{ translateY: drawerSlide }],
+                            },
+                        ]}
+                    >
+                            <View style={styles.drawerHandle} />
+                            <Text style={styles.drawerTitle}>Sign in to continue</Text>
+
+                            <TouchableOpacity
+                                style={styles.drawerButton}
+                                onPress={() => handleLogin("twitter")}
+                                disabled={loadingProvider !== null}
+                                activeOpacity={0.85}
+                            >
+                                {loadingProvider === "twitter" ? (
+                                    <ActivityIndicator size="small" color="#000" />
+                                ) : (
+                                    <Text style={styles.drawerButtonText}>Continue with X</Text>
+                                )}
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.drawerButton, styles.drawerButtonSecondary]}
+                                onPress={() => handleLogin("apple")}
+                                disabled={loadingProvider !== null}
+                                activeOpacity={0.85}
+                            >
+                                {loadingProvider === "apple" ? (
+                                    <ActivityIndicator size="small" color="#000" />
+                                ) : (
+                                    <Text style={styles.drawerButtonText}>Continue with Apple</Text>
+                                )}
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={styles.drawerCloseButton} onPress={closeDrawer} activeOpacity={0.8}>
+                                <Text style={styles.drawerCloseText}>Cancel</Text>
+                            </TouchableOpacity>
+                    </Animated.View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -351,113 +357,114 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#FEEC28', // Vibrant yellow
     },
-    safeArea: {
-        flex: 1,
+    bottomArea: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        paddingBottom: 60,
     },
     content: {
         flex: 1,
         alignItems: 'center',
         paddingHorizontal: 24,
     },
-    mascotContainer: {
-        marginTop: 60,
+    heroContainer: {
+        ...StyleSheet.absoluteFillObject,
         alignItems: 'center',
+        justifyContent: 'center',
     },
-    mascotShadow: {
-        overflow: 'hidden',
-    },
-    mascotImage: {
-        width: width * 0.7,
-        height: width * 0.7,
-    },
-    taglineContainer: {
-        marginTop: 28,
-        alignItems: 'center',
-    },
-    tagline: {
-        fontSize: 24,
-        fontWeight: '600',
-        color: '#000000',
-        letterSpacing: 1,
-        lineHeight: 36,
-    },
-    taglineBold: {
-        fontSize: 24,
-        fontWeight: '600',
-        color: '#000000',
-        letterSpacing: 1,
-        lineHeight: 36,
-    },
-    taglineExtraBold: {
-        fontSize: 24,
-        fontWeight: '600',
-        color: '#000000',
-        letterSpacing: 1,
-        lineHeight: 36,
+    heroImage: {
+        width: width * 0.9,
+        height: height * 0.85,
     },
     buttonContainer: {
-        position: 'absolute',
-        bottom: 40,
         width: '100%',
         paddingHorizontal: 8,
-        gap: 12,
     },
-    primaryButton: {
+    continueButton: {
         backgroundColor: '#000000',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 18,
-        paddingHorizontal: 24,
+        paddingHorizontal: 48,
         borderRadius: 16,
         shadowColor: '#000000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
-        elevation: 8,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 6,
     },
-    primaryButtonText: {
+    continueButtonText: {
         color: '#FFFFFF',
-        fontSize: 17,
+        fontSize: 18,
         fontWeight: '700',
         letterSpacing: 0.5,
     },
-    buttonIcon: {
-        marginRight: 10,
+    drawerOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
     },
-    toggleButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
-        gap: 6,
+    drawerDismissArea: {
+        flex: 1,
+        position: 'relative',
     },
-    toggleText: {
-        color: '#000000',
-        fontSize: 14,
-        fontWeight: '500',
-        opacity: 0.7,
+    drawerBackdrop: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.35)',
     },
-    appleButtonWrapper: {
-        height: 62,
-        overflow: 'hidden',
-    },
-    secondaryButton: {
-        backgroundColor: '#1a1a1a',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 18,
+    drawer: {
+        backgroundColor: '#FFFFFF',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
         paddingHorizontal: 24,
-        borderRadius: 16,
+        paddingTop: 12,
+    },
+    drawerHandle: {
+        width: 40,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: '#D1D5DB',
+        alignSelf: 'center',
+        marginBottom: 20,
+    },
+    drawerTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#000000',
+        marginBottom: 20,
+        textAlign: 'center',
+    },
+    drawerButton: {
+        backgroundColor: '#000000',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 16,
+        paddingHorizontal: 24,
+        borderRadius: 14,
+        marginBottom: 12,
+    },
+    drawerButtonSecondary: {
+        backgroundColor: '#1a1a1a',
         borderWidth: 2,
         borderColor: '#333333',
     },
-    secondaryButtonText: {
+    drawerButtonText: {
         color: '#FFFFFF',
-        fontSize: 17,
+        fontSize: 16,
         fontWeight: '700',
-        letterSpacing: 0.5,
+    },
+    drawerCloseButton: {
+        paddingVertical: 16,
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    drawerCloseText: {
+        color: '#6B7280',
+        fontSize: 16,
+        fontWeight: '600',
     },
     errorContainer: {
         position: 'absolute',
