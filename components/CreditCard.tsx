@@ -197,8 +197,9 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                                                 if (!isFlipped) return;
                                                 if (!walletAddress) return;
                                                 fundWallet({
+                                                    asset: 'USDC',
                                                     address: walletAddress,
-                                                    amount: "0.2", // SOL
+                                                    amount: "10", // SOL
                                                 });
                                             }}
                                         >
@@ -232,6 +233,7 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                 visible={withdrawOpen}
                 onClose={() => setWithdrawOpen(false)}
                 submitting={withdrawSubmitting}
+                balance={balance}
                 onSubmit={async ({ toAddress, amount }) => {
                     try {
                         setWithdrawSubmitting(true);

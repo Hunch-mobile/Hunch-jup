@@ -1,5 +1,6 @@
 import CopySettingsModal from "@/components/CopySettingsModal";
 import CopyTradeSheet from "@/components/CopyTradeSheet";
+import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import PositionCard from "@/components/PositionCard";
 import SellPositionSheet from "@/components/SellPositionSheet";
 import { PositionsSkeleton, UserProfileSkeleton } from "@/components/skeletons";
@@ -7,7 +8,7 @@ import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
-import { api, getMarketDetails, marketsApi } from "@/lib/api";
+import { api, getEventDetails, getMarketDetails, marketsApi } from "@/lib/api";
 import { executeTrade, toRawAmount, USDC_MINT } from "@/lib/tradeService";
 import { AggregatedPosition, CandleData, Event, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
@@ -296,6 +297,40 @@ export default function UserProfileScreen() {
     const [copyModalVisible, setCopyModalVisible] = useState(false);
     const [isCopying, setIsCopying] = useState(false);
 
+    // Market Sheet state
+    const [marketSheetVisible, setMarketSheetVisible] = useState(false);
+    const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+    const [selectedMarketEventTitle, setSelectedMarketEventTitle] = useState<string | undefined>(undefined);
+    const [walletProvider, setWalletProvider] = useState<any>(null);
+
+    const handleOpenMarketSheet = async (position: AggregatedPosition) => {
+        let market = position.market;
+        if (!market) {
+            try {
+                market = await marketsApi.fetchMarketDetails(position.marketTicker);
+            } catch (e) {
+                console.error("Failed to fetch market details:", e);
+                return;
+            }
+        }
+
+        setSelectedMarket(market);
+        if (position.eventTicker) {
+            getEventDetails(position.eventTicker).then(e => {
+                if (e) setSelectedMarketEventTitle(e.title);
+            }).catch(() => { });
+        } else {
+            setSelectedMarketEventTitle(undefined);
+        }
+
+        setMarketSheetVisible(true);
+    };
+
+    const handleCloseMarketSheet = () => {
+        setMarketSheetVisible(false);
+        setSelectedMarket(null);
+    };
+
     const slideAnim = useRef(new Animated.Value(0)).current;
     const loadedEventTickers = useRef(new Set<string>());
     const loadedCandleTickers = useRef(new Set<string>());
@@ -305,7 +340,23 @@ export default function UserProfileScreen() {
         const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
         return new Connection(rpcUrl, 'confirmed');
     }, []);
+
     const solanaWallet = wallets?.[0];
+
+    // Get wallet provider
+    useEffect(() => {
+        const getProvider = async () => {
+            if (solanaWallet) {
+                try {
+                    const provider = await solanaWallet.getProvider();
+                    setWalletProvider(provider);
+                } catch (e) {
+                    console.error('Failed to get wallet provider:', e);
+                }
+            }
+        };
+        getProvider();
+    }, [solanaWallet]);
 
     const animateToTab = useCallback((tab: TabType) => {
         Animated.spring(slideAnim, {
@@ -567,7 +618,7 @@ export default function UserProfileScreen() {
                 transactionSig: signature,
                 executedInAmount: order.inAmount,
                 executedOutAmount: order.outAmount,
-                isDummy: false,
+                isDummy: true,
             };
 
             const savedTrade = await api.createTrade(tradeData);
@@ -828,7 +879,7 @@ export default function UserProfileScreen() {
                                                 <PositionCard
                                                     key={`${position.marketTicker}-${position.side}`}
                                                     position={position}
-                                                    onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })}
+                                                    onPress={() => handleOpenMarketSheet(position)}
                                                 />
                                             ))}
                                         </View>
@@ -851,7 +902,7 @@ export default function UserProfileScreen() {
                                                     key={`${position.marketTicker}-${position.side}`}
                                                     position={position}
                                                     isPrevious
-                                                    onPress={() => router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })}
+                                                    onPress={() => handleOpenMarketSheet(position)}
                                                 />
                                             ))}
                                         </View>
@@ -955,11 +1006,24 @@ export default function UserProfileScreen() {
                     setCopyModalVisible(false);
                 }}
             />
+            <MarketTradeSheet
+                visible={marketSheetVisible}
+                onClose={handleCloseMarketSheet}
+                onTradeSuccess={() => {
+                    loadTrades();
+                    loadPositions();
+                    loadUsdcBalance();
+                }}
+                market={selectedMarket}
+                backendUser={currentUser || null}
+                walletProvider={walletProvider}
+                connection={connection}
+                eventTitle={selectedMarketEventTitle}
+            />
         </View>
     );
 }
 
-// Minimal styles for animated sliding
 const styles = StyleSheet.create({
     listContainer: {
         width: SCREEN_WIDTH - 40,
@@ -973,3 +1037,5 @@ const styles = StyleSheet.create({
         width: SCREEN_WIDTH - 40,
     },
 });
+
+

@@ -3,9 +3,9 @@ import { usePrivy } from "@privy-io/expo";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
-import { Tabs } from "expo-router";
+import { Tabs, useRouter, useSegments } from "expo-router";
 import { useEffect, useRef } from "react";
-import { Animated, Dimensions, Easing, Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, Easing, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Import theme
@@ -196,6 +196,36 @@ function TabButton({
 }
 
 export default function TabLayout() {
+  const { isReady, user } = usePrivy();
+  const router = useRouter();
+  const segments = useSegments();
+
+  // Protect tabs - redirect to login if not authenticated
+  useEffect(() => {
+    if (!isReady) return;
+
+    const inTabs = segments[0] === '(tabs)';
+    
+    if (inTabs && !user) {
+      // User is not authenticated, redirect to login
+      router.replace('/login');
+    }
+  }, [isReady, user, segments]);
+
+  // Show loading while checking authentication
+  if (!isReady) {
+    return (
+      <View style={{ flex: 1, backgroundColor: Theme.bgMain, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={Theme.textSecondary} />
+      </View>
+    );
+  }
+
+  // If not authenticated at this point, return null (redirect will happen)
+  if (!user) {
+    return null;
+  }
+
   return (
     <Tabs
       screenOptions={{

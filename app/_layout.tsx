@@ -15,7 +15,7 @@ import { PrivyElements } from '@privy-io/expo/ui';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -24,14 +24,103 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { AuthInitializer } from '@/components/AuthInitializer';
-import { UserProvider } from '@/contexts/UserContext';
+import { PushNotificationProvider } from '@/components/PushNotificationProvider';
+import { UserProvider, useUser } from '@/contexts/UserContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { OnboardingStep } from '@/lib/types';
+import '@/lib/pushNotifications'; // Sets up setNotificationHandler at app root
+import { usePrivy } from '@privy-io/expo';
 
 SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
-  anchor: '(tabs)',
+  initialRouteName: 'login',
 };
+
+function resolveOnboardingRoute(
+  step?: OnboardingStep,
+  completed?: boolean,
+  hasTwitterLinked?: boolean,
+  username?: string | null
+) {
+  if (completed) return '/(tabs)';
+  switch (step) {
+    case 'LINK_X':
+      // Twitter users already have X linked — skip to username or further
+      if (hasTwitterLinked) {
+        return username ? '/preferences' : '/onboarding/username';
+      }
+      return '/onboarding/link-x';
+    case 'USERNAME':
+      // If username already claimed (e.g. via link-x auto-claim), skip ahead
+      return username ? '/preferences' : '/onboarding/username';
+    case 'INTERESTS':
+      return '/preferences';
+    case 'SUGGESTED_FOLLOWERS':
+      return '/suggested-followers';
+    case 'COMPLETE':
+    default:
+      return '/(tabs)';
+  }
+}
+
+function AuthFlowGate() {
+  const router = useRouter();
+  const segments = useSegments();
+  const { isReady, user } = usePrivy();
+  const { backendUser, isLoading: isBackendUserLoading } = useUser();
+
+  useEffect(() => {
+    if (!isReady || isBackendUserLoading) return;
+
+    const root = segments[0];
+    const inLogin = root === 'login';
+    const inTabs = root === '(tabs)';
+    const inOnboarding =
+      root === 'onboarding' || root === 'preferences' || root === 'suggested-followers';
+
+    if (!user && (inTabs || inOnboarding)) {
+      router.replace('/login');
+      return;
+    }
+
+    // User is authenticated, but backend user not restored/synced yet:
+    // force login screen where sync bootstrap logic runs.
+    if (user && !backendUser && !inLogin) {
+      router.replace('/login');
+      return;
+    }
+
+    if (!user || !backendUser) return;
+
+    const hasTwitterLinked = Boolean(
+      user.linked_accounts?.some((a: any) => a.type === 'twitter_oauth')
+    );
+
+    const target = resolveOnboardingRoute(
+      backendUser.onboardingStep as OnboardingStep | undefined,
+      backendUser.hasCompletedOnboarding,
+      hasTwitterLinked,
+      backendUser.username
+    );
+
+    if (inLogin) {
+      router.replace(target as any);
+      return;
+    }
+
+    if (inTabs && !backendUser.hasCompletedOnboarding) {
+      router.replace(target as any);
+      return;
+    }
+
+    if (inOnboarding && backendUser.hasCompletedOnboarding) {
+      router.replace('/(tabs)');
+    }
+  }, [isReady, isBackendUserLoading, user, backendUser, segments]);
+
+  return null;
+}
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -78,14 +167,25 @@ export default function RootLayout() {
     <PrivyProvider
       appId={Constants.expoConfig?.extra?.privyAppId}
       clientId={Constants.expoConfig?.extra?.privyClientId}
+      config={{
+        embedded: {
+          solana: {
+            createOnLogin: 'users-without-wallets'
+          }
+        }
+      }}
     >
       <AuthInitializer>
         <UserProvider>
+          <PushNotificationProvider>
+          <AuthFlowGate />
           <GestureHandlerRootView style={{ flex: 1 }}>
             <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-              <Stack>
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="login" options={{ headerShown: false }} />
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="onboarding/link-x" options={{ headerShown: false }} />
+                <Stack.Screen name="onboarding/username" options={{ headerShown: false }} />
                 <Stack.Screen name="preferences" options={{ headerShown: false }} />
                 <Stack.Screen name="suggested-followers" options={{ headerShown: false }} />
                 <Stack.Screen
@@ -116,12 +216,20 @@ export default function RootLayout() {
                     presentation: 'card',
                   }}
                 />
+                <Stack.Screen
+                  name="trade/[tradeId]"
+                  options={{
+                    headerShown: false,
+                    presentation: 'card',
+                  }}
+                />
                 <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
               </Stack>
               <StatusBar style="auto" />
             </ThemeProvider>
           </GestureHandlerRootView>
           <PrivyElements />
+          </PushNotificationProvider>
         </UserProvider>
       </AuthInitializer>
     </PrivyProvider>

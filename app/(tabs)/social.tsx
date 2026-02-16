@@ -400,6 +400,8 @@ export default function SocialScreen() {
     const hasUserRef = useRef(!!backendUser);
     const [tradeSheetVisible, setTradeSheetVisible] = useState(false);
     const [tradeSheetItem, setTradeSheetItem] = useState<FeedItem | null>(null);
+    const [selectedSearchMarket, setSelectedSearchMarket] = useState<Market | null>(null);
+    const [selectedSearchEvent, setSelectedSearchEvent] = useState<Event | undefined>(undefined);
     const [evidenceItems, setEvidenceItems] = useState<EventEvidence[]>([]);
     const [isLoadingEvidence, setIsLoadingEvidence] = useState(false);
 
@@ -462,8 +464,17 @@ export default function SocialScreen() {
         setTradeSheetVisible(true);
     }, []);
 
+    const handleOpenSearchMarket = useCallback((market: Market, event?: Event) => {
+        setSelectedSearchMarket(market);
+        setSelectedSearchEvent(event);
+        setTradeSheetVisible(true);
+    }, []);
+
     const handleCloseTradeSheet = useCallback(() => {
         setTradeSheetVisible(false);
+        setTradeSheetItem(null);
+        setSelectedSearchMarket(null);
+        setSelectedSearchEvent(undefined);
     }, []);
 
     const loadFollowingList = async () => {
@@ -998,7 +1009,7 @@ export default function SocialScreen() {
                                             if (entry.item.type === 'event') {
                                                 router.push({ pathname: '/event/[ticker]', params: { ticker: entry.item.event.ticker } });
                                             } else {
-                                                router.push({ pathname: '/market/[ticker]', params: { ticker: entry.item.market.ticker } });
+                                                handleOpenSearchMarket(entry.item.market, entry.item.event);
                                             }
                                         }}
                                         activeOpacity={0.7}
@@ -1141,12 +1152,13 @@ export default function SocialScreen() {
                     // Trade saved successfully, quote sheet will show from within MarketTradeSheet
                 }}
                 onRefreshFeed={() => loadFeed({ targetMode: mode, reset: true })}
-                market={tradeSheetItem?.marketDetails || null}
+                market={tradeSheetItem?.marketDetails || selectedSearchMarket || null}
                 candles={tradeSheetItem ? candlesMap[tradeSheetItem.marketTicker] : undefined}
                 backendUser={backendUser || null}
                 walletProvider={walletProvider}
                 connection={connection}
                 initialSide={tradeSheetItem?.side}
+                eventTitle={selectedSearchEvent?.title}
             />
 
             {/* Floating Plus Button */}

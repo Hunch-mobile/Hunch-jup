@@ -444,16 +444,19 @@ export default function HomeScreen() {
           <View className={headerCollapsed ? 'flex-1 items-center' : 'flex-1'}>
             {portfolioValue !== null ? (
               <>
-                <Animated.Text
-                  className="text-2xl font-extrabold text-txt-primary tracking-tight"
-                  style={{ transform: [{ scale: valueScale }] }}
-                >
-                  {portfolioValue >= 1000000
-                    ? `$${(portfolioValue / 1000000).toFixed(2)}M`
-                    : portfolioValue >= 1000
-                      ? `$${(portfolioValue / 1000).toFixed(1)}K`
-                      : `$${portfolioValue.toFixed(2)}`}
-                </Animated.Text>
+                <View className="flex-row items-center gap-2">
+                  <Animated.Text
+                    className="text-2xl font-extrabold text-txt-primary tracking-tight"
+                    style={{ transform: [{ scale: valueScale }] }}
+                  >
+                    {portfolioValue >= 1000000
+                      ? `$${(portfolioValue / 1000000).toFixed(2)}M`
+                      : portfolioValue >= 1000
+                        ? `$${(portfolioValue / 1000).toFixed(1)}K`
+                        : `$${portfolioValue.toFixed(2)}`}
+                  </Animated.Text>
+
+                </View>
                 {portfolioPnl !== null && (
                   <Animated.Text
                     className="text-[16px] font-semibold mt-1"
@@ -482,7 +485,7 @@ export default function HomeScreen() {
               className="flex-row items-center gap-1.5 px-3.5 py-2 rounded-md bg-slate-200"
               onPress={() => {
                 if (backendUser?.walletAddress) {
-                  fundWallet({ address: backendUser.walletAddress, amount: "0.2" });
+                  fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
                 }
               }}
               activeOpacity={0.7}

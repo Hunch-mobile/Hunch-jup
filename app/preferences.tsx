@@ -25,7 +25,7 @@ const INTERESTS = [
 
 export default function PreferencesScreen() {
     const router = useRouter();
-    const { backendUser, loadPreferences } = useUser();
+    const { backendUser, loadPreferences, setBackendUser } = useUser();
     const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -45,28 +45,26 @@ export default function PreferencesScreen() {
         try {
             // Save preferences
             if (backendUser?.id) {
-                const normalizedPreferences = selectedInterests.map((interest) => interest.toLowerCase());
-                await api.syncUser({
-                    privyId: backendUser.privyId,
-                    walletAddress: backendUser.walletAddress,
-                    displayName: backendUser.displayName || undefined,
-                    avatarUrl: backendUser.avatarUrl || undefined,
-                    preferences: normalizedPreferences,
+                // Save preferences to backend
+                await api.savePreferences(backendUser.id, {
+                    interests: selectedInterests,
+                    hasCompletedOnboarding: false,
                 });
 
-                // Try to save preferences but don't block on failure
+                // Save to local storage as backup
+                const prefs = { interests: selectedInterests, hasCompletedOnboarding: false };
+                await AsyncStorage.setItem('userPreferences', JSON.stringify(prefs));
+
                 try {
-                    await api.savePreferences(backendUser.id, {
-                        interests: selectedInterests,
-                        hasCompletedOnboarding: true,
-                    });
-                } catch (e) {
-                    console.log("Note: preferences endpoint not available, using local storage");
+                    await api.saveOnboardingProgress({ step: "SUGGESTED_FOLLOWERS" });
+                } catch (progressError) {
+                    console.warn("Failed to save onboarding step:", progressError);
                 }
 
-                // Save to local storage
-                const prefs = { interests: selectedInterests, hasCompletedOnboarding: true };
-                await AsyncStorage.setItem('userPreferences', JSON.stringify(prefs));
+                // Update context so AuthFlowGate stays in sync
+                if (backendUser) {
+                    await setBackendUser({ ...backendUser, onboardingStep: 'SUGGESTED_FOLLOWERS' });
+                }
 
                 // Reload preferences in context
                 await loadPreferences();
@@ -96,7 +94,7 @@ export default function PreferencesScreen() {
                     <View className="px-6 pt-10">
                         {/* Minimal Header */}
                         <Text className="text-sm text-gray-400 mb-2 tracking-wide">
-                            STEP 5
+                            STEP 3
                         </Text>
                         <Text className="text-3xl font-bold text-gray-900 mb-2">
                             What interests you?
@@ -155,21 +153,21 @@ export default function PreferencesScreen() {
                         onPress={handleContinue}
                         disabled={isSaving}
                         activeOpacity={0.8}
-                        className={`rounded-full py-4 flex-row items-center justify-center ${hasSelection ? 'bg-gray-900' : 'bg-gray-200'
+                        className={`rounded-full py-4 flex-row items-center justify-center ${hasSelection ? 'bg-[#FEEC28]' : 'bg-gray-200'
                             }`}
                     >
                         {isSaving ? (
-                            <ActivityIndicator size="small" color={hasSelection ? "white" : "#6B7280"} />
+                            <ActivityIndicator size="small" color={hasSelection ? "#111827" : "#6B7280"} />
                         ) : (
                             <>
-                                <Text className={`text-lg font-semibold ${hasSelection ? 'text-white' : 'text-gray-500'
+                                <Text className={`text-lg font-semibold ${hasSelection ? 'text-gray-900' : 'text-gray-500'
                                     }`}>
                                     {hasSelection ? "Continue" : "Skip"}
                                 </Text>
                                 <Ionicons
                                     name="arrow-forward"
                                     size={20}
-                                    color={hasSelection ? "white" : "#6B7280"}
+                                    color={hasSelection ? "#111827" : "#6B7280"}
                                     style={{ marginLeft: 8 }}
                                 />
                             </>

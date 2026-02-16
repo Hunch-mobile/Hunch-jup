@@ -1,4 +1,5 @@
 import CreditCard from "@/components/CreditCard";
+import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import PositionActionSheet from "@/components/PositionActionSheet";
 import PositionCard from "@/components/PositionCard";
 import SellPositionSheet from "@/components/SellPositionSheet";
@@ -8,9 +9,9 @@ import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
-import { api, marketsApi } from "@/lib/api";
+import { api, getEventDetails, marketsApi } from "@/lib/api";
 import { executeTrade, toRawAmount, USDC_MINT } from "@/lib/tradeService";
-import { AggregatedPosition, Trade, User } from "@/lib/types";
+import { AggregatedPosition, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet, usePrivy } from "@privy-io/expo";
 import { useFundSolanaWallet } from "@privy-io/expo/ui";
@@ -44,6 +45,7 @@ export default function ProfileScreen() {
     const { user, logout } = usePrivy();
     const { backendUser, setBackendUser } = useUser();
     const { wallets } = useEmbeddedSolanaWallet();
+    const solanaWallet = wallets?.[0];
     const router = useRouter();
     const { fundWallet } = useFundSolanaWallet();
     const [profileData, setProfileData] = useState<User | null>(null);
@@ -76,8 +78,63 @@ export default function ProfileScreen() {
     const [lastTradeInfo, setLastTradeInfo] = useState<{ side: 'yes' | 'no'; amount: string; marketTitle: string } | null>(null);
     const [lastTradeId, setLastTradeId] = useState<string | null>(null);
 
+    // Wallet provider state
+    const [walletProvider, setWalletProvider] = useState<any>(null);
+
+    // Get wallet provider
+    useEffect(() => {
+        const getProvider = async () => {
+            if (solanaWallet) {
+                try {
+                    const provider = await solanaWallet.getProvider();
+                    setWalletProvider(provider);
+                } catch (e) {
+                    console.error('Failed to get wallet provider:', e);
+                }
+            }
+        };
+        getProvider();
+    }, [solanaWallet]);
+
     // Copy trading data
     const { copySettings, fetchAllCopySettings, disableCopyTrading, isLoading: copySettingsLoading } = useCopyTrading();
+
+    // Market Sheet state
+    const [marketSheetVisible, setMarketSheetVisible] = useState(false);
+    const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+    const [selectedMarketEventTitle, setSelectedMarketEventTitle] = useState<string | undefined>(undefined);
+
+    const handleOpenMarketSheet = async (position: AggregatedPosition) => {
+        let market = position.market;
+        if (!market) {
+            try {
+                market = await marketsApi.fetchMarketDetails(position.marketTicker);
+            } catch (e) {
+                console.error("Failed to fetch market details:", e);
+                return;
+            }
+        }
+
+        setSelectedMarket(market);
+        // Try to set event title
+        if (position.eventTicker) {
+            // We can optimistically try to fetch event title if not already known, 
+            // but for now let's leave it undefined to avoid delay or extra fetch if not critical. 
+            // MarketTradeSheet handles undefined eventTitle gracefully.
+            getEventDetails(position.eventTicker).then(e => {
+                if (e) setSelectedMarketEventTitle(e.title);
+            }).catch(() => { });
+        } else {
+            setSelectedMarketEventTitle(undefined);
+        }
+
+        setMarketSheetVisible(true);
+    };
+
+    const handleCloseMarketSheet = () => {
+        setMarketSheetVisible(false);
+        setSelectedMarket(null);
+    };
 
     const finalizeTrade = async (quote?: string) => {
         if (!lastTradeId) {
@@ -118,7 +175,7 @@ export default function ProfileScreen() {
         const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
         return new Connection(rpcUrl, 'confirmed');
     }, []);
-    const solanaWallet = wallets?.[0];
+
 
     const paneWidth = SCREEN_WIDTH - 40;
     const tabWidth = (SCREEN_WIDTH - 40) / 2;
@@ -284,6 +341,11 @@ export default function ProfileScreen() {
         positionFilter === 'previous' ? previousPositions.length : activePositions.length;
 
     const handleLogout = async () => {
+        try {
+            await api.removePushToken();
+        } catch (e) {
+            console.warn('[Logout] Failed to remove push token:', e);
+        }
         await logout();
         setBackendUser(null);
         router.replace("/login");
@@ -391,7 +453,7 @@ export default function ProfileScreen() {
                 transactionSig: signature,
                 executedInAmount: order.inAmount,
                 executedOutAmount: order.outAmount,
-                isDummy: false,
+
             };
 
             // Save trade to backend immediately to get the trade ID
@@ -493,7 +555,7 @@ export default function ProfileScreen() {
                                         className="flex-row ml-20 items-center gap-1.5 px-3.5 py-[7px]  rounded-md  bg-slate-200 "
                                         onPress={() => {
                                             if (backendUser?.walletAddress) {
-                                                fundWallet({ address: backendUser.walletAddress, amount: "0.2" });
+                                                fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
                                             }
                                         }}
                                     >
@@ -719,7 +781,7 @@ export default function ProfileScreen() {
                                                         isPrevious={positionFilter === 'previous'}
                                                         onPress={() => positionFilter !== 'previous'
                                                             ? handleOpenActionSheet(position)
-                                                            : router.push({ pathname: '/market/[ticker]', params: { ticker: position.marketTicker } })
+                                                            : handleOpenMarketSheet(position)
                                                         }
                                                     />
                                                 ))}
@@ -843,6 +905,20 @@ export default function ProfileScreen() {
                     loadUsdcBalance();
                 }}
                 tradeInfo={lastTradeInfo || { side: 'yes', amount: '0', marketTitle: 'Market' }}
+            />
+            <MarketTradeSheet
+                visible={marketSheetVisible}
+                onClose={handleCloseMarketSheet}
+                onTradeSuccess={() => {
+                    loadPositions();
+                    loadUsdcBalance();
+                    loadTrades();
+                }}
+                market={selectedMarket}
+                backendUser={backendUser || null}
+                walletProvider={walletProvider}
+                connection={connection}
+                eventTitle={selectedMarketEventTitle}
             />
         </View >
     );

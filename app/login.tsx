@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import { Ionicons } from "@expo/vector-icons";
 import { useLoginWithOAuth, usePrivy } from "@privy-io/expo";
 import * as Haptics from "expo-haptics";
-import { useRouter } from "expo-router";
+
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -12,12 +12,13 @@ const { width } = Dimensions.get('window');
 
 export default function LoginScreen() {
     const { user, isReady } = usePrivy();
-    const { setBackendUser, backendUser, preferences } = useUser();
-    const router = useRouter();
+    const { setBackendUser, backendUser } = useUser();
     const [error, setError] = useState("");
     const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
     const [showApple, setShowApple] = useState(false);
+    const [walletPendingRetry, setWalletPendingRetry] = useState(false);
+    const syncLockRef = useRef(false);
     const slideAnim = useRef(new Animated.Value(-70)).current;
 
     // Animation refs for mascot
@@ -25,15 +26,68 @@ export default function LoginScreen() {
     const mascotOpacity = useRef(new Animated.Value(0)).current;
     const buttonSlide = useRef(new Animated.Value(100)).current;
 
+
+
+    const inferProvider = (linkedAccounts: Array<any> = []): "apple" | "twitter" | "google" => {
+        if (linkedAccounts.some((a) => a.type === "apple_oauth")) return "apple";
+        if (linkedAccounts.some((a) => a.type === "google_oauth")) return "google";
+        return "twitter";
+    };
+
+    const extractUsernameAndDisplayName = (linkedAccounts: Array<any> = []): { username?: string; displayName?: string } => {
+        const twitter = linkedAccounts.find((a: any) => a.type === "twitter_oauth");
+        const apple = linkedAccounts.find((a: any) => a.type === "apple_oauth");
+        const google = linkedAccounts.find((a: any) => a.type === "google_oauth");
+        const email = linkedAccounts.find((a: any) => a.type === "email");
+
+        const account = twitter || apple || google || email;
+        if (!account) return {};
+
+        const rawUsername = (account as any)?.username ?? (account as any)?.screen_name;
+        const username = rawUsername ? String(rawUsername).replace(/^@+/, "").trim() : undefined;
+        const displayName =
+            (account as any)?.name ||
+            (account as any)?.email?.split("@")[0] ||
+            username;
+
+        return { username: username || undefined, displayName: displayName || undefined };
+    };
+
     const oauth = useLoginWithOAuth({
         onError: (err) => {
-            console.log(err);
+            console.error('[Apple OAuth Error]', JSON.stringify(err, null, 2));
+            console.error('[Error Details]', {
+                message: err.message,
+                name: err.name,
+                stack: err.stack,
+                cause: err.cause
+            });
             setLoadingProvider(null);
             if (err.message && !err.message.includes("cancelled")) {
-                setError(err.message);
+                if (err.message.includes("Unable to exchange oauth code for provider")) {
+                    setError("Apple login is temporarily unavailable. Please retry, or continue with X.");
+                } else {
+                    setError(err.message);
+                }
             }
         },
-        onSuccess: () => {
+        onSuccess: (...args: any[]) => {
+            const [user, isNewUser, wasAlreadyAuthenticated, loginMethod, linkedAccount] = args;
+            console.log('========== APPLE OAUTH SUCCESS ==========');
+            console.log('[OAuth Success] Is New User:', isNewUser);
+            console.log('[OAuth Success] Was Already Authenticated:', wasAlreadyAuthenticated);
+            console.log('[OAuth Success] Login Method:', loginMethod);
+            console.log('[OAuth Success] Linked Account:', JSON.stringify(linkedAccount, null, 2));
+            console.log('[OAuth Success] Full User Object:', JSON.stringify(user, null, 2));
+
+            // Log specific Apple account details
+            const appleAccount = user?.linked_accounts?.find((a: any) => a.type === 'apple_oauth');
+            if (appleAccount) {
+                console.log('========== APPLE ACCOUNT DETAILS ==========');
+                console.log('[Apple Account]', JSON.stringify(appleAccount, null, 2));
+            }
+
+            console.log('==========================================');
             setLoadingProvider(null);
         },
     });
@@ -64,56 +118,84 @@ export default function LoginScreen() {
 
     useEffect(() => {
         const syncUser = async () => {
-            if (isReady && user && !backendUser && !isSyncing) {
-                setIsSyncing(true);
-                try {
-                    const walletAccount = user.linked_accounts?.find(
-                        (a: any) => a.type === 'wallet' || a.type === 'embedded_wallet'
-                    );
-                    const walletAddress = (walletAccount as any)?.address;
+            if (!isReady || !user || backendUser || walletPendingRetry || syncLockRef.current) return;
 
-                    const emailAccount = user.linked_accounts?.find(
-                        (a: any) => a.type === 'email' || a.type === 'google_oauth' || a.type === 'twitter_oauth' || a.type === 'apple_oauth'
-                    );
-                    const displayName = (emailAccount as any)?.email?.split('@')[0] ||
-                        (emailAccount as any)?.name ||
-                        (emailAccount as any)?.username;
+            syncLockRef.current = true;
+            setIsSyncing(true);
+            setError("");
+            console.log('========== SYNCING USER WITH BACKEND ==========');
+            console.log('[Sync] Privy User ID:', user.id);
+            console.log('[Sync] Linked Accounts:', JSON.stringify(user.linked_accounts, null, 2));
 
-                    if (walletAddress) {
-                        const syncedUser = await api.syncUser({ privyId: user.id, walletAddress, displayName });
-                        setBackendUser(syncedUser);
+            const maxRetries = 3;
+            const retryDelayMs = 2000;
+            const walletAccount = (user.linked_accounts || []).find((a: any) => a.type === "wallet" || a.type === "embedded_wallet");
+            const walletAddress = (walletAccount as any)?.address as string | undefined;
 
-                        // Check if user has completed onboarding
-                        try {
-                            const userPrefs = await api.getUserPreferences(syncedUser.id);
-                            if (!userPrefs?.hasCompletedOnboarding) {
-                                router.replace("/preferences");
-                            } else {
-                                router.replace("/(tabs)");
+            try {
+                for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                    try {
+                        const { username: extractedUsername, displayName: extractedDisplayName } = extractUsernameAndDisplayName(
+                            user.linked_accounts || []
+                        );
+
+                        const bootstrap = await api.bootstrapOAuthUser({
+                            privyId: user.id,
+                            provider: inferProvider(user.linked_accounts || []),
+                            linkedAccounts: (user.linked_accounts || []) as Array<Record<string, any>>,
+                            username: extractedUsername,
+                            displayName: extractedDisplayName,
+                        });
+
+                        if (!bootstrap.walletReady) {
+                            if (attempt < maxRetries) {
+                                setError(`Creating your wallet... (${attempt}/${maxRetries})`);
+                                await new Promise((r) => setTimeout(r, retryDelayMs));
+                                continue;
                             }
-                        } catch (err) {
-                            // If preferences check fails, assume first time user
-                            router.replace("/preferences");
+                            setError("Wallet setup is still in progress. Please try again in a moment.");
+                            setWalletPendingRetry(true);
+                            return;
                         }
+
+                        // Set the backend user — AuthFlowGate will handle navigation
+                        await setBackendUser(bootstrap.user);
+                        return;
+                    } catch (err: any) {
+                        const message = err?.message || "";
+                        const shouldFallbackToSync = walletAddress && (message.includes("Unique constraint failed") || message.includes("privyId"));
+                        if (shouldFallbackToSync) {
+                            const { username: extractedUsername, displayName: extractedDisplayName } = extractUsernameAndDisplayName(
+                                user.linked_accounts || []
+                            );
+                            const syncedUser = await api.syncUser({
+                                privyId: user.id,
+                                walletAddress,
+                                displayName: extractedDisplayName || extractedUsername,
+                            });
+                            // Set the backend user — AuthFlowGate will handle navigation
+                            await setBackendUser(syncedUser);
+                            return;
+                        }
+
+                        console.error("Failed to sync user:", err);
+                        if (attempt >= maxRetries) {
+                            setError("Failed to sync user with backend");
+                            setWalletPendingRetry(true);
+                            return;
+                        }
+                        await new Promise((r) => setTimeout(r, retryDelayMs));
                     }
-                } catch (error) {
-                    console.error("Failed to sync user:", error);
-                    setError("Failed to sync user with backend");
-                } finally {
-                    setIsSyncing(false);
                 }
-            } else if (isReady && user && backendUser) {
-                // Check preferences for existing user
-                if (!preferences?.hasCompletedOnboarding) {
-                    router.replace("/preferences");
-                } else {
-                    router.replace("/(tabs)");
-                }
+            } finally {
+                setIsSyncing(false);
+                syncLockRef.current = false;
+                console.log('========== SYNC COMPLETE ==========');
             }
         };
 
         syncUser();
-    }, [isReady, user, backendUser, isSyncing]);
+    }, [isReady, user, backendUser, walletPendingRetry]);
 
     useEffect(() => {
         Animated.spring(slideAnim, {
@@ -127,7 +209,14 @@ export default function LoginScreen() {
     const handleLogin = (provider: "google" | "twitter" | "apple") => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         setError("");
+        setWalletPendingRetry(false);
         setLoadingProvider(provider);
+        console.log(`[Login] Starting ${provider} OAuth flow...`);
+        console.log('[Login] App Config:', {
+            bundleId: 'com.hunch.run',
+            scheme: 'hunch',
+            privyAppId: 'cmiq91u0h006jl70cuyb6az3f'
+        });
         oauth.login({ provider });
     };
 
@@ -237,6 +326,18 @@ export default function LoginScreen() {
                     {error ? (
                         <View style={styles.errorContainer}>
                             <Text style={styles.errorText}>{error}</Text>
+                            {walletPendingRetry ? (
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        setWalletPendingRetry(false);
+                                        setError("");
+                                    }}
+                                    style={styles.retryButton}
+                                    activeOpacity={0.8}
+                                >
+                                    <Text style={styles.retryButtonText}>Retry</Text>
+                                </TouchableOpacity>
+                            ) : null}
                         </View>
                     ) : null}
                 </View>
@@ -365,12 +466,25 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         backgroundColor: 'rgba(255, 0, 0, 0.1)',
         borderRadius: 12,
+        alignItems: 'center',
     },
     errorText: {
         color: '#CC0000',
         fontSize: 14,
         textAlign: 'center',
         fontWeight: '500',
+    },
+    retryButton: {
+        marginTop: 10,
+        paddingVertical: 8,
+        paddingHorizontal: 20,
+        backgroundColor: '#000000',
+        borderRadius: 12,
+    },
+    retryButtonText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '600',
     },
 });
 

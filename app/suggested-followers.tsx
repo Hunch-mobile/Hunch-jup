@@ -11,7 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function SuggestedFollowersScreen() {
     const router = useRouter();
-    const { backendUser } = useUser();
+    const { backendUser, setBackendUser } = useUser();
     const [topUsers, setTopUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
@@ -81,8 +81,20 @@ export default function SuggestedFollowersScreen() {
         }
     };
 
-    const handleContinue = () => {
+    const handleContinue = async () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+        // Mark onboarding as complete if not already done
+        if (backendUser?.id) {
+            try {
+                await api.saveOnboardingProgress({ step: "COMPLETE", completed: true });
+                // Update context so AuthFlowGate stays in sync
+                await setBackendUser({ ...backendUser, hasCompletedOnboarding: true, onboardingStep: 'COMPLETE' });
+            } catch (error) {
+                console.error('Failed to save onboarding completion:', error);
+            }
+        }
+
         router.replace("/(tabs)");
     };
 
@@ -92,6 +104,9 @@ export default function SuggestedFollowersScreen() {
         <View className="flex-1 bg-white">
             <SafeAreaView className="flex-1">
                 <View className="flex-1 px-6 pt-10">
+                    <Text className="text-sm text-gray-400 mb-2 tracking-wide">
+                        STEP 4
+                    </Text>
                     <Text className="text-3xl font-bold text-gray-900 mb-2">
                         Follow Top Traders
                     </Text>
@@ -180,17 +195,17 @@ export default function SuggestedFollowersScreen() {
                     <TouchableOpacity
                         onPress={handleContinue}
                         activeOpacity={0.8}
-                        className={`rounded-full py-4 flex-row items-center justify-center ${hasFollowedSomeone ? 'bg-gray-900' : 'bg-gray-200'
+                        className={`rounded-full py-4 flex-row items-center justify-center ${hasFollowedSomeone ? 'bg-[#FEEC28]' : 'bg-gray-200'
                             }`}
                     >
-                        <Text className={`text-lg font-semibold ${hasFollowedSomeone ? 'text-white' : 'text-gray-500'
+                        <Text className={`text-lg font-semibold ${hasFollowedSomeone ? 'text-gray-900' : 'text-gray-500'
                             }`}>
                             {hasFollowedSomeone ? "Continue" : "Skip"}
                         </Text>
                         <Ionicons
                             name="arrow-forward"
                             size={20}
-                            color={hasFollowedSomeone ? "white" : "#6B7280"}
+                            color={hasFollowedSomeone ? "#111827" : "#6B7280"}
                             style={{ marginLeft: 8 }}
                         />
                     </TouchableOpacity>

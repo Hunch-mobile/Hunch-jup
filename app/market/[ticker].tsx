@@ -13,8 +13,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator } from "react-native";
-import { Keyboard, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Keyboard, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function MarketDetailScreen() {
@@ -107,7 +106,7 @@ export default function MarketDetailScreen() {
         transactionSig: signature,
         executedInAmount: order.inAmount,
         executedOutAmount: order.outAmount,
-        isDummy: false,
+        isDummy: true,
       });
 
       setLastTradeId(trade.id);

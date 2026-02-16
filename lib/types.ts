@@ -5,14 +5,47 @@ export interface User {
     privyId: string;
     walletAddress: string;
     displayName: string | null;
+    username?: string | null;
     avatarUrl: string | null;
     followerCount: number;
     followingCount: number;
+    onboardingStep?: OnboardingStep;
+    hasCompletedOnboarding?: boolean;
+    walletReady?: boolean;
     createdAt: string;
     updatedAt: string;
     _count?: {
         trades: number;
     };
+}
+
+export type OnboardingStep =
+    | 'LINK_X'
+    | 'USERNAME'
+    | 'INTERESTS'
+    | 'SUGGESTED_FOLLOWERS'
+    | 'COMPLETE';
+
+export interface BootstrapOAuthUserRequest {
+    privyId: string;
+    provider: 'apple' | 'twitter' | 'google' | string;
+    linkedAccounts?: Array<Record<string, any>>;
+    username?: string;
+    displayName?: string;
+}
+
+export interface BootstrapOAuthUserResponse {
+    user: User;
+    walletReady: boolean;
+    onboardingStep: OnboardingStep;
+    isNewUser: boolean;
+}
+
+export interface UsernameCheckResponse {
+    username: string;
+    normalizedUsername: string;
+    available: boolean;
+    reason?: string;
 }
 
 export interface Trade {

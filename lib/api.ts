@@ -1,6 +1,6 @@
-import { AuthError, CandleData, CopySettings, CreateCopySettingsRequest, CreateTradeRequest, DelegationStatus, Event, EventEvidence, EventsResponse, EvidenceResponse, Follow, Market, MarketsResponse, PositionsResponse, Series, SeriesResponse, SyncUserRequest, TagsResponse, Trade, User } from './types';
+import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreateTradeRequest, DelegationStatus, Event, EventEvidence, EventsResponse, EvidenceResponse, Follow, Market, MarketsResponse, OnboardingStep, PositionsResponse, Series, SeriesResponse, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse } from './types';
 
-const API_BASE_URL = 'https://hunchdotrun-roan.vercel.app';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://870f-2405-201-35-288f-cc5b-e5da-7c7d-e76.ngrok-free.app';
 const METADATA_API_BASE_URL = 'https://a.prediction-markets-api.dflow.net';
 const DFLOW_API_KEY = process.env.EXPO_PUBLIC_DFLOW_API_KEY || '';
 
@@ -65,6 +65,20 @@ const authenticatedFetch = async (
 
 export const api = {
     // User endpoints
+    bootstrapOAuthUser: async (data: BootstrapOAuthUserRequest): Promise<BootstrapOAuthUserResponse> => {
+        const response = await fetch(`${API_BASE_URL}/api/auth/bootstrap-oauth-user`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to bootstrap OAuth user');
+        }
+        const result = await safeJsonParse(response);
+        return result as BootstrapOAuthUserResponse;
+    },
+
     syncUser: async (data: SyncUserRequest): Promise<User> => {
         const response = await fetch(`${API_BASE_URL}/api/users/sync`, {
             method: 'POST',
@@ -88,11 +102,35 @@ export const api = {
         return response.json();
     },
 
-    savePreferences: async (userId: string, preferences: { interests?: string[]; habits?: string[]; hasCompletedOnboarding: boolean }): Promise<void> => {
-        const response = await fetch(`${API_BASE_URL}/api/users/${userId}/preferences`, {
+    registerPushToken: async (expoPushToken: string): Promise<void> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/users/push-token`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(preferences),
+            body: JSON.stringify({ expoPushToken }),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to register push token');
+        }
+    },
+
+    removePushToken: async (): Promise<void> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/users/push-token`, {
+            method: 'DELETE',
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to remove push token');
+        }
+    },
+
+    savePreferences: async (userId: string, preferences: { interests?: string[]; habits?: string[]; hasCompletedOnboarding: boolean }): Promise<void> => {
+        // Transform to backend format: {preferences: [...]}
+        const body = {
+            preferences: preferences.interests || [],
+        };
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/users/${userId}/preferences`, {
+            method: 'POST',
+            body: JSON.stringify(body),
         });
         if (!response.ok) {
             const error = await safeJsonParse(response);
@@ -102,15 +140,19 @@ export const api = {
     },
 
     getUserPreferences: async (userId: string): Promise<{ interests?: string[]; habits?: string[]; hasCompletedOnboarding?: boolean } | null> => {
-        const response = await fetch(`${API_BASE_URL}/api/users/${userId}/preferences`);
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/users/${userId}/preferences`);
         if (!response.ok) {
             if (response.status === 404) {
                 return null;
             }
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to get preferences');
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to get preferences');
         }
-        return response.json();
+        const result = await safeJsonParse(response);
+        if (!result) {
+            return null;
+        }
+        return result as { interests?: string[]; habits?: string[]; hasCompletedOnboarding?: boolean };
     },
 
     getTopUsers: async (sortBy: 'followers' | 'trades' = 'followers', limit: number = 4): Promise<User[]> => {
@@ -130,6 +172,44 @@ export const api = {
             throw new Error(error.error || 'Failed to search users');
         }
         return response.json();
+    },
+
+    checkUsernameAvailability: async (username: string): Promise<UsernameCheckResponse> => {
+        const response = await fetch(`${API_BASE_URL}/api/users/username/check?username=${encodeURIComponent(username)}`);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to check username availability');
+        }
+        const result = await safeJsonParse(response);
+        return result as UsernameCheckResponse;
+    },
+
+    claimUsername: async (username: string): Promise<User> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/users/username/claim`, {
+            method: 'POST',
+            body: JSON.stringify({ username }),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            if (isAuthError(error)) throw error;
+            throw new Error(error?.error || 'Failed to claim username');
+        }
+        const result = await safeJsonParse(response);
+        return result as User;
+    },
+
+    saveOnboardingProgress: async (data: { step?: OnboardingStep; completed?: boolean; currentStep?: OnboardingStep }): Promise<{ onboardingStep?: OnboardingStep; hasCompletedOnboarding?: boolean }> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/users/onboarding/progress`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            if (isAuthError(error)) throw error;
+            throw new Error(error?.error || 'Failed to save onboarding progress');
+        }
+        const result = await safeJsonParse(response);
+        return (result || {}) as { onboardingStep?: OnboardingStep; hasCompletedOnboarding?: boolean };
     },
 
     // Follow endpoints (authenticated - followerId derived from JWT token)
@@ -200,6 +280,17 @@ export const api = {
             throw new Error(error.error || 'Failed to get trades');
         }
         return response.json();
+    },
+
+    getTrade: async (tradeId: string): Promise<Trade | null> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/trades/${tradeId}`);
+        if (!response.ok) {
+            if (response.status === 404) return null;
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to get trade');
+        }
+        const result = await safeJsonParse(response);
+        return result as Trade | null;
     },
 
     getPositions: async (userId: string): Promise<PositionsResponse> => {
@@ -494,6 +585,7 @@ export const marketsApi = {
         const data: EventsResponse = await response.json();
         return { events: data.events || [], cursor: data.cursor ? String(data.cursor) : undefined };
     },
+
 
     // Fetch event details
     fetchEventDetails: async (eventTicker: string): Promise<Event> => {

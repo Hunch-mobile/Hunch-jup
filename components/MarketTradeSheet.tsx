@@ -7,7 +7,7 @@ import { api, getEventDetails, marketsApi } from "@/lib/api";
 import { executeTrade, fromRawAmount, requestOrder, toRawAmount, USDC_MINT } from "@/lib/tradeService";
 import { User as BackendUser, CandleData, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
-import { Connection } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -35,11 +35,13 @@ const SwipeToTrade = ({
     isLoading,
     disabled,
     amount,
+    isInsufficientBalance,
 }: {
     onSwipeComplete: () => void;
     isLoading: boolean;
     disabled: boolean;
     amount?: string;
+    isInsufficientBalance?: boolean;
 }) => {
     const translateX = useRef(new Animated.Value(0)).current;
     const [trackWidth, setTrackWidth] = useState(0);
@@ -123,7 +125,10 @@ const SwipeToTrade = ({
                 pointerEvents="none"
             >
                 <Text className="text-black text-base font-extrabold">
-                    {isLoading ? 'Placing...' : (amount && Number(amount) > 0 ? `Swipe to Bet $${amount}` : 'Swipe to Place Bet')}
+                    {isLoading ? 'Placing...' : (
+                        isInsufficientBalance ? 'Insufficient Balance' :
+                            (amount && Number(amount) > 0 ? `Swipe to Bet $${amount}` : 'Swipe to Place Bet')
+                    )}
                 </Text>
             </Animated.View>
 
@@ -234,6 +239,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
     const [filteredCandles, setFilteredCandles] = useState<CandleData[]>([]);
     const [isLoadingCandles, setIsLoadingCandles] = useState(false);
     const [eventTitle, setEventTitle] = useState<string | null>(propEventTitle || null);
+    const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
 
     // Quote state
     const [quoteOutAmount, setQuoteOutAmount] = useState<number | null>(null);
@@ -322,6 +328,26 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
 
         fetchEventTitle();
     }, [visible, market?.eventTicker, propEventTitle]);
+
+    // Fetch USDC Balance
+    useEffect(() => {
+        if (!visible || !backendUser?.walletAddress) return;
+        const fetchBalance = async () => {
+            try {
+                const usdcMintKey = new PublicKey(USDC_MINT);
+                const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+                    new PublicKey(backendUser.walletAddress),
+                    { mint: usdcMintKey }
+                );
+                const total = tokenAccounts.value.reduce((sum, acc) =>
+                    sum + (acc.account.data.parsed.info.tokenAmount.uiAmount || 0), 0);
+                setUsdcBalance(total);
+            } catch (e) {
+                console.error("Failed to load USDC balance", e);
+            }
+        };
+        fetchBalance();
+    }, [visible, backendUser, connection]);
 
     const finalizeTrade = async (quote?: string) => {
         if (!lastTradeId) {
@@ -478,7 +504,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                 executedInAmount: order.inAmount,
                 executedOutAmount: order.outAmount,
                 entryPrice,
-                isDummy: false,
+                isDummy: true,
             };
 
             const savedTrade = await api.createTrade(tradeData);
@@ -743,8 +769,9 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                     <SwipeToTrade
                                         onSwipeComplete={handleTrade}
                                         isLoading={isTrading}
-                                        disabled={isTrading || !amount || Number(amount) <= 0 || !!tradeError}
+                                        disabled={isTrading || !amount || Number(amount) <= 0 || !!tradeError || (usdcBalance !== null && parseFloat(amount) > usdcBalance)}
                                         amount={amount}
+                                        isInsufficientBalance={usdcBalance !== null && !!amount && parseFloat(amount) > usdcBalance}
                                     />
                                 </View>
                             </ScrollView>

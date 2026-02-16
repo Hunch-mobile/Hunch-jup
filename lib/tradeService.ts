@@ -20,7 +20,7 @@ export const DEFAULT_SEND_OPTIONS = {
 
 // Backend API URL - ALL orders must go through this endpoint
 // The backend sponsors the transaction (applies sponsor signature) before returning
-const API_BASE_URL = 'https://hunchdotrun-roan.vercel.app';
+const API_BASE_URL = 'https://870f-2405-201-35-288f-cc5b-e5da-7c7d-e76.ngrok-free.app'; // TODO: Move to env variable in production
 
 // Types
 export interface DFlowOrderResponse {

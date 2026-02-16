@@ -1,5 +1,6 @@
 Reviewing the codebase to identify API endpoints, request bodies, and response formats.
 
+Key_ID_APN= M34UGY4AYF
 
 [3 tools called]
 
@@ -60,6 +61,38 @@ Sync or create a user from Privy auth.
 
 **Error Responses:**
 - `400`: `{ "error": "privyId and walletAddress are required" }`
+- `500`: `{ "error": "error message" }`
+
+---
+
+### POST `/api/users/push-token`
+Register or update Expo Push Token for push notifications. Requires authentication.
+
+**Request Body:**
+```json
+{
+  "expoPushToken": "string (required)"
+}
+```
+
+- Validates `expoPushToken` is a string and passes `Expo.isExpoPushToken()`
+- `userId` is derived from session via `getAuthenticatedUser()` (Privy JWT)
+
+**Response (200):** Empty or success object.
+
+**Error Responses:**
+- `401`: Unauthorized
+- `500`: `{ "error": "error message" }`
+
+---
+
+### DELETE `/api/users/push-token`
+Remove push token (logout/opt-out). Requires authentication.
+
+**Response (200):** Empty or success object.
+
+**Error Responses:**
+- `401`: Unauthorized
 - `500`: `{ "error": "error message" }`
 
 ---
@@ -351,6 +384,41 @@ Get user's trades.
 
 **Error Responses:**
 - `400`: `{ "error": "userId is required" }`
+- `500`: `{ "error": "error message" }`
+
+---
+
+### GET `/api/trades/[tradeId]`
+Get a single trade by ID. Used for push notification deep links. Requires authentication.
+
+**Request:**
+- URL Parameter: `tradeId` (string)
+
+**Response (200):**
+```json
+{
+  "id": "string",
+  "userId": "string",
+  "marketTicker": "string",
+  "eventTicker": "string | null",
+  "side": "yes",
+  "action": "BUY",
+  "amount": "string",
+  "transactionSig": "string",
+  "quote": "string | null",
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "user": {
+    "id": "string",
+    "displayName": "string | null",
+    "avatarUrl": "string | null",
+    "walletAddress": "string"
+  }
+}
+```
+
+**Error Responses:**
+- `401`: Unauthorized
+- `404`: Trade not found
 - `500`: `{ "error": "error message" }`
 
 ---
