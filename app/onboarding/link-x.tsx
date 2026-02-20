@@ -45,49 +45,26 @@ export default function LinkXScreen() {
 
             try {
                 // Re-bootstrap to sync the linked X account with backend
+                // Do NOT pass username here — let the user pick it on the username screen
                 const bootstrap = await api.bootstrapOAuthUser({
                     privyId: user.id,
                     provider: 'twitter',
                     linkedAccounts: (linkedUser as any)?.linked_accounts || [],
-                    username: normalizedUsername,
                     displayName: displayName,
                 });
 
-                // Update backend user in context
-                await setBackendUser(bootstrap.user);
-
-                // Now try to claim username if we have one
-                if (normalizedUsername) {
-                    try {
-                        await api.claimUsername(normalizedUsername);
-                        await api.saveOnboardingProgress({ step: "INTERESTS" });
-                        // Update context so AuthFlowGate stays in sync
-                        await setBackendUser({ ...bootstrap.user, username: normalizedUsername, onboardingStep: 'INTERESTS' });
-                        router.replace("/preferences");
-                        return;
-                    } catch (claimError) {
-                        console.warn("[Link X] Auto-claim failed, falling back to username step:", claimError);
-                        try {
-                            await api.saveOnboardingProgress({ step: "USERNAME" });
-                        } catch (progressError) {
-                            console.warn("[Link X] Failed to save onboarding progress:", progressError);
-                        }
-                        // Update context so AuthFlowGate stays in sync
-                        await setBackendUser({ ...bootstrap.user, onboardingStep: 'USERNAME' });
-                        router.replace({ pathname: "/onboarding/username", params: { suggested: normalizedUsername } });
-                        return;
-                    }
-                }
-
-                // No username from X, go to username screen
+                // Navigate FIRST without params, THEN update context to prevent AuthFlowGate race
+                router.replace("/onboarding/username");
+                
+                // Save onboarding progress after navigation
                 try {
                     await api.saveOnboardingProgress({ step: "USERNAME" });
                 } catch (progressError) {
                     console.warn("[Link X] Failed to save onboarding progress:", progressError);
                 }
-                // Update context so AuthFlowGate stays in sync
-                await setBackendUser({ ...bootstrap.user, onboardingStep: 'USERNAME' });
-                router.replace("/onboarding/username");
+
+                // Update backend user context after navigation completes
+                await setBackendUser({ ...bootstrap.user, username: null, onboardingStep: 'USERNAME' });
             } catch (bootstrapError) {
                 console.error("[Link X] Bootstrap failed:", bootstrapError);
                 setError("Failed to sync X account. Please try again.");

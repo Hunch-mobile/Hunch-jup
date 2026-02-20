@@ -3,13 +3,14 @@ import CopyTradeSheet from "@/components/CopyTradeSheet";
 import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import PositionCard from "@/components/PositionCard";
 import SellPositionSheet from "@/components/SellPositionSheet";
+import SendSheet from "@/components/SendSheet";
 import { PositionsSkeleton, UserProfileSkeleton } from "@/components/skeletons";
 import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
 import { api, getEventDetails, getMarketDetails, marketsApi } from "@/lib/api";
-import { executeTrade, toRawAmount, USDC_MINT } from "@/lib/tradeService";
+import { executeTrade, sendUSDC, toRawAmount, USDC_MINT } from "@/lib/tradeService";
 import { AggregatedPosition, CandleData, Event, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
@@ -258,6 +259,27 @@ const TradeItem = ({
     );
 };
 
+const sendBtnStyle = StyleSheet.create({
+    btn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 12,
+        backgroundColor: '#e8d723',
+    },
+    btnFlex: {
+        flex: 1,
+    },
+    text: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#11181C',
+    },
+});
+
 export default function UserProfileScreen() {
     const { userId } = useLocalSearchParams<{ userId: string }>();
     const { backendUser: currentUser } = useUser();
@@ -302,6 +324,10 @@ export default function UserProfileScreen() {
     const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
     const [selectedMarketEventTitle, setSelectedMarketEventTitle] = useState<string | undefined>(undefined);
     const [walletProvider, setWalletProvider] = useState<any>(null);
+
+    // Send USDC sheet state
+    const [sendSheetOpen, setSendSheetOpen] = useState(false);
+    const [sendSubmitting, setSendSubmitting] = useState(false);
 
     const handleOpenMarketSheet = async (position: AggregatedPosition) => {
         let market = position.market;
@@ -822,20 +848,51 @@ export default function UserProfileScreen() {
                             </View>
 
                             {!isOwnProfile && currentUser && (
-                                <View className="mt-4 flex-row gap-3">
-                                    <TouchableOpacity
-                                        className={`flex-1 flex-row justify-center items-center gap-1.5 px-3 py-2.5 rounded-xl ${isFollowing ? 'bg-gray-200' : 'bg-black'}`}
-                                        onPress={handleFollow}
-                                        disabled={followLoading}
-                                    >
-                                        {followLoading ? (
-                                            <ActivityIndicator size="small" color={isFollowing ? "black" : "white"} />
-                                        ) : (
-                                            <Text className={`text-sm font-semibold ${isFollowing ? "text-black" : "text-white"}`}>
-                                                {isFollowing ? "Following" : "Follow"}
-                                            </Text>
-                                        )}
-                                    </TouchableOpacity>
+                                <View className="mt-4 flex-row gap-3 items-center">
+                                    {/* Follow / Friends icon */}
+                                    {isFollowing ? (
+                                        // Already following — show friends icon, no text button
+                                        <View
+                                            style={{
+                                                width: 40,
+                                                height: 40,
+                                                borderRadius: 20,
+                                                backgroundColor: '#F3F4F6',
+                                                justifyContent: 'center',
+                                                alignItems: 'center',
+                                            }}
+                                        >
+                                            <Ionicons name="people" size={20} color="#11181C" />
+                                        </View>
+                                    ) : (
+                                        // Not following — show Follow button
+                                        <TouchableOpacity
+                                            className="flex-1 flex-row justify-center items-center gap-1.5 px-3 py-2.5 rounded-xl bg-black"
+                                            onPress={handleFollow}
+                                            disabled={followLoading}
+                                        >
+                                            {followLoading ? (
+                                                <ActivityIndicator size="small" color="white" />
+                                            ) : (
+                                                <Text className="text-sm font-semibold text-white">Follow</Text>
+                                            )}
+                                        </TouchableOpacity>
+                                    )}
+
+                                    {/* Send USDC button — always shown inline (yellow CTA) */}
+                                    {profile?.walletAddress && (
+                                        <TouchableOpacity
+                                            style={[sendBtnStyle.btn, isFollowing && sendBtnStyle.btnFlex]}
+                                            onPress={() => {
+                                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                                setSendSheetOpen(true);
+                                            }}
+                                            activeOpacity={0.8}
+                                        >
+                                            <Ionicons name="send" size={15} color="#11181C" />
+                                            <Text style={sendBtnStyle.text}>Send</Text>
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
                             )}
                         </View>
@@ -1020,6 +1077,44 @@ export default function UserProfileScreen() {
                 connection={connection}
                 eventTitle={selectedMarketEventTitle}
             />
+
+            {/* Send USDC Sheet */}
+            {profile && (
+                <SendSheet
+                    visible={sendSheetOpen}
+                    onClose={() => setSendSheetOpen(false)}
+                    submitting={sendSubmitting}
+                    balance={usdcBalance}
+                    recipientAddress={profile.walletAddress}
+                    recipientName={username}
+                    onSubmit={async ({ toAddress, amount }) => {
+                        if (!currentUser || !solanaWallet) return;
+                        try {
+                            setSendSubmitting(true);
+                            const provider = await solanaWallet.getProvider();
+                            await sendUSDC({
+                                provider,
+                                connection,
+                                fromAddress: currentUser.walletAddress,
+                                toAddress,
+                                amount,
+                                type: 'send',
+                                senderName: currentUser.displayName || currentUser.username || undefined,
+                            });
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                            // Optimistic update — instant feedback, no waiting for refetch
+                            setUsdcBalance(prev => Math.max(0, prev - amount));
+                            setSendSheetOpen(false);
+                            loadUsdcBalance(); // background sync with actual chain balance
+                        } catch (err: any) {
+                            console.error('Send USDC error:', err);
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                        } finally {
+                            setSendSubmitting(false);
+                        }
+                    }}
+                />
+            )}
         </View>
     );
 }
@@ -1037,5 +1132,6 @@ const styles = StyleSheet.create({
         width: SCREEN_WIDTH - 40,
     },
 });
+
 
 

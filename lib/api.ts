@@ -1,6 +1,6 @@
 import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreateTradeRequest, DelegationStatus, Event, EventEvidence, EventsResponse, EvidenceResponse, Follow, Market, MarketsResponse, OnboardingStep, PositionsResponse, Series, SeriesResponse, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse } from './types';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://870f-2405-201-35-288f-cc5b-e5da-7c7d-e76.ngrok-free.app';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunchdotrun-roan.vercel.app';
 const METADATA_API_BASE_URL = 'https://a.prediction-markets-api.dflow.net';
 const DFLOW_API_KEY = process.env.EXPO_PUBLIC_DFLOW_API_KEY || '';
 
@@ -37,7 +37,8 @@ const isAuthError = (error: any): error is AuthError => {
 };
 
 // Authenticated fetch helper - auto-injects Privy JWT
-const authenticatedFetch = async (
+// Exported for use in other service files (e.g. tradeService.ts)
+export const authenticatedFetch = async (
     url: string,
     options: RequestInit = {}
 ): Promise<Response> => {

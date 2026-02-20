@@ -1,7 +1,6 @@
 import FakeNotificationStack from "@/components/FakeNotificationStack";
 import { useUser } from "@/contexts/UserContext";
 import { api } from "@/lib/api";
-import { Ionicons } from "@expo/vector-icons";
 import { useLoginWithOAuth, usePrivy } from "@privy-io/expo";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
@@ -37,6 +36,22 @@ export default function LoginScreen() {
         return "twitter";
     };
 
+    const isApplePrivateRelay = (email?: string): boolean => {
+        if (!email) return false;
+        return email.endsWith('@privaterelay.appleid.com');
+    };
+
+    const isRandomAppleString = (name?: string): boolean => {
+        if (!name) return true;
+        // Apple sometimes sets display name to random strings or empty values
+        // Detect strings that look auto-generated (no spaces, mostly alphanumeric noise)
+        const trimmed = name.trim();
+        if (!trimmed || trimmed.length < 2) return true;
+        // If the name is just a long alphanumeric string with no spaces, it's likely random
+        if (/^[a-z0-9]{8,}$/i.test(trimmed)) return true;
+        return false;
+    };
+
     const extractUsernameAndDisplayName = (linkedAccounts: Array<any> = []): { username?: string; displayName?: string } => {
         const twitter = linkedAccounts.find((a: any) => a.type === "twitter_oauth");
         const apple = linkedAccounts.find((a: any) => a.type === "apple_oauth");
@@ -48,10 +63,25 @@ export default function LoginScreen() {
 
         const rawUsername = (account as any)?.username ?? (account as any)?.screen_name;
         const username = rawUsername ? String(rawUsername).replace(/^@+/, "").trim() : undefined;
-        const displayName =
-            (account as any)?.name ||
-            (account as any)?.email?.split("@")[0] ||
-            username;
+
+        // For Apple sign-in: avoid using random relay email prefix or auto-generated strings
+        let displayName: string | undefined;
+        const accountName = (account as any)?.name;
+        const accountEmail = (account as any)?.email;
+
+        if (apple && account === apple) {
+            // Apple sign-in: only use name if it looks like a real name
+            if (accountName && !isRandomAppleString(accountName)) {
+                displayName = accountName;
+            }
+            // Don't fall back to email prefix for Apple private relay
+            // displayName will be set later from the claimed username
+        } else {
+            displayName =
+                accountName ||
+                (accountEmail ? accountEmail.split("@")[0] : undefined) ||
+                username;
+        }
 
         return { username: username || undefined, displayName: displayName || undefined };
     };

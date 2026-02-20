@@ -1,5 +1,7 @@
+import { sendUSDC } from "@/lib/tradeService";
 import { Ionicons } from "@expo/vector-icons";
 import { useFundSolanaWallet } from '@privy-io/expo/ui';
+import { Connection } from "@solana/web3.js";
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from "expo-linear-gradient";
 import { useRef, useState } from "react";
@@ -20,9 +22,15 @@ interface CreditCardProps {
     tradesCount: number;
     balance?: number;
     walletAddress?: string;
+    /** Privy wallet provider — used for signing USDC transfers */
+    walletProvider?: any;
+    /** Solana connection — used for sending transfer tx */
+    connection?: Connection;
+    /** Called with the withdrawn amount immediately after tx confirms */
+    onWithdrawSuccess?: (amount: number) => void;
 }
 
-export default function CreditCard({ tradesCount, balance = 0, walletAddress }: CreditCardProps) {
+export default function CreditCard({ tradesCount, balance = 0, walletAddress, walletProvider, connection, onWithdrawSuccess }: CreditCardProps) {
     const [isFlipped, setIsFlipped] = useState(false);
     const [copied, setCopied] = useState(false);
     const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -235,11 +243,26 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress }: 
                 submitting={withdrawSubmitting}
                 balance={balance}
                 onSubmit={async ({ toAddress, amount }) => {
+                    if (!walletAddress || !walletProvider || !connection) {
+                        console.warn('CreditCard: walletProvider or connection not provided, cannot withdraw');
+                        setWithdrawOpen(false);
+                        return;
+                    }
                     try {
                         setWithdrawSubmitting(true);
-                        // TODO: wire to backend/wallet flow
-                        console.log("Withdraw submit", { toAddress, amount, from: walletAddress });
+                        await sendUSDC({
+                            provider: walletProvider,
+                            connection,
+                            fromAddress: walletAddress,
+                            toAddress,
+                            amount,
+                            type: 'withdraw',
+                        });
+                        // Optimistic update — instant balance feedback
+                        onWithdrawSuccess?.(amount);
                         setWithdrawOpen(false);
+                    } catch (err) {
+                        console.error('Withdraw USDC error:', err);
                     } finally {
                         setWithdrawSubmitting(false);
                     }

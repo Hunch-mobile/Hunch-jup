@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -28,6 +28,7 @@ export default function PreferencesScreen() {
     const { backendUser, loadPreferences, setBackendUser } = useUser();
     const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
     const [isSaving, setIsSaving] = useState(false);
+    const hasNavigatedRef = useRef(false);
 
     const toggleInterest = (interest: string) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -38,44 +39,46 @@ export default function PreferencesScreen() {
         );
     };
 
+    // Navigate forward only once
+    const navigateForward = () => {
+        if (hasNavigatedRef.current) return;
+        hasNavigatedRef.current = true;
+        router.replace("/suggested-followers");
+    };
+
     const handleContinue = async () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         setIsSaving(true);
 
+        // Navigate immediately
+        navigateForward();
+
+        // Save preferences in background
         try {
-            // Save preferences
             if (backendUser?.id) {
-                // Save preferences to backend
-                await api.savePreferences(backendUser.id, {
+                // Update context immediately
+                await setBackendUser({ ...backendUser, onboardingStep: 'SUGGESTED_FOLLOWERS' });
+
+                // Save preferences to backend (fire and forget style, but await for local storage)
+                api.savePreferences(backendUser.id, {
                     interests: selectedInterests,
                     hasCompletedOnboarding: false,
-                });
+                }).catch(err => console.warn("Failed to save preferences:", err));
 
                 // Save to local storage as backup
                 const prefs = { interests: selectedInterests, hasCompletedOnboarding: false };
-                await AsyncStorage.setItem('userPreferences', JSON.stringify(prefs));
+                AsyncStorage.setItem('userPreferences', JSON.stringify(prefs)).catch(() => {});
 
-                try {
-                    await api.saveOnboardingProgress({ step: "SUGGESTED_FOLLOWERS" });
-                } catch (progressError) {
-                    console.warn("Failed to save onboarding step:", progressError);
-                }
-
-                // Update context so AuthFlowGate stays in sync
-                if (backendUser) {
-                    await setBackendUser({ ...backendUser, onboardingStep: 'SUGGESTED_FOLLOWERS' });
-                }
+                // Save onboarding progress
+                api.saveOnboardingProgress({ step: "SUGGESTED_FOLLOWERS" }).catch(err => {
+                    console.warn("Failed to save onboarding step:", err);
+                });
 
                 // Reload preferences in context
-                await loadPreferences();
+                loadPreferences().catch(() => {});
             }
-
-            // Navigate to suggested followers
-            router.replace("/suggested-followers");
         } catch (error) {
             console.error("Failed to save preferences:", error);
-            // Still navigate to suggested followers even if save fails
-            router.replace("/suggested-followers");
         } finally {
             setIsSaving(false);
         }

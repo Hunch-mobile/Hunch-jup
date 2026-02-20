@@ -4,8 +4,11 @@
 // IMPORTANT: All order/quote requests MUST go through the backend at /api/dflow/quote.
 // The backend applies the sponsor signature before returning the transaction.
 // Mobile clients should NEVER call DFlow directly for sponsored order flow.
+//
+// Also contains sendUSDC for direct SPL token transfers (send to user feature).
 
 import { Connection, VersionedTransaction } from '@solana/web3.js';
+import { authenticatedFetch } from './api';
 
 // Constants
 export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -20,7 +23,7 @@ export const DEFAULT_SEND_OPTIONS = {
 
 // Backend API URL - ALL orders must go through this endpoint
 // The backend sponsors the transaction (applies sponsor signature) before returning
-const API_BASE_URL = 'https://870f-2405-201-35-288f-cc5b-e5da-7c7d-e76.ngrok-free.app'; // TODO: Move to env variable in production
+const API_BASE_URL = 'https://hunchdotrun-roan.vercel.app'; // TODO: Move to env variable in production
 
 // Types
 export interface DFlowOrderResponse {
@@ -152,7 +155,7 @@ export async function requestOrder(params: OrderParams): Promise<DFlowOrderRespo
     }
 
     const order = await response.json();
-    
+
     // Support both 'transaction' and 'openTransaction' field names
     const txBase64 = order.transaction || order.openTransaction;
     if (!txBase64) {
@@ -253,7 +256,7 @@ export async function waitForOrderCompletion(
  */
 export function deserializeTransaction(base64Transaction: string): VersionedTransaction {
     console.log('[TradeService] Deserializing sponsor-signed tx, base64 length:', base64Transaction.length);
-    
+
     // Decode base64 to bytes
     const transactionBytes = Uint8Array.from(
         Buffer.from(base64Transaction, 'base64')
@@ -262,20 +265,20 @@ export function deserializeTransaction(base64Transaction: string): VersionedTran
 
     // Deserialize to VersionedTransaction
     const tx = VersionedTransaction.deserialize(transactionBytes);
-    
+
     // Log fee payer (account 0) for debugging
     const feePayer = tx.message.staticAccountKeys[0];
     console.log('[TradeService] Fee Payer (sponsor):', feePayer.toString());
-    
+
     // Verify sponsor signature exists (should be non-zero)
     const sponsorSig = tx.signatures[0];
     const hasValidSponsorSig = sponsorSig && !sponsorSig.every(b => b === 0);
     console.log('[TradeService] Sponsor signature present:', hasValidSponsorSig);
-    
+
     if (!hasValidSponsorSig) {
         console.warn('[TradeService] WARNING: Sponsor signature appears to be missing or empty!');
     }
-    
+
     return tx;
 }
 
@@ -356,7 +359,7 @@ export async function signAndSendWithPrivy(
     const validSigCount = signedTransaction.signatures.filter(
         (s: Uint8Array) => s && !s.every((b: number) => b === 0)
     ).length;
-    
+
     if (validSigCount < 2) {
         console.warn(`[TradeService] WARNING: Only ${validSigCount} valid signature(s). Expected 2 (sponsor + user).`);
     }
@@ -371,7 +374,7 @@ export async function signAndSendWithPrivy(
         return signature;
     } catch (error: any) {
         console.error('[TradeService] Send failed:', error);
-        
+
         // Classify the error for retry logic
         if (isBlockhashExpiredError(error)) {
             throw createTradeError(
@@ -423,19 +426,19 @@ export async function executeTrade(params: {
     signature: string;
     order: DFlowOrderResponse;
 }> {
-    const { 
-        provider, 
-        connection, 
-        userPublicKey, 
-        inputMint, 
-        outputMint, 
-        amount, 
+    const {
+        provider,
+        connection,
+        userPublicKey,
+        inputMint,
+        outputMint,
+        amount,
         slippageBps = 100,
-        maxRetries = 2 
+        maxRetries = 2
     } = params;
 
     let lastError: TradeError | Error | null = null;
-    
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
             if (attempt > 0) {
@@ -517,3 +520,96 @@ export function fromRawAmount(rawAmount: string | number, decimals: number = 6):
     const amount = typeof rawAmount === 'string' ? parseInt(rawAmount, 10) : rawAmount;
     return amount / Math.pow(10, decimals);
 }
+
+/**
+ * Send USDC from one wallet to another via SPL token transfer.
+ *
+ * Flow (Privy Sponsor):
+ * 1. POST /api/send-usdc  →  backend builds UNSIGNED SPL transfer tx, returns base64
+ * 2. Client decodes → VersionedTransaction
+ * 3. provider.request('signAndSendTransaction', { sponsorTransaction: true })
+ *    → Privy co-signs as fee payer + user signs + Privy broadcasts
+ *
+ * Backend does NOT need a sponsor private key — Privy handles fee payment.
+ */
+export async function sendUSDC({
+    provider,
+    connection,
+    fromAddress,
+    toAddress,
+    amount,
+    type = 'send',
+    senderName,
+}: {
+    provider: any;
+    connection: Connection;
+    fromAddress: string;
+    toAddress: string;
+    amount: number;
+    /** 'send' triggers a push notification to the recipient.
+     *  'withdraw' is a personal withdrawal — no notification sent. */
+    type?: 'send' | 'withdraw';
+    /** Display name of the sender shown in the push notification (send only) */
+    senderName?: string;
+}): Promise<string> {
+    console.log(`[TradeService] Requesting unsigned USDC ${type} tx from backend...`);
+
+    // Step 1: Get unsigned tx + tell backend what type this is (auto-injects Privy JWT)
+    const response = await authenticatedFetch(`${API_BASE_URL}/api/send-usdc`, {
+        method: 'POST',
+        body: JSON.stringify({ fromAddress, toAddress, amount, type, senderName }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw createTradeError(
+            `Failed to build USDC transfer: ${response.status} - ${errorText}`,
+            'NETWORK_ERROR',
+            true
+        );
+    }
+
+    const { transaction: txBase64 } = await response.json();
+    if (!txBase64) {
+        throw createTradeError('No transaction returned from backend', 'UNKNOWN', true);
+    }
+
+    // Step 2: Deserialize (UNSIGNED — backend did NOT sponsor-sign it)
+    const transactionBytes = Uint8Array.from(Buffer.from(txBase64, 'base64'));
+    const tx = VersionedTransaction.deserialize(transactionBytes);
+    console.log('[TradeService] Unsigned tx decoded, submitting via Privy with sponsorTransaction: true...');
+
+    // Step 3: Privy acts as fee payer + user signs + Privy broadcasts
+    try {
+        const result = await provider.request({
+            method: 'signAndSendTransaction',
+            params: {
+                transaction: tx,
+                connection,
+                options: {
+                    sponsorTransaction: true, // Privy pays SOL fee
+                },
+            },
+        });
+
+        const signature: string =
+            typeof result === 'string'
+                ? result
+                : (result?.signature ?? result?.hash ?? result?.txHash ?? '');
+
+        if (!signature) {
+            throw new Error('No signature returned from Privy signAndSendTransaction');
+        }
+
+        console.log('[TradeService] USDC transfer confirmed:', signature);
+        return signature;
+    } catch (err: any) {
+        console.error('[TradeService] Privy sponsor send error:', err);
+        throw createTradeError(
+            err?.message || 'Failed to sign and send USDC transfer',
+            'SIGNING_ERROR',
+            false
+        );
+    }
+}
+

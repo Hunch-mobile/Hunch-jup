@@ -607,6 +607,13 @@ export default function ProfileScreen() {
                                 tradesCount={trades.length}
                                 balance={cashBalance}
                                 walletAddress={walletAddress || ""}
+                                walletProvider={walletProvider}
+                                connection={connection}
+                                onWithdrawSuccess={(amount) => {
+                                    // Optimistic update — instant balance feedback
+                                    setUsdcBalance(prev => Math.max(0, (prev ?? 0) - amount));
+                                    loadUsdcBalance(); // background sync
+                                }}
                             />
                         </View>
                     </View>

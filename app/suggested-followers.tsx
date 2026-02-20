@@ -5,7 +5,7 @@ import { User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Image, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -15,6 +15,7 @@ export default function SuggestedFollowersScreen() {
     const [topUsers, setTopUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+    const hasNavigatedRef = useRef(false);
 
     useEffect(() => {
         loadTopUsers();
@@ -81,21 +82,29 @@ export default function SuggestedFollowersScreen() {
         }
     };
 
+    // Navigate forward only once
+    const navigateForward = () => {
+        if (hasNavigatedRef.current) return;
+        hasNavigatedRef.current = true;
+        router.replace("/(tabs)");
+    };
+
     const handleContinue = async () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-        // Mark onboarding as complete if not already done
-        if (backendUser?.id) {
-            try {
-                await api.saveOnboardingProgress({ step: "COMPLETE", completed: true });
-                // Update context so AuthFlowGate stays in sync
-                await setBackendUser({ ...backendUser, hasCompletedOnboarding: true, onboardingStep: 'COMPLETE' });
-            } catch (error) {
-                console.error('Failed to save onboarding completion:', error);
-            }
-        }
+        // Navigate immediately
+        navigateForward();
 
-        router.replace("/(tabs)");
+        // Mark onboarding as complete in background
+        if (backendUser?.id) {
+            // Update context immediately
+            await setBackendUser({ ...backendUser, hasCompletedOnboarding: true, onboardingStep: 'COMPLETE' });
+            
+            // Save to backend in background
+            api.saveOnboardingProgress({ step: "COMPLETE", completed: true }).catch(error => {
+                console.error('Failed to save onboarding completion:', error);
+            });
+        }
     };
 
     const hasFollowedSomeone = followingIds.size > 0;

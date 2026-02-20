@@ -5,10 +5,10 @@ import "../global.css";
 global.Buffer = Buffer;
 
 import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import { PrivyProvider } from '@privy-io/expo';
 import { PrivyElements } from '@privy-io/expo/ui';
@@ -27,8 +27,8 @@ import { AuthInitializer } from '@/components/AuthInitializer';
 import { PushNotificationProvider } from '@/components/PushNotificationProvider';
 import { UserProvider, useUser } from '@/contexts/UserContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { OnboardingStep } from '@/lib/types';
 import '@/lib/pushNotifications'; // Sets up setNotificationHandler at app root
+import { OnboardingStep } from '@/lib/types';
 import { usePrivy } from '@privy-io/expo';
 
 SplashScreen.preventAutoHideAsync();
@@ -37,23 +37,22 @@ export const unstable_settings = {
   initialRouteName: 'login',
 };
 
-function resolveOnboardingRoute(
-  step?: OnboardingStep,
-  completed?: boolean,
-  hasTwitterLinked?: boolean,
-  username?: string | null
-) {
-  if (completed) return '/(tabs)';
+// Onboarding step order for forward-only navigation
+const ONBOARDING_ORDER: OnboardingStep[] = ['LINK_X', 'USERNAME', 'INTERESTS', 'SUGGESTED_FOLLOWERS', 'COMPLETE'];
+
+function getStepIndex(step?: OnboardingStep): number {
+  if (!step) return 0;
+  const idx = ONBOARDING_ORDER.indexOf(step);
+  return idx === -1 ? 0 : idx;
+}
+
+function getRouteForStep(step: OnboardingStep, hasTwitterLinked?: boolean): string {
   switch (step) {
     case 'LINK_X':
-      // Twitter users already have X linked — skip to username or further
-      if (hasTwitterLinked) {
-        return username ? '/preferences' : '/onboarding/username';
-      }
-      return '/onboarding/link-x';
+      // Twitter users already have X linked — skip to username
+      return hasTwitterLinked ? '/onboarding/username' : '/onboarding/link-x';
     case 'USERNAME':
-      // If username already claimed (e.g. via link-x auto-claim), skip ahead
-      return username ? '/preferences' : '/onboarding/username';
+      return '/onboarding/username';
     case 'INTERESTS':
       return '/preferences';
     case 'SUGGESTED_FOLLOWERS':
@@ -62,6 +61,15 @@ function resolveOnboardingRoute(
     default:
       return '/(tabs)';
   }
+}
+
+function getStepForRoute(route: string): OnboardingStep | null {
+  if (route.includes('link-x')) return 'LINK_X';
+  if (route.includes('username')) return 'USERNAME';
+  if (route.includes('preferences')) return 'INTERESTS';
+  if (route.includes('suggested-followers')) return 'SUGGESTED_FOLLOWERS';
+  if (route.includes('(tabs)')) return 'COMPLETE';
+  return null;
 }
 
 function AuthFlowGate() {
@@ -78,44 +86,74 @@ function AuthFlowGate() {
     const inTabs = root === '(tabs)';
     const inOnboarding =
       root === 'onboarding' || root === 'preferences' || root === 'suggested-followers';
+    const currentPath = `/${segments.join('/')}`;
 
-    if (!user && (inTabs || inOnboarding)) {
-      router.replace('/login');
+    // ─────────────────────────────────────────────────────────────────────────
+    // RULE 1: Not authenticated → must be on login (unless still loading)
+    // ─────────────────────────────────────────────────────────────────────────
+    if (!user) {
+      if (!inLogin) {
+        router.replace('/login');
+      }
       return;
     }
 
-    // User is authenticated, but backend user not restored/synced yet:
-    // force login screen where sync bootstrap logic runs.
-    if (user && !backendUser && !inLogin) {
-      router.replace('/login');
+    // ─────────────────────────────────────────────────────────────────────────
+    // RULE 2: Authenticated but no backend user yet → stay on login to sync
+    // ─────────────────────────────────────────────────────────────────────────
+    if (!backendUser) {
+      if (!inLogin) {
+        router.replace('/login');
+      }
       return;
     }
 
-    if (!user || !backendUser) return;
+    // ─────────────────────────────────────────────────────────────────────────
+    // RULE 3: Onboarding complete → go to tabs (from login or onboarding)
+    // ─────────────────────────────────────────────────────────────────────────
+    if (backendUser.hasCompletedOnboarding) {
+      if (inLogin || inOnboarding) {
+        router.replace('/(tabs)');
+      }
+      return;
+    }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // RULE 4: Onboarding NOT complete → enforce forward-only navigation
+    // ─────────────────────────────────────────────────────────────────────────
     const hasTwitterLinked = Boolean(
       user.linked_accounts?.some((a: any) => a.type === 'twitter_oauth')
     );
 
-    const target = resolveOnboardingRoute(
-      backendUser.onboardingStep as OnboardingStep | undefined,
-      backendUser.hasCompletedOnboarding,
-      hasTwitterLinked,
-      backendUser.username
-    );
+    const backendStep = (backendUser.onboardingStep as OnboardingStep) || 'LINK_X';
+    const targetRoute = getRouteForStep(backendStep, hasTwitterLinked);
+    const targetStepIndex = getStepIndex(backendStep);
 
+    // From login, always navigate to the correct onboarding step
     if (inLogin) {
-      router.replace(target as any);
+      router.replace(targetRoute as any);
       return;
     }
 
-    if (inTabs && !backendUser.hasCompletedOnboarding) {
-      router.replace(target as any);
+    // From tabs (shouldn't happen during onboarding), redirect to correct step
+    if (inTabs) {
+      router.replace(targetRoute as any);
       return;
     }
 
-    if (inOnboarding && backendUser.hasCompletedOnboarding) {
-      router.replace('/(tabs)');
+    // In onboarding: only redirect if user is trying to go BACKWARD
+    // Allow staying on current screen or going forward (screens handle forward nav)
+    if (inOnboarding) {
+      const currentStep = getStepForRoute(currentPath);
+      const currentStepIndex = currentStep ? getStepIndex(currentStep) : -1;
+
+      // If current route is BEHIND the backend step, redirect forward
+      // This prevents going back to link-x from username, etc.
+      if (currentStepIndex < targetStepIndex) {
+        router.replace(targetRoute as any);
+        return;
+      }
+      // Otherwise, let the user stay on current screen (forward navigation is allowed)
     }
   }, [isReady, isBackendUserLoading, user, backendUser, segments]);
 
