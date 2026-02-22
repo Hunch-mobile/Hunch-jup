@@ -2,9 +2,10 @@ import { EventCarousel } from "@/components/EventCarousel";
 import { EventMarketImageCarousel } from "@/components/EventMarketImageCarousel";
 import { FilterPills } from "@/components/FilterPills";
 import { MarketCard } from "@/components/MarketCard";
-
+import MarketPopout from "@/components/MarketPopout";
 import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import { MiniNewsCarousel } from "@/components/MiniNewsCarousel";
+import NotificationSidebar from "@/components/NotificationSidebar";
 import { HomeFeedSkeleton, ListFooterSkeleton } from "@/components/skeletons";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
@@ -14,8 +15,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
 import { useFundSolanaWallet } from "@privy-io/expo/ui";
 import { Connection, clusterApiUrl } from "@solana/web3.js";
+import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, FlatList, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Animated, FlatList, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 
@@ -54,6 +57,7 @@ export default function HomeScreen() {
   const { preferences, backendUser } = useUser();
   const { fundWallet } = useFundSolanaWallet();
   const { wallets } = useEmbeddedSolanaWallet();
+  const router = useRouter();
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
   const [selectedCategory, setSelectedCategory] = useState('Hot');
   const [events, setEvents] = useState<Event[]>([]);
@@ -73,6 +77,10 @@ export default function HomeScreen() {
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [walletProvider, setWalletProvider] = useState<any>(null);
   const [selectedMarketEventTitle, setSelectedMarketEventTitle] = useState<string | undefined>(undefined);
+  const [notifSidebarVisible, setNotifSidebarVisible] = useState(false);
+  const [popoutVisible, setPopoutVisible] = useState(false);
+  const [popoutMarket, setPopoutMarket] = useState<Market | null>(null);
+  const [popoutEventTitle, setPopoutEventTitle] = useState<string | undefined>(undefined);
 
   const isLoadingRef = useRef(false);
   const solanaWallet = wallets?.[0];
@@ -424,6 +432,11 @@ export default function HomeScreen() {
         <MarketCard
           item={item.data}
           onPress={() => handleOpenMarketSheet(item.data)}
+          onLongPress={() => {
+            setPopoutMarket(item.data);
+            setPopoutEventTitle(item.data.eventTicker ? eventTitleByTicker.get(item.data.eventTicker) : undefined);
+            setPopoutVisible(true);
+          }}
           eventTitle={item.data.eventTicker ? eventTitleByTicker.get(item.data.eventTicker) : undefined}
         />
       );
@@ -479,6 +492,7 @@ export default function HomeScreen() {
             style={[
               { opacity: extrasOpacity },
               headerCollapsed && { position: 'absolute', right: 20 },
+              { flexDirection: 'row', alignItems: 'center', gap: 8 },
             ]}
           >
             <TouchableOpacity
@@ -491,6 +505,15 @@ export default function HomeScreen() {
               activeOpacity={0.7}
             >
               <Text className="text-[15px] font-medium text-txt-primary">+ Add Cash</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="w-10 h-10 rounded-full justify-center items-center"
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setNotifSidebarVisible(true);
+              }}
+            >
+              <Ionicons name="notifications-outline" size={24} color={Theme.textPrimary} />
             </TouchableOpacity>
           </Animated.View>
         </Animated.View>
@@ -578,6 +601,25 @@ export default function HomeScreen() {
         walletProvider={walletProvider}
         connection={connection}
         eventTitle={selectedMarketEventTitle}
+      />
+      <NotificationSidebar
+        visible={notifSidebarVisible}
+        onClose={() => setNotifSidebarVisible(false)}
+        backendUser={backendUser}
+      />
+      <MarketPopout
+        visible={popoutVisible}
+        market={popoutMarket}
+        eventTitle={popoutEventTitle}
+        onClose={() => setPopoutVisible(false)}
+        onSave={(market) => {
+          Alert.alert('Saved', `"${market.title}" has been saved.`);
+        }}
+        onGoToEvent={(market) => {
+          if (market.eventTicker) {
+            router.push({ pathname: '/event/[ticker]', params: { ticker: market.eventTicker } });
+          }
+        }}
       />
     </View>
   );

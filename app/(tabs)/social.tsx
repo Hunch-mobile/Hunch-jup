@@ -1,6 +1,8 @@
 import LightChart from '@/components/LightChart';
 import { MarketTradeSheet } from '@/components/MarketTradeSheet';
 import NewsCard from '@/components/NewsCard';
+import NotificationSidebar from '@/components/NotificationSidebar';
+import PostComposerSheet from '@/components/PostComposerSheet';
 import { ListFooterSkeleton, SocialFeedSkeleton } from '@/components/skeletons';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
@@ -404,6 +406,10 @@ export default function SocialScreen() {
     const [selectedSearchEvent, setSelectedSearchEvent] = useState<Event | undefined>(undefined);
     const [evidenceItems, setEvidenceItems] = useState<EventEvidence[]>([]);
     const [isLoadingEvidence, setIsLoadingEvidence] = useState(false);
+    const [suggestedUsers, setSuggestedUsers] = useState<BackendUser[]>([]);
+    const [isLoadingSuggested, setIsLoadingSuggested] = useState(false);
+    const [composerVisible, setComposerVisible] = useState(false);
+    const [notifSidebarVisible, setNotifSidebarVisible] = useState(false);
 
     // Load evidence on mount
     useEffect(() => {
@@ -420,6 +426,24 @@ export default function SocialScreen() {
         };
         loadEvidence();
     }, []);
+
+    // Load suggested users when following tab is empty
+    useEffect(() => {
+        if (backendUser && followingIds.size === 0 && suggestedUsers.length === 0) {
+            const loadSuggested = async () => {
+                setIsLoadingSuggested(true);
+                try {
+                    const users = await api.getTopUsers('followers', 20);
+                    setSuggestedUsers(users.filter(u => u.id !== backendUser.id));
+                } catch (error) {
+                    console.error('Failed to load suggested users:', error);
+                } finally {
+                    setIsLoadingSuggested(false);
+                }
+            };
+            loadSuggested();
+        }
+    }, [backendUser, followingIds.size]);
 
     // Load previous searches on mount
     useEffect(() => {
@@ -765,110 +789,113 @@ export default function SocialScreen() {
 
         return (
             <>
-                <View className="px-5 pt-14 pb-2 flex-row items-center justify-between bg-app-bg">
-                    <View className="flex-1" />
-                    <View className="absolute left-0 right-0 items-center">
-                        <View className="flex-row items-center gap-6 relative">
-                            <TouchableOpacity
-                                className="relative pb-2"
-                                onPress={() => {
-                                    if (modeRef.current !== 'global') {
-                                        triggerHaptic();
-                                    }
-                                    animateToMode('global');
-                                }}
-                                onLayout={(event) => {
-                                    const { x, width } = event.nativeEvent.layout;
-                                    setTabLayouts(prev => ({ ...prev, global: { x, width } }));
-                                }}
-                            >
-                                <View className="flex-row items-center gap-2">
-                                    <Text className={`text-lg font-semibold ${isGlobalActive ? 'text-txt-primary' : 'text-txt-disabled'}`}>
-                                        For you
-                                    </Text>
-                                </View>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                className="relative pb-2"
-                                onPress={() => {
-                                    if (modeRef.current !== 'following') {
-                                        triggerHaptic();
-                                    }
-                                    animateToMode('following');
-                                }}
-                                onLayout={(event) => {
-                                    const { x, width } = event.nativeEvent.layout;
-                                    setTabLayouts(prev => ({ ...prev, following: { x, width } }));
-                                }}
-                            >
-                                <Text
-                                    className={`text-lg font-semibold ${isFollowingActive
-                                        ? 'text-txt-primary'
-                                        : 'text-txt-disabled'
-                                        }`}
+                <View className="px-5 pl-9 pt-6 pb-2 flex-row items-center bg-app-bg">
+                    {showSearch ? (
+                        <View className="flex-1 flex-row items-center h-11 gap-2.5 px-4 bg-white rounded-full border-2 border-black">
+                            <Ionicons name="search" size={18} color={Theme.textDisabled} />
+                            <TextInput
+                                className="flex-1 text-txt-primary text-[16px]"
+                                placeholder="Search users, markets, events..."
+                                placeholderTextColor={Theme.textDisabled}
+                                value={searchQuery}
+                                onChangeText={handleSearch}
+                                autoFocus
+                            />
+                            {(isSearching || isSearchingMarkets) && <ActivityIndicator size="small" color={Theme.accentSubtle} />}
+                            {searchQuery.length > 0 ? (
+                                <TouchableOpacity onPress={() => { setSearchQuery(""); setSearchResults([]); setSearchMarketResults([]); }}>
+                                    <Ionicons name="close-circle" size={18} color={Theme.textDisabled} />
+                                </TouchableOpacity>
+                            ) : (
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        setShowSearch(false);
+                                        setSearchQuery("");
+                                        setSearchResults([]);
+                                        setSearchMarketResults([]);
+                                    }}
                                 >
-                                    Following
-                                </Text>
-                            </TouchableOpacity>
-                            {underlineTranslateX && (
-                                <Animated.View
-                                    style={[
-                                        styles.tabUnderline,
-                                        { width: underlineWidth, transform: [{ translateX: underlineTranslateX }] },
-                                    ]}
-                                />
+                                    <Ionicons name="close" size={18} color={Theme.textSecondary} />
+                                </TouchableOpacity>
                             )}
                         </View>
-                    </View>
-                    <Animated.View
-                        style={[
-                            styles.searchBarContainer,
-                            showSearch ? styles.searchBarOpen : styles.searchBarClosed,
-                            { width: searchWidth },
-                        ]}
-                    >
-                        {!showSearch ? (
-                            <TouchableOpacity
-                                className="w-12 h-12 rounded-full justify-center items-center"
-                                onPress={() => setShowSearch(true)}
-                            >
-                                <Ionicons name="search" size={28} color={Theme.textPrimary} />
-                            </TouchableOpacity>
-                        ) : (
-                            <View className="flex-row items-center h-12 gap-2.5 px-4 bg-white rounded-full border-2 border-black">
-                                <Ionicons name="search" size={18} color={Theme.textDisabled} />
-                                <Animated.View style={{ flex: 1, opacity: searchInputOpacity }}>
-                                    <TextInput
-                                        className="text-txt-primary text-[17px]"
-                                        placeholder="Search users, markets, events..."
-                                        placeholderTextColor={Theme.textDisabled}
-                                        value={searchQuery}
-                                        onChangeText={handleSearch}
-                                        autoFocus
-                                    />
-                                </Animated.View>
-                                {(isSearching || isSearchingMarkets) && <ActivityIndicator size="small" color={Theme.accentSubtle} />}
-                                {searchQuery.length > 0 ? (
-                                    <TouchableOpacity onPress={() => { setSearchQuery(""); setSearchResults([]); setSearchMarketResults([]); }}>
-                                        <Ionicons name="close-circle" size={18} color={Theme.textDisabled} />
-                                    </TouchableOpacity>
-                                ) : (
-                                    <TouchableOpacity
-                                        onPress={() => {
-                                            setShowSearch(false);
-                                            setSearchQuery("");
-                                            setSearchResults([]);
-                                            setSearchMarketResults([]);
-                                        }}
+                    ) : (
+                        <>
+                            {/* Tabs: For you / Following */}
+                            <View className="flex-row items-center gap-5 relative">
+                                <TouchableOpacity
+                                    className="relative pb-2"
+                                    onPress={() => {
+                                        if (modeRef.current !== 'global') {
+                                            triggerHaptic();
+                                        }
+                                        animateToMode('global');
+                                    }}
+                                    onLayout={(event) => {
+                                        const { x, width } = event.nativeEvent.layout;
+                                        setTabLayouts(prev => ({ ...prev, global: { x, width } }));
+                                    }}
+                                >
+                                    <Text className={`text-xl font-bold ${isGlobalActive ? 'text-txt-primary' : 'text-txt-disabled'}`}>
+                                        For you
+                                    </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    className="relative pb-2"
+                                    onPress={() => {
+                                        if (modeRef.current !== 'following') {
+                                            triggerHaptic();
+                                        }
+                                        animateToMode('following');
+                                    }}
+                                    onLayout={(event) => {
+                                        const { x, width } = event.nativeEvent.layout;
+                                        setTabLayouts(prev => ({ ...prev, following: { x, width } }));
+                                    }}
+                                >
+                                    <Text
+                                        className={`text-xl font-bold ${isFollowingActive
+                                            ? 'text-txt-primary'
+                                            : 'text-txt-disabled'
+                                            }`}
                                     >
-                                        <Ionicons name="close" size={18} color={Theme.textSecondary} />
-                                    </TouchableOpacity>
+                                        Following
+                                    </Text>
+                                </TouchableOpacity>
+                                {underlineTranslateX && (
+                                    <Animated.View
+                                        style={[
+                                            styles.tabUnderline,
+                                            { width: underlineWidth, transform: [{ translateX: underlineTranslateX }] },
+                                        ]}
+                                    />
                                 )}
                             </View>
-                        )}
-                    </Animated.View>
+
+                            <View className="flex-1" />
+
+                            {/* Search + Bell */}
+                            <View className="flex-row items-center gap-1">
+                                <TouchableOpacity
+                                    className="w-10 h-10 rounded-full justify-center items-center"
+                                    onPress={() => setShowSearch(true)}
+                                >
+                                    <Ionicons name="search" size={24} color={Theme.textPrimary} />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    className="w-10 h-10 rounded-full justify-center items-center"
+                                    onPress={() => {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        setNotifSidebarVisible(true);
+                                    }}
+                                >
+                                    <Ionicons name="notifications" size={22} color={Theme.textPrimary} />
+                                </TouchableOpacity>
+                            </View>
+                        </>
+                    )}
                 </View>
-                <View className="border-b border-border mt-4" />
+                <View className="border-b border-transparent" />
             </>
         );
     };
@@ -929,23 +956,85 @@ export default function SocialScreen() {
         }
 
         if (followingIds.size === 0) {
-            return (
-                <View className="flex-1 justify-center items-center px-10">
-                    <View className="w-[88px] h-[88px] rounded-full bg-cyan-500/5 justify-center items-center mb-5">
-                        <Ionicons name="people-outline" size={48} color={`${Theme.accentSubtle}50`} />
+            const cardWidth = (SCREEN_WIDTH - 20 * 2 - 12) / 2;
+
+            if (isLoadingSuggested) {
+                return (
+                    <View className="flex-1 justify-center items-center">
+                        <ActivityIndicator size="large" color={Theme.textSecondary} />
                     </View>
-                    <Text className="text-xl font-semibold text-txt-primary mb-2">You're not following anyone yet</Text>
-                    <Text className="text-[15px] text-txt-secondary text-center leading-[22px] mb-6">
-                        Discover traders to see their activity here
-                    </Text>
-                    <TouchableOpacity
-                        className="flex-row items-center gap-2 bg-txt-primary px-6 py-3.5 rounded-lg"
-                        onPress={() => setShowSearch(true)}
-                    >
-                        <Ionicons name="search" size={18} color={Theme.bgMain} />
-                        <Text className="text-[15px] font-semibold text-txt-inverse">Discover Traders</Text>
-                    </TouchableOpacity>
-                </View>
+                );
+            }
+
+            const rows: BackendUser[][] = [];
+            for (let i = 0; i < suggestedUsers.length; i += 2) {
+                rows.push(suggestedUsers.slice(i, i + 2));
+            }
+
+            return (
+                <FlatList
+                    data={rows}
+                    keyExtractor={(_, idx) => `row-${idx}`}
+                    ListHeaderComponent={() => (
+                        <View className="px-5 pt-6 pb-4">
+                            <Text className="text-[22px] font-bold text-txt-primary">Suggested for you</Text>
+                            <Text className="text-[14px] text-txt-secondary mt-1">Follow traders to see their activity here</Text>
+                        </View>
+                    )}
+                    renderItem={({ item: row }) => (
+                        <View className="flex-row px-5 mb-3" style={{ gap: 12 }}>
+                            {row.map((user) => {
+                                const avatarUrl = user.avatarUrl?.replace('_normal', '');
+                                const isFollowingUser = followingIds.has(user.id);
+                                const inProgress = followingInProgress.has(user.id);
+
+                                return (
+                                    <TouchableOpacity
+                                        key={user.id}
+                                        style={{ width: cardWidth }}
+                                        className="bg-white rounded-2xl border border-[#E8E8E8] items-center py-5 px-3"
+                                        onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: user.id } })}
+                                        activeOpacity={0.8}
+                                    >
+                                        <View className="w-20 h-20 rounded-full overflow-hidden bg-app-card border-2 border-[#E8E8E8] mb-3">
+                                            <Image
+                                                source={avatarUrl ? { uri: avatarUrl } : defaultProfileImage}
+                                                className="w-full h-full"
+                                            />
+                                        </View>
+                                        <Text className="text-[15px] font-bold text-txt-primary text-center" numberOfLines={1}>
+                                            {user.displayName || 'Anonymous'}
+                                        </Text>
+                                        {user.username ? (
+                                            <Text className="text-[12px] text-txt-disabled mt-0.5 text-center" numberOfLines={1}>
+                                                @{user.username}
+                                            </Text>
+                                        ) : null}
+                                        <Text className="text-[11px] text-txt-secondary mt-1.5 text-center">
+                                            {user.followerCount || 0} followers
+                                        </Text>
+                                        <TouchableOpacity
+                                            className={`mt-3 w-full py-2.5 rounded-xl items-center justify-center ${isFollowingUser ? 'bg-white border border-txt-primary' : 'bg-black'} ${inProgress ? 'opacity-60' : ''}`}
+                                            onPress={(e) => { e.stopPropagation(); handleFollowUser(user.id); }}
+                                            disabled={inProgress}
+                                        >
+                                            {inProgress ? (
+                                                <ActivityIndicator size="small" color={isFollowingUser ? Theme.textPrimary : '#fff'} />
+                                            ) : (
+                                                <Text className={`text-[13px] font-bold ${isFollowingUser ? 'text-txt-primary' : 'text-white'}`}>
+                                                    {isFollowingUser ? 'Following' : 'Follow'}
+                                                </Text>
+                                            )}
+                                        </TouchableOpacity>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                            {row.length === 1 && <View style={{ width: cardWidth }} />}
+                        </View>
+                    )}
+                    contentContainerStyle={{ paddingBottom: 100 }}
+                    showsVerticalScrollIndicator={false}
+                />
             );
         }
 
@@ -1178,7 +1267,7 @@ export default function SocialScreen() {
                 }}
                 onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    // TODO: Handle plus button action
+                    setComposerVisible(true);
                 }}
                 activeOpacity={0.8}
             >
@@ -1197,6 +1286,19 @@ export default function SocialScreen() {
                     <Text style={{ fontSize: 32, fontWeight: '500', color: '#000000', lineHeight: 32 }}>+</Text>
                 </LinearGradient>
             </TouchableOpacity>
+
+            <PostComposerSheet
+                visible={composerVisible}
+                onClose={() => setComposerVisible(false)}
+                backendUser={backendUser}
+                onPostSuccess={() => loadFeed({ targetMode: mode, reset: true })}
+            />
+
+            <NotificationSidebar
+                visible={notifSidebarVisible}
+                onClose={() => setNotifSidebarVisible(false)}
+                backendUser={backendUser}
+            />
         </View>
     );
 }
@@ -1204,17 +1306,9 @@ export default function SocialScreen() {
 // Minimal styles for animated components
 const styles = StyleSheet.create({
     searchBarContainer: {
-        position: 'absolute',
-        right: 20,
-        height: 48,
+        height: 40,
         borderRadius: 999,
         overflow: 'visible',
-    },
-    searchBarOpen: {
-        backgroundColor: 'transparent',
-    },
-    searchBarClosed: {
-        backgroundColor: 'transparent',
     },
     listContainer: {
         flex: 1,

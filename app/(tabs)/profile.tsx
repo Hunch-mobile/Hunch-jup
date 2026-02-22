@@ -497,7 +497,7 @@ export default function ProfileScreen() {
         privyUsernameSource?.username ||
         privyUsernameSource?.name ||
         privyUsernameSource?.email?.split('@')[0];
-    const username = `@${(privyUsernameRaw || profileData?.displayName || "user").toLowerCase().replace(/\s/g, '')}`;
+    const username = (privyUsernameRaw || profileData?.displayName || "user").toLowerCase().replace(/\s/g, '');
     const followerCount = profileData?.followerCount || 0;
     const followingCount = profileData?.followingCount || 0;
     const usdBalance = solBalance !== null && solUsdPrice !== null ? solBalance * solUsdPrice : null;

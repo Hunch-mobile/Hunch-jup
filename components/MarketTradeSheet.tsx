@@ -202,19 +202,28 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
     eventTitle: propEventTitle,
 }) => {
     const insets = useSafeAreaInsets();
-    const sheetHeight = Math.round(Dimensions.get("window").height * 0.82);
+    const sheetHeight = Math.round(Dimensions.get("window").height * 0.92);
     const slideAnim = useRef(new Animated.Value(sheetHeight)).current;
+    const scrollOffsetRef = useRef(0);
+    const isDraggingSheet = useRef(false);
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => false,
-            onMoveShouldSetPanResponder: (_, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+            onMoveShouldSetPanResponder: (_, gesture) => {
+                if (gesture.dy > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) && scrollOffsetRef.current <= 0) {
+                    isDraggingSheet.current = true;
+                    return true;
+                }
+                return false;
+            },
             onPanResponderMove: (_, gesture) => {
                 if (gesture.dy > 0) {
                     slideAnim.setValue(gesture.dy);
                 }
             },
             onPanResponderRelease: (_, gesture) => {
-                if (gesture.dy > sheetHeight * 0.25) {
+                isDraggingSheet.current = false;
+                if (gesture.dy > sheetHeight * 0.2 || gesture.vy > 0.5) {
                     onClose();
                 } else {
                     Animated.spring(slideAnim, {
@@ -224,6 +233,15 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                         stiffness: 500,
                     }).start();
                 }
+            },
+            onPanResponderTerminate: () => {
+                isDraggingSheet.current = false;
+                Animated.spring(slideAnim, {
+                    toValue: 0,
+                    useNativeDriver: true,
+                    damping: 30,
+                    stiffness: 500,
+                }).start();
             },
         })
     ).current;
@@ -613,6 +631,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                     style={{ width: "100%" }}
                 >
                     <Animated.View
+                        {...panResponder.panHandlers}
                         style={[
                             styles.sheet,
                             {
@@ -623,7 +642,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                         ]}
                     >
                         <Pressable onPress={(e) => e.stopPropagation()}>
-                            <View {...panResponder.panHandlers}>
+                            <View>
                                 <View className="items-center py-2">
                                     <View className="w-12 h-1.5 rounded-full bg-border" />
                                 </View>
@@ -652,9 +671,15 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                         </Text>
                                     </View>
                                 </View>
-                            </View>
 
-                            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }} scrollEnabled={!isScrubbing}>
+                            <ScrollView
+                                showsVerticalScrollIndicator={false}
+                                contentContainerStyle={{ paddingBottom: 16 }}
+                                scrollEnabled={!isScrubbing && !isDraggingSheet.current}
+                                onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
+                                scrollEventThrottle={16}
+                                bounces={false}
+                            >
                                 <View
                                     ref={chartContainerRef}
                                     onLayout={updateChartLayout}
@@ -775,6 +800,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                     />
                                 </View>
                             </ScrollView>
+                            </View>
                         </Pressable>
                     </Animated.View>
                 </KeyboardAvoidingView>

@@ -9,10 +9,11 @@ import { Text, TouchableOpacity, View } from "react-native";
 interface MarketCardProps {
   item: Market;
   onPress: () => void;
+  onLongPress?: () => void;
   eventTitle?: string;
 }
 
-export function MarketCard({ item, onPress, eventTitle }: MarketCardProps) {
+export function MarketCard({ item, onPress, onLongPress, eventTitle }: MarketCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const isBadImageUrl = (url: unknown) =>
     typeof url === "string" &&
@@ -30,6 +31,8 @@ export function MarketCard({ item, onPress, eventTitle }: MarketCardProps) {
       className="mx-5 mb-3 rounded-2xl bg-slate-100/60 overflow-hidden"
       activeOpacity={0.7}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={400}
       style={{
         
         shadowColor: "#000000",

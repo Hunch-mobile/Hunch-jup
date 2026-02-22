@@ -1,3 +1,4 @@
+import { useUser } from "@/contexts/UserContext";
 import { Ionicons } from "@expo/vector-icons";
 import { usePrivy } from "@privy-io/expo";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
@@ -197,22 +198,20 @@ function TabButton({
 
 export default function TabLayout() {
   const { isReady, user } = usePrivy();
+  const { isDevMode } = useUser();
   const router = useRouter();
   const segments = useSegments();
 
-  // Protect tabs - redirect to login if not authenticated
   useEffect(() => {
     if (!isReady) return;
 
     const inTabs = segments[0] === '(tabs)';
     
-    if (inTabs && !user) {
-      // User is not authenticated, redirect to login
+    if (inTabs && !user && !isDevMode) {
       router.replace('/login');
     }
-  }, [isReady, user, segments]);
+  }, [isReady, user, segments, isDevMode]);
 
-  // Show loading while checking authentication
   if (!isReady) {
     return (
       <View style={{ flex: 1, backgroundColor: Theme.bgMain, justifyContent: 'center', alignItems: 'center' }}>
@@ -221,8 +220,7 @@ export default function TabLayout() {
     );
   }
 
-  // If not authenticated at this point, return null (redirect will happen)
-  if (!user) {
+  if (!user && !isDevMode) {
     return null;
   }
 

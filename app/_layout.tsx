@@ -76,7 +76,7 @@ function AuthFlowGate() {
   const router = useRouter();
   const segments = useSegments();
   const { isReady, user } = usePrivy();
-  const { backendUser, isLoading: isBackendUserLoading } = useUser();
+  const { backendUser, isLoading: isBackendUserLoading, isDevMode } = useUser();
 
   useEffect(() => {
     if (!isReady || isBackendUserLoading) return;
@@ -87,6 +87,14 @@ function AuthFlowGate() {
     const inOnboarding =
       root === 'onboarding' || root === 'preferences' || root === 'suggested-followers';
     const currentPath = `/${segments.join('/')}`;
+
+    // Dev mode bypass: skip Privy check, go straight to tabs if backend user exists
+    if (isDevMode && backendUser) {
+      if (inLogin || inOnboarding) {
+        router.replace('/(tabs)');
+      }
+      return;
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // RULE 1: Not authenticated → must be on login (unless still loading)

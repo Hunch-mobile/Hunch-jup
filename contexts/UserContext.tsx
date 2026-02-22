@@ -16,6 +16,8 @@ interface UserContextType {
     isLoading: boolean;
     preferences: UserPreferences | null;
     loadPreferences: () => Promise<void>;
+    isDevMode: boolean;
+    setDevMode: (value: boolean) => void;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -24,11 +26,22 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const [backendUser, setBackendUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [preferences, setPreferences] = useState<UserPreferences | null>(null);
+    const [isDevMode, setIsDevModeState] = useState(false);
 
     // Load user from AsyncStorage on mount
     useEffect(() => {
         loadUser();
+        AsyncStorage.getItem('devMode').then((v) => setIsDevModeState(v === 'true'));
     }, []);
+
+    const setDevMode = async (value: boolean) => {
+        setIsDevModeState(value);
+        if (value) {
+            await AsyncStorage.setItem('devMode', 'true');
+        } else {
+            await AsyncStorage.removeItem('devMode');
+        }
+    };
 
     // Load preferences when user changes
     useEffect(() => {
@@ -112,6 +125,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
                 isLoading,
                 preferences,
                 loadPreferences,
+                isDevMode,
+                setDevMode,
             }}
         >
             {children}
