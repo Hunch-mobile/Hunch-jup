@@ -10,7 +10,7 @@ import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
 import { api, getEventDetails, getMarketDetails, marketsApi } from "@/lib/api";
-import { executeTrade, sendUSDC, toRawAmount, USDC_MINT } from "@/lib/tradeService";
+import { executeTrade, sendUSDC, toRawAmount } from "@/lib/tradeService";
 import { AggregatedPosition, CandleData, Event, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
@@ -572,35 +572,8 @@ export default function UserProfileScreen() {
 
         setIsSelling(true);
         try {
-            const market = selectedPosition.market;
-
-            // Get the outcome mint based on position side
-            let outcomeMint: string | undefined;
-
-            if (selectedPosition.side === 'yes') {
-                outcomeMint = market?.yesMint;
-                if (!outcomeMint && market?.accounts) {
-                    const usdcAccount = market.accounts[USDC_MINT];
-                    outcomeMint = usdcAccount?.yesMint;
-                }
-            } else {
-                outcomeMint = market?.noMint;
-                if (!outcomeMint && market?.accounts) {
-                    const usdcAccount = market.accounts[USDC_MINT];
-                    outcomeMint = usdcAccount?.noMint;
-                }
-            }
-
-            if (!outcomeMint) {
-                console.log('[Sell] Mint not found locally, fetching market details...');
-                const marketDetails = await marketsApi.fetchMarketDetails(selectedPosition.marketTicker);
-                outcomeMint = selectedPosition.side === 'yes'
-                    ? marketDetails.yesMint || marketDetails.accounts?.[USDC_MINT]?.yesMint
-                    : marketDetails.noMint || marketDetails.accounts?.[USDC_MINT]?.noMint;
-            }
-
-            if (!outcomeMint) {
-                throw new Error('No outcome mint found for this position');
+            if (!selectedPosition.marketTicker) {
+                throw new Error('No market id found for this position');
             }
 
             // Use totalTokenAmount first (this is the actual available tokens), fallback to calculation
@@ -612,7 +585,7 @@ export default function UserProfileScreen() {
                 throw new Error('No tokens to sell');
             }
 
-            console.log(`[Sell] Selling ${tokensToSell} tokens of ${outcomeMint}`, {
+            console.log(`[Sell] Selling ${tokensToSell} contracts for market ${selectedPosition.marketTicker}`, {
                 totalTokenAmount: selectedPosition.totalTokenAmount,
                 totalTokensBought: selectedPosition.totalTokensBought,
                 totalTokensSold: selectedPosition.totalTokensSold,
@@ -625,9 +598,11 @@ export default function UserProfileScreen() {
                 provider,
                 connection,
                 userPublicKey: currentUser.walletAddress,
-                inputMint: outcomeMint,
-                outputMint: USDC_MINT,
                 amount: rawAmount,
+                marketId: selectedPosition.marketTicker,
+                isYes: selectedPosition.side === 'yes',
+                isBuy: false,
+                positionPubkey: (selectedPosition as any).positionPubkey,
                 slippageBps: 100,
             });
 
@@ -705,7 +680,7 @@ export default function UserProfileScreen() {
         };
     }, [trades]);
 
-    // Load candles for active trades
+    // Jupiter prediction API does not expose candlestick data.
     useEffect(() => {
         const activeTradeTickers = trades
             .filter((trade) => trade.marketDetails?.status === 'active')
@@ -716,32 +691,7 @@ export default function UserProfileScreen() {
 
         let cancelled = false;
         const loadCandles = async () => {
-            const endTs = Math.floor(Date.now() / 1000);
-            const startTs = endTs - 7 * 24 * 60 * 60;
-            const results = await Promise.all(
-                tickersToFetch.map(async (ticker) => {
-                    const trade = trades.find(t => t.marketTicker === ticker);
-                    const market = trade?.marketDetails;
-                    let marketMint = market?.yesMint;
-                    if (!marketMint && market?.accounts) {
-                        const accountValues = Object.values(market.accounts);
-                        for (const account of accountValues) {
-                            if (typeof account === 'object' && account?.yesMint) {
-                                marketMint = account.yesMint;
-                                break;
-                            }
-                        }
-                    }
-                    if (!marketMint) return { ticker, candles: [] as CandleData[] };
-                    try {
-                        const candles = await marketsApi.fetchCandlesticksByMint(marketMint, { startTs, endTs, periodInterval: 60 });
-                        return { ticker, candles: candles || [] };
-                    } catch (error) {
-                        console.error("Failed to fetch candles for", ticker, error);
-                        return { ticker, candles: [] as CandleData[] };
-                    }
-                })
-            );
+            const results = tickersToFetch.map((ticker) => ({ ticker, candles: [] as CandleData[] }));
             if (cancelled) return;
             setCandlesByTicker((prev) => {
                 const next = { ...prev };

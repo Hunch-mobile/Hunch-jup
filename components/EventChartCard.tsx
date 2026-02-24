@@ -1,5 +1,4 @@
 import { Theme } from '@/constants/theme';
-import { marketsApi } from '@/lib/api';
 import { CandleData, Market } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -18,29 +17,11 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const CARD_WIDTH = SCREEN_WIDTH * 0.75;
 const CHART_HEIGHT = 120;
 
-// Cache for candle data
-const candleCache = new Map<string, { data: CandleData[]; timestamp: number }>();
-const CANDLE_CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
-
 interface EventChartCardProps {
     market: Market;
     onInteractionStart?: () => void;
     onInteractionEnd?: () => void;
 }
-
-// Helper to get yesMint from market
-const getYesMint = (market: Market): string | undefined => {
-    if (market.yesMint) return market.yesMint;
-    if (market.accounts) {
-        const accountValues = Object.values(market.accounts);
-        for (const account of accountValues) {
-            if (typeof account === 'object' && account?.yesMint) {
-                return account.yesMint;
-            }
-        }
-    }
-    return undefined;
-};
 
 // Helper for price change calculation
 const getPriceChange = (candles: CandleData[]) => {
@@ -70,7 +51,6 @@ export const EventChartCard: React.FC<EventChartCardProps> = ({
     const [displayPrice, setDisplayPrice] = useState<number>(0);
     const [isInteracting, setIsInteracting] = useState(false);
 
-    const yesMint = useMemo(() => getYesMint(market), [market]);
     const priceChange = useMemo(() => getPriceChange(candles), [candles]);
     const baseIsPositive = priceChange?.isPositive ?? true;
     const basePrice = priceChange?.currentPrice ?? (market.yesBid ? parseFloat(market.yesBid) : 0);
@@ -97,46 +77,11 @@ export const EventChartCard: React.FC<EventChartCardProps> = ({
         }
     }, [basePrice, isInteracting]);
 
-    // Fetch candle data
+    // Jupiter prediction API does not expose candlestick data.
     useEffect(() => {
-        const fetchCandles = async () => {
-            if (!yesMint) {
-                setLoading(false);
-                return;
-            }
-
-            // Check cache
-            const cached = candleCache.get(yesMint);
-            if (cached && Date.now() - cached.timestamp < CANDLE_CACHE_DURATION) {
-                setCandles(cached.data);
-                setLoading(false);
-                return;
-            }
-
-            try {
-                const endTs = Math.floor(Date.now() / 1000);
-                const startTs = endTs - (30 * 24 * 60 * 60); // 30 days
-                const periodInterval = 1440; // Daily
-
-                const data = await marketsApi.fetchCandlesticksByMint(yesMint, {
-                    startTs,
-                    endTs,
-                    periodInterval,
-                });
-
-                if (data && data.length > 0) {
-                    setCandles(data);
-                    candleCache.set(yesMint, { data, timestamp: Date.now() });
-                }
-            } catch (error) {
-                console.error(`Failed to fetch candles for ${market.ticker}:`, error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchCandles();
-    }, [yesMint, market.ticker]);
+        setCandles([]);
+        setLoading(false);
+    }, [market.ticker]);
 
     const handlePriceSelect = useCallback((price: number, _index: number) => {
         setDisplayPrice(price);

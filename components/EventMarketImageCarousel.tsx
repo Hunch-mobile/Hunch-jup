@@ -3,10 +3,11 @@ import { Event, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { Dimensions, FlatList, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Dimensions, FlatList, Text, TouchableOpacity, View } from "react-native";
 
 interface EventMarketImageCarouselProps {
   items: Event[];
+  isLoadingMore?: boolean;
 }
 
 const CARD_HORIZONTAL_PADDING = 20;
@@ -16,7 +17,10 @@ const CARD_MIN_HEIGHT = 280;
 const getActiveMarketsWithImages = (markets: Market[] | undefined): Market[] => {
   if (!markets || markets.length === 0) return [];
   return markets
-    .filter((m) => m.status === "active")
+    .filter((m) => {
+      const status = String(m.status || "").toLowerCase();
+      return status === "active" || status === "open" || status === "live";
+    })
     .filter((m) => {
       if (typeof m.image_url !== "string") return false;
       if (!m.image_url.startsWith("http")) return false;
@@ -44,7 +48,7 @@ const formatCompactNumber = (value: number | undefined | null): string => {
   return value.toFixed(0);
 };
 
-export function EventMarketImageCarousel({ items }: EventMarketImageCarouselProps) {
+export function EventMarketImageCarousel({ items, isLoadingMore = false }: EventMarketImageCarouselProps) {
   // Filter events to only show those with at least 2 market images or an event image
   const filteredItems = items.filter((item) => {
     const marketsWithImages = getActiveMarketsWithImages(item.markets);
@@ -53,8 +57,8 @@ export function EventMarketImageCarousel({ items }: EventMarketImageCarouselProp
 
   const renderItem = ({ item }: { item: Event }) => {
     const marketsWithImages = getActiveMarketsWithImages(item.markets);
-    // Show at least 2 images, maximum 4 images
-    const topImages = marketsWithImages.slice(0, Math.max(2, Math.min(4, marketsWithImages.length)));
+    // Previous style: show up to 4 market images for the event.
+    const topImages = marketsWithImages.slice(0, 4);
     const volumeTrend = getVolumeTrend(item);
     const isUp = volumeTrend === "up";
     const primaryVolume = item.volume24h ?? item.volume ?? 0;
@@ -165,7 +169,17 @@ export function EventMarketImageCarousel({ items }: EventMarketImageCarouselProp
     );
   };
 
-  if (!filteredItems || filteredItems.length === 0) return null;
+  if (!filteredItems || filteredItems.length === 0) {
+    if (!isLoadingMore) return null;
+    return (
+      <View className="pt-4 mb-4 px-5">
+        <View className="bg-slate-100/80 rounded-3xl px-5 py-5 h-[120px] items-center justify-center">
+          <ActivityIndicator size="small" color={Theme.textSecondary} />
+          <Text className="mt-2 text-sm text-txt-secondary">Loading more events...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View className="pt-4 mb-4" style={{ height: CARD_MIN_HEIGHT + 24 }}>
@@ -180,6 +194,12 @@ export function EventMarketImageCarousel({ items }: EventMarketImageCarouselProp
           alignItems: "stretch",
         }}
       />
+      {isLoadingMore ? (
+        <View className="px-5 pt-2 flex-row items-center justify-center">
+          <ActivityIndicator size="small" color={Theme.textSecondary} />
+          <Text className="ml-2 text-sm text-txt-secondary">Loading more events...</Text>
+        </View>
+      ) : null}
     </View>
   );
 }

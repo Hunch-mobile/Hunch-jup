@@ -4,7 +4,7 @@ import TradeQuoteSheet from "@/components/TradeQuoteSheet";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, marketsApi } from "@/lib/api";
-import { USDC_MINT, executeTrade, toRawAmount } from "@/lib/tradeService";
+import { executeTrade, toRawAmount } from "@/lib/tradeService";
 import { Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
@@ -71,10 +71,8 @@ export default function MarketDetailScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // Get the outcome mint based on selected side
-      const outcomeMint = selectedSide === 'yes' ? market.yesMint : market.noMint;
-      if (!outcomeMint) {
-        throw new Error(`No ${selectedSide} mint found for this market`);
+      if (!market.ticker) {
+        throw new Error('No market id found for this market');
       }
 
       // Convert USDC amount to raw (6 decimals)
@@ -88,9 +86,10 @@ export default function MarketDetailScreen() {
         provider,
         connection,
         userPublicKey: backendUser.walletAddress,
-        inputMint: USDC_MINT,
-        outputMint: outcomeMint,
         amount: rawAmount,
+        marketId: market.ticker,
+        isYes: selectedSide === 'yes',
+        isBuy: true,
         slippageBps: 100,
       });
 

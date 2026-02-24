@@ -306,8 +306,8 @@ const FeedCard = ({
                         />
                     ) : (
                         <View className="flex-1 justify-center items-center gap-1.5">
-                            <ActivityIndicator size="small" color="#9ca3af" />
-                            <Text className="text-[10px] text-gray-400">Loading chart...</Text>
+                            <Ionicons name="analytics-outline" size={16} color="#9ca3af" />
+                            <Text className="text-[10px] text-gray-400">No data available</Text>
                         </View>
                     )}
                 </TouchableOpacity>
@@ -524,31 +524,8 @@ export default function SocialScreen() {
                     existing.id === item.id ? { ...existing, marketDetails } : existing
                 ),
             }));
-
-            // Fetch candlestick data for the market
-            let marketMint: string | undefined = marketDetails.yesMint;
-            if (!marketMint && marketDetails.accounts) {
-                const accountValues = Object.values(marketDetails.accounts);
-                for (const account of accountValues) {
-                    if (typeof account === 'object' && account?.yesMint) {
-                        marketMint = account.yesMint;
-                        break;
-                    }
-                }
-            }
-
-            if (marketMint) {
-                try {
-                    const endTs = Math.floor(Date.now() / 1000);
-                    const startTs = endTs - (7 * 24 * 60 * 60); // 1 week
-                    const candles = await marketsApi.fetchCandlesticksByMint(marketMint, { startTs, endTs, periodInterval: 60 });
-                    if (candles && candles.length > 0) {
-                        setCandlesMap(prev => ({ ...prev, [item.marketTicker]: candles }));
-                    }
-                } catch (error) {
-                    console.error(`Failed to fetch candles for ${item.marketTicker}:`, error);
-                }
-            }
+            // No candlestick endpoint in Jupiter prediction API; keep chart state empty.
+            setCandlesMap(prev => ({ ...prev, [item.marketTicker]: [] }));
         });
     }, []);
 

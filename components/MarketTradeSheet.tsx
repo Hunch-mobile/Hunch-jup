@@ -3,7 +3,7 @@ import LightChart from '@/components/LightChart';
 import { Toast } from '@/components/Toast';
 import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
-import { api, getEventDetails, marketsApi } from "@/lib/api";
+import { api, getEventDetails } from "@/lib/api";
 import { executeTrade, fromRawAmount, requestOrder, toRawAmount, USDC_MINT } from "@/lib/tradeService";
 import { User as BackendUser, CandleData, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
@@ -278,18 +278,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
         setIsFetchingQuote(true);
         debounceTimerRef.current = setTimeout(async () => {
             try {
-                let outcomeMint: string | undefined;
-                if (market.accounts) {
-                    const usdcAccount = market.accounts[USDC_MINT];
-                    if (usdcAccount) {
-                        outcomeMint = selectedSide === 'yes' ? usdcAccount.yesMint : usdcAccount.noMint;
-                    }
-                }
-                if (!outcomeMint) {
-                    outcomeMint = selectedSide === 'yes' ? market.yesMint : market.noMint;
-                }
-
-                if (!outcomeMint) {
+                if (!market.ticker) {
                     setIsFetchingQuote(false);
                     return;
                 }
@@ -297,9 +286,10 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                 const rawAmount = toRawAmount(Number(amount), 6);
                 const order = await requestOrder({
                     userPublicKey: backendUser.walletAddress,
-                    inputMint: USDC_MINT,
-                    outputMint: outcomeMint,
                     amount: rawAmount,
+                    marketId: market.ticker,
+                    isYes: selectedSide === 'yes',
+                    isBuy: true,
                     slippageBps: 100,
                 });
 
@@ -401,31 +391,10 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
         if (!visible || !market) return;
 
         const fetchFilteredCandles = async () => {
-            let marketMint: string | undefined = market?.yesMint;
-            if (!marketMint && market?.accounts) {
-                const accountValues = Object.values(market.accounts);
-                for (const account of accountValues) {
-                    if (typeof account === 'object' && account?.yesMint) {
-                        marketMint = account.yesMint;
-                        break;
-                    }
-                }
-            }
-
-            if (!marketMint) {
-                setFilteredCandles(initialCandles || []);
-                return;
-            }
-
             setIsLoadingCandles(true);
             try {
-                const filterOption = TIME_FILTER_OPTIONS.find(f => f.key === timeFilter);
-                const endTs = Math.floor(Date.now() / 1000);
-                const startTs = endTs - (filterOption?.seconds || 7 * 24 * 60 * 60);
-                const periodInterval = timeFilter === '24h' ? 1 : timeFilter === '1w' ? 60 : 1440;
-
-                const candles = await marketsApi.fetchCandlesticksByMint(marketMint, { startTs, endTs, periodInterval });
-                setFilteredCandles(candles || []);
+                    // Jupiter prediction routes do not expose candlestick data.
+                    setFilteredCandles([]);
             } catch (error) {
                 console.error('Failed to fetch filtered candles:', error);
                 setFilteredCandles(initialCandles || []);
@@ -472,20 +441,8 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
             return;
         }
 
-        // Get the outcome mint based on selected side
-        let outcomeMint: string | undefined;
-        if (market.accounts) {
-            const usdcAccount = market.accounts[USDC_MINT];
-            if (usdcAccount) {
-                outcomeMint = selectedSide === 'yes' ? usdcAccount.yesMint : usdcAccount.noMint;
-            }
-        }
-        if (!outcomeMint) {
-            outcomeMint = selectedSide === 'yes' ? market.yesMint : market.noMint;
-        }
-
-        if (!outcomeMint) {
-            setTradeError("Market mints not available");
+        if (!market.ticker) {
+            setTradeError("Market id not available");
             return;
         }
 
@@ -500,9 +457,10 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                 provider: walletProvider,
                 connection,
                 userPublicKey: backendUser.walletAddress,
-                inputMint: USDC_MINT,
-                outputMint: outcomeMint,
                 amount: rawAmount,
+                marketId: market.ticker,
+                isYes: selectedSide === 'yes',
+                isBuy: true,
                 slippageBps: 100,
             });
 

@@ -1,11 +1,5 @@
-// Trade service for DFlow API integration via Next.js backend
-// Handles order requests, transaction signing, and order status polling
-//
-// IMPORTANT: All order/quote requests MUST go through the backend at /api/dflow/quote.
-// The backend applies the sponsor signature before returning the transaction.
-// Mobile clients should NEVER call DFlow directly for sponsored order flow.
-//
-// Also contains sendUSDC for direct SPL token transfers (send to user feature).
+// Trade service for Jupiter prediction order integration via backend.
+// Handles order requests, transaction signing, and send/confirm flow.
 
 import { Connection, VersionedTransaction } from '@solana/web3.js';
 import { authenticatedFetch } from './api';
@@ -21,9 +15,8 @@ export const DEFAULT_SEND_OPTIONS = {
     preflightCommitment: 'confirmed' as const,
 };
 
-// Backend API URL - ALL orders must go through this endpoint
-// The backend sponsors the transaction (applies sponsor signature) before returning
-const API_BASE_URL = 'https://hunchdotrun-roan.vercel.app'; // TODO: Move to env variable in production
+// Backend API URL - all prediction orders must go through backend.
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunchdotrun-roan.vercel.app';
 
 // Types
 export interface DFlowOrderResponse {
@@ -32,23 +25,31 @@ export interface DFlowOrderResponse {
     executionMode: 'sync' | 'async';
     inAmount: string;
     outAmount: string;
-    inputMint: string;
-    outputMint: string;
+    inputMint?: string;
+    outputMint?: string;
     lastValidBlockHeight?: number;
     prioritizationFeeLamports?: number;
     computeUnitLimit?: number;
+    txMeta?: {
+        blockhash: string;
+        lastValidBlockHeight: number;
+    } | null;
+    externalOrderId?: string | null;
+    order?: any;
 }
 
 export interface DFlowOrderStatus {
     status: 'open' | 'closed' | 'pendingClose' | 'failed';
-    fills?: Array<{ qtyIn: string; qtyOut: string }>;
+    fills?: { qtyIn: string; qtyOut: string }[];
 }
 
 export interface OrderParams {
     userPublicKey: string;
-    inputMint: string;
-    outputMint: string;
-    amount: string; // MUST be in smallest unit (USDC = 6 decimals, e.g., $10 = "10000000")
+    amount: string; // smallest USDC units for buys, token contracts for sells
+    marketId: string;
+    isYes: boolean;
+    isBuy?: boolean;
+    positionPubkey?: string;
     slippageBps?: number;
 }
 
@@ -100,48 +101,45 @@ export function isSimulationError(error: any): boolean {
 }
 
 /**
- * Request an order/quote from the backend (NOT directly from DFlow)
- * 
- * CRITICAL: This function calls YOUR Next.js backend at /api/dflow/quote.
- * The backend:
- * 1. Fetches the order from DFlow with sponsor set
- * 2. Signs the transaction with SPONSOR_PRIVATE_KEY
- * 3. Returns the sponsor-signed transaction
- * 
- * The returned transaction is ALREADY sponsor-signed. Client only needs to:
- * 1. Decode base64 → VersionedTransaction
- * 2. User signs (signTransaction, NOT signAndSendTransaction)
- * 3. Send with connection.sendRawTransaction()
+ * Request a Jupiter prediction order from backend.
  */
 export async function requestOrder(params: OrderParams): Promise<DFlowOrderResponse> {
-    const { userPublicKey, inputMint, outputMint, amount, slippageBps = 100 } = params;
+    const {
+        userPublicKey,
+        amount,
+        marketId,
+        isYes,
+        isBuy = true,
+        positionPubkey,
+    } = params;
 
     // Validate amount format (should be smallest unit string)
     if (!/^\d+$/.test(amount)) {
         console.warn('[TradeService] Amount should be a string of digits (smallest unit). Got:', amount);
     }
 
-    const queryParams = new URLSearchParams({
-        userPublicKey,
-        inputMint,
-        outputMint,
-        amount,
-        slippageBps: slippageBps.toString(),
-    });
+    const body: Record<string, unknown> = {
+        ownerPubkey: userPublicKey,
+        marketId,
+        isYes,
+        isBuy,
+    };
 
-    console.log('[TradeService] Requesting sponsor-signed order from backend:', {
-        endpoint: `${API_BASE_URL}/api/dflow/quote`,
-        inputMint: inputMint.substring(0, 8) + '...',
-        outputMint: outputMint.substring(0, 8) + '...',
-        amount,
-        slippageBps,
-    });
+    if (isBuy) {
+        body.depositAmount = amount;
+    } else {
+        body.positionPubkey = positionPubkey;
+        body.contracts = amount;
+    }
 
-    const response = await fetch(`${API_BASE_URL}/api/dflow/quote?${queryParams.toString()}`, {
-        method: 'GET',
+    console.log('[TradeService] Requesting Jupiter prediction order from backend:', { marketId, isYes, isBuy, amount });
+
+    const response = await fetch(`${API_BASE_URL}/api/jupiter-prediction/orders`, {
+        method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
+        body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -166,16 +164,21 @@ export async function requestOrder(params: OrderParams): Promise<DFlowOrderRespo
         );
     }
 
-    console.log('[TradeService] Sponsor-signed order received:', {
-        executionMode: order.executionMode,
-        inAmount: order.inAmount,
-        outAmount: order.outAmount,
-        txLength: txBase64.length,
-    });
+    const rawContracts = isBuy
+        ? String(order?.order?.newContracts ?? order?.order?.contracts ?? order?.order?.newSizeUsd ?? '0')
+        : String(order?.order?.contracts ?? amount);
+    const rawOrderCostUsd = String(order?.order?.orderCostUsd ?? order?.order?.newSizeUsd ?? '0');
+    const normalizedInAmount = isBuy ? amount : rawContracts;
+    const normalizedOutAmount = isBuy
+        ? normalizeToRawUnits(rawContracts)
+        : normalizeUsdToRawUnits(rawOrderCostUsd);
 
     return {
         ...order,
-        transaction: txBase64, // Normalize to 'transaction' field
+        transaction: txBase64,
+        executionMode: 'sync',
+        inAmount: normalizedInAmount,
+        outAmount: normalizedOutAmount,
     };
 }
 
@@ -183,25 +186,8 @@ export async function requestOrder(params: OrderParams): Promise<DFlowOrderRespo
  * Get the status of an order by its transaction signature
  */
 export async function getOrderStatus(signature: string): Promise<DFlowOrderStatus> {
-    const response = await fetch(
-        `${API_BASE_URL}/api/dflow/order-status?signature=${encodeURIComponent(signature)}`,
-        {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        }
-    );
-
-    if (!response.ok) {
-        throw createTradeError(
-            `Failed to get order status: ${response.status}`,
-            'NETWORK_ERROR',
-            true
-        );
-    }
-
-    return response.json();
+    console.log('[TradeService] getOrderStatus is a compatibility no-op for Jupiter:', signature);
+    return { status: 'closed' };
 }
 
 /**
@@ -214,39 +200,7 @@ export async function waitForOrderCompletion(
     maxAttempts: number = 10,
     intervalMs: number = 2000
 ): Promise<DFlowOrderStatus> {
-    console.log('[TradeService] Waiting for order completion:', signature);
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        try {
-            const status = await getOrderStatus(signature);
-
-            console.log(`[TradeService] Order status (attempt ${attempt + 1}):`, status.status);
-
-            if (status.status === 'closed') {
-                console.log('[TradeService] Order completed successfully');
-                return status;
-            }
-
-            if (status.status === 'failed') {
-                throw new Error('Order execution failed');
-            }
-        } catch (error: any) {
-            // If order-status endpoint fails (404, etc), log but don't fail
-            // The transaction was already sent to blockchain
-            console.warn(`[TradeService] Order status check failed (attempt ${attempt + 1}):`, error.message);
-
-            // After a few attempts, assume success if endpoint is unavailable
-            if (attempt >= 3 && error.message?.includes('404')) {
-                console.log('[TradeService] Order status endpoint unavailable, assuming success since tx was sent');
-                return { status: 'closed' };
-            }
-        }
-
-        await sleep(intervalMs);
-    }
-
-    // If we couldn't confirm status but transaction was sent, assume success
-    console.log('[TradeService] Order status timeout, assuming success since transaction was sent');
+    await sleep(Math.min(intervalMs, 500));
     return { status: 'closed' };
 }
 
@@ -402,7 +356,7 @@ export async function signAndSendWithPrivy(
  * Execute a complete trade flow with automatic retry on blockhash expiry
  * 
  * OPTIMAL FLOW:
- * 1. Request sponsor-signed order from backend (/api/dflow/quote)
+ * 1. Request sponsor-signed order from backend (/api/jupiter-prediction/orders)
  * 2. Decode base64 → VersionedTransaction (sponsor already signed)
  * 3. User signs (signTransaction only)
  * 4. Send with our RPC (skipPreflight: true, maxRetries: 3)
@@ -417,9 +371,11 @@ export async function executeTrade(params: {
     provider: any;
     connection: Connection;
     userPublicKey: string;
-    inputMint: string;
-    outputMint: string;
     amount: string;
+    marketId: string;
+    isYes: boolean;
+    isBuy?: boolean;
+    positionPubkey?: string;
     slippageBps?: number;
     maxRetries?: number;
 }): Promise<{
@@ -430,9 +386,11 @@ export async function executeTrade(params: {
         provider,
         connection,
         userPublicKey,
-        inputMint,
-        outputMint,
         amount,
+        marketId,
+        isYes,
+        isBuy = true,
+        positionPubkey,
         slippageBps = 100,
         maxRetries = 2
     } = params;
@@ -446,13 +404,14 @@ export async function executeTrade(params: {
             }
 
             // Step 1: Get sponsor-signed order from backend
-            // CRITICAL: Always request fresh order on retry (new blockhash)
             console.log('[TradeService] Requesting order for:', userPublicKey.substring(0, 8) + '...');
             const order = await requestOrder({
                 userPublicKey,
-                inputMint,
-                outputMint,
                 amount,
+                marketId,
+                isYes,
+                isBuy,
+                positionPubkey,
                 slippageBps,
             });
 
@@ -491,6 +450,20 @@ export async function executeTrade(params: {
 
     // Should never reach here, but just in case
     throw lastError || createTradeError('Trade failed after all retries', 'UNKNOWN', false);
+}
+
+function normalizeToRawUnits(value: string): string {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) return '0';
+    if (Number.isInteger(num) && num > 10_000) return String(num);
+    return String(Math.floor(num * DECIMALS));
+}
+
+function normalizeUsdToRawUnits(value: string): string {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) return '0';
+    if (num > 10_000) return String(Math.floor(num));
+    return String(Math.floor(num * DECIMALS));
 }
 
 /**

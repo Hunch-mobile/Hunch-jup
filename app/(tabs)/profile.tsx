@@ -10,7 +10,7 @@ import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
 import { api, getEventDetails, marketsApi } from "@/lib/api";
-import { executeTrade, toRawAmount, USDC_MINT } from "@/lib/tradeService";
+import { executeTrade, toRawAmount } from "@/lib/tradeService";
 import { AggregatedPosition, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet, usePrivy } from "@privy-io/expo";
@@ -372,38 +372,8 @@ export default function ProfileScreen() {
 
         setIsSelling(true);
         try {
-            const market = selectedPosition.market;
-
-            // Get the outcome mint based on position side
-            // First check direct fields, then check accounts
-            let outcomeMint: string | undefined;
-
-            if (selectedPosition.side === 'yes') {
-                outcomeMint = market?.yesMint;
-                // If not found, check in accounts (under USDC key)
-                if (!outcomeMint && market?.accounts) {
-                    const usdcAccount = market.accounts[USDC_MINT];
-                    outcomeMint = usdcAccount?.yesMint;
-                }
-            } else {
-                outcomeMint = market?.noMint;
-                if (!outcomeMint && market?.accounts) {
-                    const usdcAccount = market.accounts[USDC_MINT];
-                    outcomeMint = usdcAccount?.noMint;
-                }
-            }
-
-            if (!outcomeMint) {
-                // If still not found, try to fetch market details
-                console.log('[Sell] Mint not found locally, fetching market details...');
-                const marketDetails = await marketsApi.fetchMarketDetails(selectedPosition.marketTicker);
-                outcomeMint = selectedPosition.side === 'yes'
-                    ? marketDetails.yesMint || marketDetails.accounts?.[USDC_MINT]?.yesMint
-                    : marketDetails.noMint || marketDetails.accounts?.[USDC_MINT]?.noMint;
-            }
-
-            if (!outcomeMint) {
-                throw new Error('No outcome mint found for this position');
+            if (!selectedPosition.marketTicker) {
+                throw new Error('No market id found for this position');
             }
 
             // Use totalTokenAmount first (this is the actual available tokens), fallback to calculation
@@ -415,7 +385,7 @@ export default function ProfileScreen() {
                 throw new Error('No tokens to sell');
             }
 
-            console.log(`[Sell] Selling ${tokensToSell} tokens of ${outcomeMint}`, {
+            console.log(`[Sell] Selling ${tokensToSell} contracts for market ${selectedPosition.marketTicker}`, {
                 totalTokenAmount: selectedPosition.totalTokenAmount,
                 totalTokensBought: selectedPosition.totalTokensBought,
                 totalTokensSold: selectedPosition.totalTokensSold,
@@ -432,9 +402,11 @@ export default function ProfileScreen() {
                 provider,
                 connection,
                 userPublicKey: backendUser.walletAddress,
-                inputMint: outcomeMint,
-                outputMint: USDC_MINT,
                 amount: rawAmount,
+                marketId: selectedPosition.marketTicker,
+                isYes: selectedPosition.side === 'yes',
+                isBuy: false,
+                positionPubkey: (selectedPosition as any).positionPubkey,
                 slippageBps: 50,
             });
 

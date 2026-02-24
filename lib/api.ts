@@ -1,15 +1,7 @@
-import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreateTradeRequest, DelegationStatus, Event, EventEvidence, EventsResponse, EvidenceResponse, Follow, Market, MarketsResponse, OnboardingStep, PositionsResponse, Series, SeriesResponse, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse } from './types';
+import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreateTradeRequest, DelegationStatus, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PositionsResponse, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunchdotrun-roan.vercel.app';
-const METADATA_API_BASE_URL = 'https://a.prediction-markets-api.dflow.net';
-const DFLOW_API_KEY = process.env.EXPO_PUBLIC_DFLOW_API_KEY || '';
-
-// Log API key status on initialization (not the actual key)
-if (!DFLOW_API_KEY) {
-    console.warn('[API] ⚠ DFLOW_API_KEY is not set! API calls may fail.');
-} else {
-    console.log('[API] ✓ DFLOW_API_KEY is configured');
-}
+const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
 
 // Auth token getter - must be set by the app before making authenticated calls
 let _getAccessToken: (() => Promise<string | null>) | null = null;
@@ -297,10 +289,14 @@ export const api = {
     getPositions: async (userId: string): Promise<PositionsResponse> => {
         const response = await fetch(`${API_BASE_URL}/api/positions?userId=${userId}&includeStats=true`);
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to get positions');
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to get positions');
         }
-        return response.json();
+        const result = await safeJsonParse(response);
+        if (!result) {
+            throw new Error('Failed to get positions');
+        }
+        return result as PositionsResponse;
     },
 
     updateTradeQuote: async (tradeId: string, quote: string): Promise<Trade | null> => {
@@ -355,10 +351,13 @@ export const api = {
         const tickersParam = eventTickers.join(',');
         const response = await fetch(`${API_BASE_URL}/api/events/evidence?eventTickers=${encodeURIComponent(tickersParam)}`);
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to fetch evidence');
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to fetch evidence');
         }
-        const data: EvidenceResponse = await response.json();
+        const data = (await safeJsonParse(response)) as EvidenceResponse | null;
+        if (!data) {
+            return [];
+        }
         return data.evidence || [];
     },
 
@@ -440,441 +439,366 @@ export const api = {
     },
 };
 
+const toNumberSafe = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null;
+    const n = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(n) ? n : null;
+};
+
+const microUsdToUnitPrice = (value: unknown): number | null => {
+    const n = toNumberSafe(value);
+    if (n === null) return null;
+    return n / 1_000_000;
+};
+
+const toUnixSeconds = (value: unknown): number | undefined => {
+    if (typeof value === 'number') return value;
+    if (typeof value !== 'string') return undefined;
+    const ms = Date.parse(value);
+    return Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined;
+};
+
+type EventsResult = { events: Event[]; cursor?: string };
+const EVENTS_REQUEST_CACHE_DURATION = 20 * 1000; // 20 seconds
+const eventsRequestCache = new Map<string, { data: EventsResult; timestamp: number }>();
+type HomeFeedResult = {
+    events: Event[];
+    topMarkets: Market[];
+    cursor?: string;
+    metadata?: { totalEvents: number; hasMore: boolean };
+};
+const HOME_FEED_REQUEST_CACHE_DURATION = 20 * 1000; // 20 seconds
+const homeFeedRequestCache = new Map<string, { data: HomeFeedResult; timestamp: number }>();
+const homeFeedInFlightRequests = new Map<string, Promise<HomeFeedResult>>();
+
+const mapJupiterMarketToMarket = (market: any, eventId?: string): Market => {
+    const buyYes = microUsdToUnitPrice(market?.pricing?.buyYesPriceUsd);
+    const sellYes = microUsdToUnitPrice(market?.pricing?.sellYesPriceUsd);
+    const buyNo = microUsdToUnitPrice(market?.pricing?.buyNoPriceUsd);
+    const sellNo = microUsdToUnitPrice(market?.pricing?.sellNoPriceUsd);
+
+    const rawStatus = String(market?.status || '').toLowerCase();
+    const normalizedStatus =
+        rawStatus === 'open' || rawStatus === 'live'
+            ? 'active'
+            : rawStatus || 'active';
+
+    return {
+        ticker: market?.marketId || '',
+        eventTicker: eventId || market?.eventId,
+        title: market?.metadata?.title || market?.marketTitle || market?.title || market?.marketId || 'Market',
+        subtitle: market?.metadata?.subtitle || market?.eventTitle || '',
+        status: normalizedStatus,
+        yesSubTitle: market?.metadata?.title || market?.marketTitle,
+        noSubTitle: market?.metadata?.subtitle,
+        openTime: market?.openTime ?? market?.metadata?.openTime,
+        closeTime: market?.closeTime ?? market?.metadata?.closeTime,
+        volume: toNumberSafe(market?.pricing?.volume) ?? undefined,
+        openInterest: toNumberSafe(market?.pricing?.openInterest) ?? undefined,
+        result: market?.result || undefined,
+        rulesPrimary: market?.metadata?.rulesPrimary || undefined,
+        rulesSecondary: market?.metadata?.rulesSecondary || undefined,
+        yesBid: sellYes !== null ? String(sellYes) : null,
+        yesAsk: buyYes !== null ? String(buyYes) : null,
+        noBid: sellNo !== null ? String(sellNo) : null,
+        noAsk: buyNo !== null ? String(buyNo) : null,
+        image_url:
+            market?.image_url ||
+            market?.eventImageUrl ||
+            market?.featured_image_url ||
+            undefined,
+    };
+};
+
+const mapJupiterEventToEvent = (event: any): Event => {
+    const eventImage =
+        event?.metadata?.imageUrl ||
+        event?.image_url ||
+        event?.featured_image_url ||
+        undefined;
+
+    const mappedMarkets: Market[] = Array.isArray(event?.markets)
+        ? event.markets.map((m: any) => mapJupiterMarketToMarket(m, event?.eventId))
+        : [];
+
+    const volumeUsd = toNumberSafe(event?.volumeUsd);
+    return {
+        ticker: event?.eventId || '',
+        title: event?.metadata?.title || event?.eventId || 'Event',
+        subtitle: event?.metadata?.subtitle || '',
+        imageUrl: eventImage,
+        category: event?.category || undefined,
+        markets: mappedMarkets,
+        closeTime: toUnixSeconds(event?.metadata?.closeTime),
+        volume: volumeUsd !== null ? volumeUsd / 1_000_000 : undefined,
+    } as Event;
+};
+
 export const marketsApi = {
-    // Fetch all markets - calls DFlow API directly
     fetchMarkets: async (limit: number = 200): Promise<Market[]> => {
-        try {
-            const response = await fetch(
-                `${METADATA_API_BASE_URL}/api/v1/markets?limit=${limit}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-api-key': DFLOW_API_KEY,
-                    },
-                }
-            );
-
-            if (!response.ok) {
-                let errorMessage = `Failed to fetch markets: ${response.status} ${response.statusText}`;
-                try {
-                    const errorData = await response.json();
-                    errorMessage = `Failed to fetch markets: ${errorData.error || errorData.message || response.statusText}`;
-                } catch {
-                    // If response is not JSON, try to get text
-                    try {
-                        const errorText = await response.text();
-                        if (errorText) {
-                            errorMessage = `Failed to fetch markets: ${errorText}`;
-                        }
-                    } catch {
-                        // Use status code if we can't parse anything
-                    }
-                }
-                throw new Error(errorMessage);
-            }
-
-            const data: MarketsResponse = await response.json();
-            return data.markets || [];
-        } catch (error) {
-            // Re-throw with more context if it's a network error
-            if (error instanceof TypeError && error.message.includes('fetch')) {
-                throw new Error(`Failed to fetch markets: Network error - ${error.message}`);
-            }
-            throw error;
-        }
+        const { events } = await marketsApi.fetchEvents(limit, { withNestedMarkets: true });
+        return events.flatMap((event) => event.markets || []);
     },
 
-    // Fetch tags for category filtering
     fetchTags: async (): Promise<TagsResponse> => {
-        const response = await fetch(
-            `${API_BASE_URL}/api/dflow/tags`,
-            {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch tags: ${response.statusText}`);
-        }
-
-        return await response.json();
+        // Jupiter prediction API does not expose tags/categories endpoint.
+        return { tagsByCategories: {} };
     },
 
-    // Fetch series for a specific category
-    fetchSeries: async (
-        category: string,
-        options?: {
-            isInitialized?: boolean;
-            status?: string;
-        }
-    ): Promise<Series[]> => {
-        const queryParams = new URLSearchParams();
-        queryParams.append('category', category);
-
-        if (options?.isInitialized !== undefined) {
-            queryParams.append('isInitialized', options.isInitialized.toString());
-        }
-        if (options?.status) {
-            queryParams.append('status', options.status);
-        }
-
-        const response = await fetch(
-            `${API_BASE_URL}/api/dflow/series?${queryParams.toString()}`,
-            {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch series: ${response.statusText}`);
-        }
-
-        const data: SeriesResponse = await response.json();
-        return data.series || [];
+    fetchSeries: async (): Promise<Series[]> => {
+        // Jupiter prediction API does not expose a series endpoint.
+        return [];
     },
 
-    // Fetch events with nested markets (supports pagination via cursor)
     fetchEvents: async (
         limit: number = 200,
         options?: {
             status?: string;
             withNestedMarkets?: boolean;
+            includeMarkets?: boolean;
             cursor?: string;
+            provider?: string;
+            category?: string;
+            sortBy?: string;
+            sortDirection?: 'asc' | 'desc';
+            filter?: string;
         }
-    ): Promise<{ events: Event[]; cursor?: string }> => {
-        const queryParams = new URLSearchParams();
-        queryParams.append('limit', limit.toString());
+    ): Promise<EventsResult> => {
+        const parsedCursor = Number(options?.cursor ?? '0');
+        const start = Number.isFinite(parsedCursor) && parsedCursor >= 0 ? parsedCursor : 0;
+        const pageSize = Math.max(1, limit);
+        const end = start + pageSize - 1;
+        const params = new URLSearchParams({
+            start: String(start),
+            end: String(end),
+        });
 
-        if (options?.status) {
-            queryParams.append('status', options.status);
-        }
-        if (options?.withNestedMarkets) {
-            queryParams.append('withNestedMarkets', 'true');
-        }
-        if (options?.cursor) {
-            queryParams.append('cursor', options.cursor);
+        if (options?.withNestedMarkets || options?.includeMarkets) params.append('includeMarkets', 'true');
+        if (options?.status === 'active' && !options?.filter) params.append('filter', 'live');
+        if (options?.provider) params.append('provider', options.provider);
+        if (options?.category) params.append('category', options.category);
+        if (options?.sortBy) params.append('sortBy', options.sortBy);
+        if (options?.sortDirection) params.append('sortDirection', options.sortDirection);
+        if (options?.filter) params.append('filter', options.filter);
+
+        const requestUrl = `${JUPITER_PREDICTION_BASE_PATH}/events?${params.toString()}`;
+        const now = Date.now();
+        const cached = eventsRequestCache.get(requestUrl);
+        if (cached && now - cached.timestamp < EVENTS_REQUEST_CACHE_DURATION) {
+            return cached.data;
         }
 
-        const response = await fetch(
-            `${API_BASE_URL}/api/dflow/events?${queryParams.toString()}`,
-            {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
+        const response = await fetch(requestUrl);
         if (!response.ok) {
-            let errorMessage = `Failed to fetch events: ${response.status} ${response.statusText}`;
-            try {
-                const errorData = await response.json();
-                errorMessage = `Failed to fetch events: ${errorData.error || errorData.message || response.statusText}`;
-            } catch {
-                // If response is not JSON, use status text
-            }
-            throw new Error(errorMessage);
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || `Failed to fetch events: ${response.statusText}`);
         }
 
-        const data: EventsResponse = await response.json();
-        return { events: data.events || [], cursor: data.cursor ? String(data.cursor) : undefined };
+        const payload = (await safeJsonParse(response)) as any;
+        const data = Array.isArray(payload?.data) ? payload.data : [];
+        const events = data.map(mapJupiterEventToEvent);
+        const pagination = payload?.pagination;
+        const nextCursor = pagination?.hasNext ? String(end + 1) : undefined;
+        const result = { events, cursor: nextCursor };
+
+        eventsRequestCache.set(requestUrl, { data: result, timestamp: now });
+        if (eventsRequestCache.size > 20) {
+            for (const [key, value] of eventsRequestCache) {
+                if (now - value.timestamp >= EVENTS_REQUEST_CACHE_DURATION) {
+                    eventsRequestCache.delete(key);
+                }
+            }
+        }
+        indexMappedEvents(events);
+
+        return result;
     },
 
-
-    // Fetch event details
     fetchEventDetails: async (eventTicker: string): Promise<Event> => {
-        const response = await fetch(
-            `${API_BASE_URL}/api/dflow/event/${eventTicker}?withNestedMarkets=true`,
-            {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch event details: ${response.statusText}`);
+        const now = Date.now();
+        const cached = eventCache.get(eventTicker);
+        if (cached && now - cached.timestamp < CACHE_DURATION) {
+            return cached.data;
         }
 
-        return await response.json();
-    },
-
-    // Fetch market by mint address
-    fetchMarketByMint: async (mintAddress: string): Promise<Market> => {
-        const response = await fetch(
-            `${METADATA_API_BASE_URL}/api/v1/market/by-mint/${mintAddress}`,
-            {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': DFLOW_API_KEY,
-                },
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch market by mint: ${response.statusText}`);
+        // Use only /events endpoint (includeMarkets=true) for event+market data.
+        const { events } = await marketsApi.fetchEvents(200, { includeMarkets: true });
+        const matchedEvent = events.find((event) => event.ticker === eventTicker);
+        if (!matchedEvent) {
+            throw new Error(`Failed to fetch event details: event not found for ${eventTicker}`);
         }
-
-        return await response.json();
+        return matchedEvent;
     },
 
-    // Fetch markets batch
-    fetchMarketsBatch: async (mints: string[]): Promise<Market[]> => {
-        const response = await fetch(
-            `${API_BASE_URL}/api/dflow/markets/batch`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ mints }),
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch markets batch: ${response.statusText}`);
-        }
-
-        const data: MarketsResponse = await response.json();
-        return data.markets || [];
+    fetchMarketByMint: async (): Promise<Market> => {
+        throw new Error('Market-by-mint is not supported by Jupiter prediction API');
     },
 
-    // Fetch events by series
+    fetchMarketsBatch: async (): Promise<Market[]> => {
+        return [];
+    },
+
     fetchEventsBySeries: async (
-        seriesTickers: string | string[],
+        _seriesTickers: string | string[],
         options?: {
             withNestedMarkets?: boolean;
             status?: string;
             limit?: number;
         }
     ): Promise<Event[]> => {
-        const queryParams = new URLSearchParams();
-
-        const tickers = Array.isArray(seriesTickers) ? seriesTickers.join(',') : seriesTickers;
-        queryParams.append('seriesTickers', tickers);
-
-        if (options?.limit) {
-            queryParams.append('limit', options.limit.toString());
-        }
-        if (options?.status) {
-            queryParams.append('status', options.status);
-        }
-        if (options?.withNestedMarkets) {
-            queryParams.append('withNestedMarkets', 'true');
-        }
-
-        const response = await fetch(
-            `${API_BASE_URL}/api/dflow/events?${queryParams.toString()}`,
-            {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch events by series: ${response.statusText}`);
-        }
-
-        const data: EventsResponse = await response.json();
-        return data.events || [];
+        const { events } = await marketsApi.fetchEvents(options?.limit || 100, {
+            withNestedMarkets: options?.withNestedMarkets,
+            status: options?.status,
+        });
+        return events;
     },
 
-    // Consolidated Home Feed - uses optimized backend processing
     fetchHomeFeed: async (
         limit: number = 20,
         cursor?: string,
         category?: string
-    ): Promise<{
-        events: Event[];
-        topMarkets: Market[];
-        cursor?: string;
-        metadata?: { totalEvents: number; hasMore: boolean };
-    }> => {
+    ): Promise<HomeFeedResult> => {
+        const pageSize = Math.max(1, limit);
+        const parsedCursor = Number(cursor ?? '0');
+        const start = Number.isFinite(parsedCursor) && parsedCursor >= 0 ? parsedCursor : 0;
+        const end = start + pageSize - 1;
+
         const params = new URLSearchParams({
-            limit: limit.toString(),
+            start: String(start),
+            end: String(end),
         });
-        if (category && category !== 'All') {
+        if (category && category !== 'all') {
             params.append('category', category);
         }
-        if (cursor) {
-            params.append('cursor', cursor);
+
+        const requestUrl = `${API_BASE_URL}/api/home/feed?${params.toString()}`;
+        const now = Date.now();
+        const cached = homeFeedRequestCache.get(requestUrl);
+        if (cached && now - cached.timestamp < HOME_FEED_REQUEST_CACHE_DURATION) {
+            return cached.data;
         }
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
-        const response = await fetch(
-            `http://hunchdotrun-roan.vercel.app/api/home-feed?${params.toString()}`,
-            { signal: controller.signal }
-        ).finally(() => {
-            clearTimeout(timeoutId);
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch home feed: ${response.statusText}`);
+        const existingRequest = homeFeedInFlightRequests.get(requestUrl);
+        if (existingRequest) {
+            return existingRequest;
         }
 
-        const data = await response.json();
-        return {
-            events: data.events || [],
-            topMarkets: data.topMarkets || [],
-            cursor: data.cursor,
-            metadata: data.metadata,
-        };
-    },
-
-
-    // Filter outcome mints
-    filterOutcomeMints: async (addresses: string[]): Promise<string[]> => {
-        const response = await fetch(
-            `${API_BASE_URL}/api/dflow/filter-outcome-mints`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ addresses }),
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error(`Failed to filter outcome mints: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        return data.outcomeMints || [];
-    },
-
-    // Fetch market details by ticker
-    fetchMarketDetails: async (ticker: string): Promise<Market> => {
-        const response = await fetch(
-            `${API_BASE_URL}/api/dflow/market/${ticker}`,
-            {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch market details: ${response.statusText}`);
-        }
-
-        return await response.json();
-    },
-
-    // Fetch candlestick data for charts by market mint address
-    fetchCandlesticksByMint: async (
-        mintAddress: string,
-        options?: {
-            startTs?: number;
-            endTs?: number;
-            periodInterval?: number; // in seconds (60 = 1min, 3600 = 1hr, 86400 = 1day)
-        }
-    ): Promise<CandleData[]> => {
-        const queryParams = new URLSearchParams();
-        if (options?.startTs) queryParams.append('startTs', options.startTs.toString());
-        if (options?.endTs) queryParams.append('endTs', options.endTs.toString());
-        if (options?.periodInterval) queryParams.append('periodInterval', options.periodInterval.toString());
-
-        const url = `${API_BASE_URL}/api/dflow/candlesticks/${mintAddress}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-
-        try {
-            console.log(`[fetchCandlesticksByMint] Calling: ${url}`);
-
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            });
-
+        const requestPromise = (async () => {
+            const response = await fetch(requestUrl);
             if (!response.ok) {
-                const errorText = await response.text();
-                // console.error(`[fetchCandlesticksByMint] API Error (${response.status}) for mint ${mintAddress}:`, errorText);
-                return [];
+                const error = await safeJsonParse(response);
+                throw new Error(error?.error || `Failed to fetch home feed: ${response.statusText}`);
             }
 
-            const data: any = await response.json();
-            // console.log(`[fetchCandlesticksByMint] Response for mint ${mintAddress.substring(0, 8)}...:`, {
-            //     hasCandlesticks: !!data.candlesticks,
-            //     count: data.candlesticks?.length || 0,
-            //     firstCandle: data.candlesticks?.[0] || null
-            // });
+            const payload = (await safeJsonParse(response)) as any;
+            const eventData = Array.isArray(payload?.events)
+                ? payload.events
+                : Array.isArray(payload?.data?.events)
+                    ? payload.data.events
+                    : [];
+            const topMarketsData = Array.isArray(payload?.topMarkets)
+                ? payload.topMarkets
+                : Array.isArray(payload?.data?.topMarkets)
+                    ? payload.data.topMarkets
+                    : [];
+            const pagination = payload?.pagination || payload?.data?.pagination;
+            const hasMore = Boolean(pagination?.hasNext);
+            const nextCursor = hasMore ? String(start + pageSize) : undefined;
 
-            // Validate response structure
-            if (!data.candlesticks || !Array.isArray(data.candlesticks)) {
-                // console.warn(`[fetchCandlesticksByMint] Invalid response structure for mint ${mintAddress}:`, data);
-                return [];
+            const events = eventData.map(mapJupiterEventToEvent);
+            const topMarkets = topMarketsData.map((market: any) =>
+                mapJupiterMarketToMarket(market, market?.eventId)
+            );
+            indexMappedEvents(events);
+            for (const market of topMarkets) {
+                if (market.ticker) {
+                    marketCache.set(market.ticker, { data: market, timestamp: Date.now() });
+                }
             }
 
-            // Transform the API response to match CandleData interface
-            // API returns: { candlesticks: [{ end_period_ts, price: { open, high, low, close }, volume }] }
-            // We need: { timestamp, open, high, low, close, volume }
-            // For null close prices (zero volume periods), carry forward the previous close price
-            let lastValidClose: number | null = null;
+            const result: HomeFeedResult = {
+                events,
+                topMarkets,
+                cursor: nextCursor,
+                metadata: {
+                    totalEvents: Number(pagination?.total) || events.length,
+                    hasMore,
+                },
+            };
 
-            const candlesticks = data.candlesticks
-                .filter((candle: any) => {
-                    // Validate basic candle structure
-                    if (!candle.end_period_ts || !candle.price) {
-                        // console.warn(`[fetchCandlesticksByMint] Invalid candle structure:`, candle);
-                        return false;
+            homeFeedRequestCache.set(requestUrl, { data: result, timestamp: now });
+            if (homeFeedRequestCache.size > 40) {
+                for (const [key, value] of homeFeedRequestCache) {
+                    if (now - value.timestamp >= HOME_FEED_REQUEST_CACHE_DURATION) {
+                        homeFeedRequestCache.delete(key);
                     }
-                    return true;
-                })
-                .map((candle: any) => {
-                    // Use current close if available, otherwise carry forward from previous candle
-                    const currentClose = candle.price.close;
-                    let closePrice: number;
+                }
+            }
 
-                    if (currentClose !== null && currentClose !== undefined) {
-                        closePrice = currentClose;
-                        lastValidClose = currentClose; // Update last valid close
-                    } else if (lastValidClose !== null) {
-                        // Use previous valid close price for null periods
-                        closePrice = lastValidClose;
-                    } else {
-                        // Skip this candle if no previous valid close exists yet
-                        return null;
-                    }
+            return result;
+        })();
 
-                    return {
-                        timestamp: candle.end_period_ts,
-                        // Convert from cents to decimal (divide by 100)
-                        open: (candle.price.open ?? closePrice) / 100,
-                        high: (candle.price.high ?? closePrice) / 100,
-                        low: (candle.price.low ?? closePrice) / 100,
-                        close: closePrice / 100,
-                        volume: candle.volume || 0,
-                    };
-                })
-                .filter((candle: any) => candle !== null); // Remove any null entries
-
-            // console.log(`[fetchCandlesticksByMint] Transformed ${candlesticks.length} candles. Price range: ${Math.min(...candlesticks.map((c: CandleData) => c.low)).toFixed(4)} - ${Math.max(...candlesticks.map((c: CandleData) => c.high)).toFixed(4)}`);
-
-            return candlesticks;
-        } catch (error) {
-            console.error(`[fetchCandlesticksByMint] Error fetching candlesticks for mint ${mintAddress}:`, error);
-            return [];
+        homeFeedInFlightRequests.set(requestUrl, requestPromise);
+        try {
+            return await requestPromise;
+        } finally {
+            homeFeedInFlightRequests.delete(requestUrl);
         }
+    },
+
+    filterOutcomeMints: async (): Promise<string[]> => {
+        return [];
+    },
+
+    fetchMarketDetails: async (ticker: string): Promise<Market> => {
+        const now = Date.now();
+        const cachedMarket = marketCache.get(ticker);
+        if (cachedMarket && now - cachedMarket.timestamp < CACHE_DURATION) {
+            return cachedMarket.data;
+        }
+
+        // Search recently-cached event details before fetching another large page.
+        for (const { data: cachedEvent, timestamp } of eventCache.values()) {
+            if (now - timestamp >= CACHE_DURATION) continue;
+            const existingMarket = cachedEvent.markets?.find((m) => m.ticker === ticker);
+            if (existingMarket) {
+                marketCache.set(ticker, { data: existingMarket, timestamp: now });
+                return existingMarket;
+            }
+        }
+
+        const { events } = await marketsApi.fetchEvents(200, { includeMarkets: true });
+        for (const event of events) {
+            const market = event.markets?.find((m) => m.ticker === ticker);
+            if (market) return market;
+        }
+
+        throw new Error(`Market not found for id: ${ticker}`);
+    },
+
+    fetchCandlesticksByMint: async (): Promise<CandleData[]> => {
+        // No candlestick endpoint in current Jupiter API surface.
+        return [];
     },
 };
 
 // Market details cache to avoid repeated API calls
 const marketCache = new Map<string, { data: Market; timestamp: number }>();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+const indexMappedEvents = (events: Event[]): void => {
+    const now = Date.now();
+    for (const event of events) {
+        if (event.ticker) {
+            eventCache.set(event.ticker, { data: event, timestamp: now });
+        }
+        for (const market of event.markets || []) {
+            if (market.ticker) {
+                marketCache.set(market.ticker, { data: market, timestamp: now });
+            }
+        }
+    }
+};
 
 export const getMarketDetails = async (ticker: string): Promise<Market | null> => {
     try {

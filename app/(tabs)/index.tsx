@@ -18,26 +18,20 @@ import { Connection, clusterApiUrl } from "@solana/web3.js";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, FlatList, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, FlatList, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 
-// Default categories fallback
-const DEFAULT_CATEGORIES = [
-  'Hot',
-  'Climate and Weather',
-  'Companies',
-  'Crypto',
-  'Economics',
-  'Elections',
-  'Entertainment',
-  'Financials',
-  'Mentions',
-  'Politics',
-  'Science and Technology',
-  'Social',
-  'Sports',
-  'Transportation',
+// Jupiter category values
+const JUPITER_CATEGORIES = [
+  'all',
+  'crypto',
+  'sports',
+  'politics',
+  'esports',
+  'culture',
+  'economics',
+  'tech',
 ];
 
 // Cache for tags response
@@ -46,6 +40,8 @@ const TAGS_CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
 
 // News event tickers for evidence
 const NEWS_EVENT_TICKERS = ['KXFEDDECISION-26JAN', 'KXFEDCHAIRNOM-29'];
+const DUMMY_PORTFOLIO_VALUE = 1250.75;
+const DUMMY_PORTFOLIO_PNL = 48.2;
 
 // Feed item types for mixed list
 type FeedItem =
@@ -58,8 +54,8 @@ export default function HomeScreen() {
   const { fundWallet } = useFundSolanaWallet();
   const { wallets } = useEmbeddedSolanaWallet();
   const router = useRouter();
-  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES);
-  const [selectedCategory, setSelectedCategory] = useState('Hot');
+  const [categories, setCategories] = useState<string[]>(JUPITER_CATEGORIES);
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [events, setEvents] = useState<Event[]>([]);
   const [markets, setMarkets] = useState<Market[]>([]);
   const [newsItems, setNewsItems] = useState<EventEvidence[]>([]);
@@ -67,7 +63,6 @@ export default function HomeScreen() {
   const [filterLoading, setFilterLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(true);
   const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
   const [portfolioPnl, setPortfolioPnl] = useState<number | null>(null);
@@ -83,6 +78,8 @@ export default function HomeScreen() {
   const [popoutEventTitle, setPopoutEventTitle] = useState<string | undefined>(undefined);
 
   const isLoadingRef = useRef(false);
+  const cursorRef = useRef<string | undefined>(undefined);
+  const inFlightPageKeyRef = useRef<string | null>(null);
   const solanaWallet = wallets?.[0];
 
   const connection = useMemo(() => {
@@ -167,8 +164,8 @@ export default function HomeScreen() {
   // Load portfolio value
   const loadPortfolioValue = useCallback(async () => {
     if (!backendUser) {
-      setPortfolioValue(null);
-      setPortfolioPnl(null);
+      setPortfolioValue(DUMMY_PORTFOLIO_VALUE);
+      setPortfolioPnl(DUMMY_PORTFOLIO_PNL);
       return;
     }
     try {
@@ -185,9 +182,8 @@ export default function HomeScreen() {
       setPortfolioValue(totalPositionValue);
       setPortfolioPnl(totalPnl);
     } catch (error) {
-      console.error('Failed to load portfolio value:', error);
-      setPortfolioValue(null);
-      setPortfolioPnl(null);
+      setPortfolioValue(DUMMY_PORTFOLIO_VALUE);
+      setPortfolioPnl(DUMMY_PORTFOLIO_PNL);
     }
   }, [backendUser]);
 
@@ -210,7 +206,7 @@ export default function HomeScreen() {
         setNewsItems(evidence);
       }
     } catch (err) {
-      console.error('Failed to load news:', err);
+      setNewsItems([]);
     }
   };
 
@@ -222,21 +218,22 @@ export default function HomeScreen() {
         return;
       }
 
-      const tagsResponse = await marketsApi.fetchTags();
-      const categoryNames = Object.keys(tagsResponse.tagsByCategories);
-      const allCategories = ['Hot', ...categoryNames];
-
-      tagsCache = { categories: allCategories, timestamp: Date.now() };
-      setCategories(allCategories);
+      tagsCache = { categories: JUPITER_CATEGORIES, timestamp: Date.now() };
+      setCategories(JUPITER_CATEGORIES);
     } catch (err) {
       console.error("Failed to fetch categories:", err);
-      // Use default categories as fallback
-      setCategories(DEFAULT_CATEGORIES);
+      setCategories(JUPITER_CATEGORIES);
     }
   };
 
   const loadEventsForCategory = async (category: string, reset: boolean = false, isFilterChange: boolean = false) => {
     if (isLoadingRef.current && !reset) return;
+    const requestCursor = reset ? undefined : cursorRef.current;
+    if (!reset) {
+      const requestKey = `${category}:${requestCursor ?? '0'}`;
+      if (inFlightPageKeyRef.current === requestKey) return;
+      inFlightPageKeyRef.current = requestKey;
+    }
     isLoadingRef.current = true;
 
     try {
@@ -248,21 +245,20 @@ export default function HomeScreen() {
           setLoading(true);
         }
         setError(null);
-        setCursor(undefined);
+        cursorRef.current = undefined;
         setHasMore(true);
       } else {
         setLoadingMore(true);
       }
 
-      // Map 'Hot' to 'All' for the API, keep other categories as is
-      const apiCategory = category === 'Hot' ? 'All' : category;
+      const apiCategory = category;
 
       // Fetch using the optimized consolidated endpoint
       // Backend now handles filtering, sorting, and market extraction
       const result = await marketsApi.fetchHomeFeed(
         20,
-        reset ? undefined : cursor,
-        apiCategory
+        requestCursor,
+        apiCategory === 'all' ? undefined : apiCategory
       );
 
       // Events and topMarkets are now pre-processed by the backend
@@ -277,7 +273,7 @@ export default function HomeScreen() {
         setMarkets(prev => [...prev, ...fetchedMarkets]);
       }
 
-      setCursor(result.cursor);
+      cursorRef.current = result.cursor;
       // Use metadata.hasMore from backend instead of client-side calculation
       setHasMore(result.metadata?.hasMore ?? false);
     } catch (err) {
@@ -290,6 +286,7 @@ export default function HomeScreen() {
       setFilterLoading(false);
       setLoadingMore(false);
       isLoadingRef.current = false;
+      inFlightPageKeyRef.current = null;
     }
   };
 
@@ -306,11 +303,11 @@ export default function HomeScreen() {
       hasMore &&
       !loading &&
       !loadingMore &&
-      cursor
+      !!cursorRef.current
     ) {
       loadEventsForCategory(selectedCategory, false);
     }
-  }, [selectedCategory, hasMore, loading, loadingMore, cursor]);
+  }, [selectedCategory, hasMore, loading, loadingMore]);
 
   const handleRefresh = useCallback(() => {
     loadEventsForCategory(selectedCategory, true);
@@ -350,75 +347,22 @@ export default function HomeScreen() {
   // Create mixed feed items (markets list with event carousels + news carousel)
   const feedItems = useMemo((): FeedItem[] => {
     const items: FeedItem[] = [];
-    const NEWS_INTERVAL = 4;
-    const EVENT_CAROUSEL_INTERVAL = 8;
-    const EVENTS_PER_CAROUSEL = 7;
-    let newsInserted = false;
 
-    const marketsWithImages = markets.filter((m: any) => {
-      if (typeof m?.image_url !== 'string') return false;
-      if (!m.image_url.startsWith('http')) return false;
-      if (m.image_url.toLowerCase().includes('kalshi-fallback-images')) return false;
-      return true;
-    });
+    // Show markets first.
+    markets.forEach((market) => items.push({ type: 'market', data: market }));
 
-    const marketsWithoutImages = markets.filter((m: any) => {
-      if (typeof m?.image_url !== 'string') return true;
-      if (!m.image_url.startsWith('http')) return true;
-      if (m.image_url.toLowerCase().includes('kalshi-fallback-images')) return true;
-      return false;
-    });
-
-    if (marketsWithImages.length === 0) {
-      if (events.length > 0) {
-        items.push({ type: 'eventCarousel', data: events.slice(0, EVENTS_PER_CAROUSEL) });
-      }
-      return items;
+    // Keep news in the feed (single block) right after markets.
+    if (newsItems.length > 0) {
+      items.push({ type: 'news', data: newsItems });
     }
 
-    let eventCursor = 0;
-    let itemIndex = 0;
-
-    for (let i = 0; i < marketsWithImages.length; i++) {
-      items.push({ type: 'market', data: marketsWithImages[i] });
-      itemIndex++;
-
-      if (!newsInserted && newsItems.length > 0 && itemIndex % NEWS_INTERVAL === 0) {
-        items.push({ type: 'news', data: newsItems });
-        newsInserted = true;
-      }
-
-      if ((i + 1) % EVENT_CAROUSEL_INTERVAL === 0 && eventCursor < events.length) {
-        items.push({
-          type: 'eventCarousel',
-          data: events.slice(eventCursor, eventCursor + EVENTS_PER_CAROUSEL),
-        });
-        eventCursor += EVENTS_PER_CAROUSEL;
-        itemIndex++;
-
-        if (!newsInserted && newsItems.length > 0 && itemIndex % NEWS_INTERVAL === 0) {
-          items.push({ type: 'news', data: newsItems });
-          newsInserted = true;
-        }
-      }
-    }
-
-    // For non-"Hot" categories, append markets without images after the image-rich feed
-    if (selectedCategory !== 'Hot' && marketsWithoutImages.length > 0) {
-      marketsWithoutImages.forEach((m) => {
-        items.push({ type: 'market', data: m });
-      });
-    }
-
-    if (eventCursor < events.length) {
-      items.push({
-        type: 'eventCarousel',
-        data: events.slice(eventCursor, eventCursor + EVENTS_PER_CAROUSEL),
-      });
+    // Show all events below markets.
+    if (events.length > 0) {
+      items.push({ type: 'eventCarousel', data: events });
     }
 
     return items;
-  }, [events, markets, newsItems, selectedCategory]);
+  }, [events, markets, newsItems]);
 
   const renderFeedItem = ({ item }: { item: FeedItem }) => {
     if (item.type === 'news') {
@@ -573,8 +517,13 @@ export default function HomeScreen() {
               onEndReachedThreshold={0.5}
               ListHeaderComponent={
                 <>
-                  <EventMarketImageCarousel items={events.slice(0, 10)} />
-
+                  <EventMarketImageCarousel items={events} />
+                  {loadingMore ? (
+                    <View className="px-5 pb-3 flex-row items-center justify-center">
+                      <ActivityIndicator size="small" color={Theme.textSecondary} />
+                      <Text className="ml-2 text-sm text-txt-secondary">Loading more events...</Text>
+                    </View>
+                  ) : null}
                 </>
               }
               ListFooterComponent={renderFooter}

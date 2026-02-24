@@ -197,10 +197,12 @@ export interface DelegationStatus {
 
 // Markets API Types (DFlow External API)
 export interface Market {
+    marketId?: string;
     ticker: string;
     title: string;
     subtitle?: string;
     status: string; // 'active', 'finalized', 'resolved', 'closed'
+    eventId?: string;
     eventTicker?: string;
     marketType?: string;
     yesSubTitle?: string;
@@ -239,10 +241,13 @@ export interface SettlementSource {
 }
 
 export interface Event {
+    eventId?: string;
     ticker: string;
     seriesTicker?: string;
     title: string;
     subtitle?: string;
+    category?: string;
+    isLive?: boolean;
     imageUrl?: string;
     competition?: string;
     competitionScope?: string;
@@ -324,4 +329,35 @@ export interface Series {
 
 export interface SeriesResponse {
     series: Series[];
+}
+
+// Jupiter prediction API response types
+export interface JupiterPredictionEventListResponse {
+    data: any[];
+    pagination?: {
+        start: number;
+        end: number;
+        total: number;
+        hasNext: boolean;
+    };
+}
+
+export interface JupiterPredictionOrderResponse {
+    transaction: string | null;
+    txMeta: {
+        blockhash: string;
+        lastValidBlockHeight: number;
+    } | null;
+    externalOrderId: string | null;
+    order: {
+        orderPubkey?: string;
+        positionPubkey?: string;
+        marketId: string;
+        isBuy: boolean;
+        isYes: boolean;
+        contracts?: string;
+        newContracts?: string;
+        orderCostUsd?: string;
+        newSizeUsd?: string;
+    };
 }

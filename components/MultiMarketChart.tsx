@@ -1,5 +1,4 @@
 import { Theme } from '@/constants/theme';
-import { marketsApi } from '@/lib/api';
 import { CandleData, Market } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -33,10 +32,6 @@ const TIME_FILTER_OPTIONS: { key: TimeFilter; label: string; seconds: number }[]
 const CHART_GREEN = '#10ff1f';
 const CHART_PINK = Theme.chartNegative;
 
-// Cache for candle data
-const candleCache = new Map<string, { data: CandleData[]; timestamp: number }>();
-const CANDLE_CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
-
 interface MarketChartData {
     market: Market;
     candles: CandleData[];
@@ -52,20 +47,6 @@ interface MultiMarketChartProps {
     onInteractionStart?: () => void;
     onInteractionEnd?: () => void;
 }
-
-// Helper to get yesMint from market
-const getYesMint = (market: Market): string | undefined => {
-    if (market.yesMint) return market.yesMint;
-    if (market.accounts) {
-        const accountValues = Object.values(market.accounts);
-        for (const account of accountValues) {
-            if (typeof account === 'object' && account?.yesMint) {
-                return account.yesMint;
-            }
-        }
-    }
-    return undefined;
-};
 
 export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
     markets,
@@ -96,68 +77,16 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
     const chartWidth = SCREEN_WIDTH - CHART_PADDING * 2;
     const drawableWidth = chartWidth - RIGHT_PADDING;
 
-    // Fetch candle data for all markets (time range like trade drawer)
+    // Jupiter prediction API does not expose candlestick data.
     useEffect(() => {
-        const fetchAllCandles = async () => {
-            setLoading(true);
-            const results: MarketChartData[] = [];
-            const opt = TIME_FILTER_OPTIONS.find(f => f.key === timeFilter);
-            const endTs = Math.floor(Date.now() / 1000);
-            const startTs = endTs - (opt?.seconds ?? 7 * 24 * 60 * 60);
-            const periodInterval = timeFilter === '24h' ? 1 : timeFilter === '1w' ? 60 : 1440;
-
-            await Promise.all(
-                markets.slice(0, 4).map(async (market) => {
-                    const yesMint = getYesMint(market);
-
-                    if (!yesMint) {
-                        results.push({ market, candles: [], color: CHART_GREEN, loading: false });
-                        return;
-                    }
-
-                    const cacheKey = `${yesMint}-${timeFilter}`;
-                    const cached = candleCache.get(cacheKey);
-                    if (cached && Date.now() - cached.timestamp < CANDLE_CACHE_DURATION) {
-                        const data = cached.data;
-                        const color = data.length >= 2 && data[data.length - 1].close >= data[0].close ? CHART_GREEN : CHART_PINK;
-                        results.push({ market, candles: data, color, loading: false });
-                        return;
-                    }
-
-                    try {
-                        const data = await marketsApi.fetchCandlesticksByMint(yesMint, {
-                            startTs,
-                            endTs,
-                            periodInterval,
-                        });
-
-                        if (data && data.length > 0) {
-                            candleCache.set(cacheKey, { data, timestamp: Date.now() });
-                            const color = data[data.length - 1].close >= data[0].close ? CHART_GREEN : CHART_PINK;
-                            results.push({ market, candles: data, color, loading: false });
-                        } else {
-                            results.push({ market, candles: [], color: CHART_GREEN, loading: false });
-                        }
-                    } catch (error) {
-                        console.error(`Failed to fetch candles for ${market.ticker}:`, error);
-                        results.push({ market, candles: [], color: CHART_GREEN, loading: false });
-                    }
-                })
-            );
-
-            results.sort((a, b) => {
-                const indexA = markets.findIndex(m => m.ticker === a.market.ticker);
-                const indexB = markets.findIndex(m => m.ticker === b.market.ticker);
-                return indexA - indexB;
-            });
-
-            setMarketData(results);
-            setLoading(false);
-        };
-
-        if (markets.length > 0) {
-            fetchAllCandles();
-        }
+        const results = markets.slice(0, 4).map((market) => ({
+            market,
+            candles: [],
+            color: CHART_GREEN,
+            loading: false,
+        }));
+        setMarketData(results);
+        setLoading(false);
     }, [markets, timeFilter]);
 
     // Skeleton pulse animation
@@ -286,11 +215,6 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
             onInteractionEnd?.();
         }, 300);
     }, [onInteractionEnd]);
-
-    const formatCents = (price: number): string => {
-        const cents = Math.round(price * 100);
-        return `${cents}¢`;
-    };
 
     const headerRow = (
         <View style={styles.headerRow}>
