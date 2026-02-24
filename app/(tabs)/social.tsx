@@ -768,7 +768,7 @@ export default function SocialScreen() {
             <>
                 <View className="px-5 pl-9 pt-6 pb-2 flex-row items-center bg-app-bg">
                     {showSearch ? (
-                        <View className="flex-1 flex-row items-center h-11 gap-2.5 px-4 bg-white rounded-full border-2 border-black">
+                        <View className="flex-1 flex-row items-center gap-2.5 px-4 py-2 bg-white rounded-full border border-[#D1D5DB]">
                             <Ionicons name="search" size={18} color={Theme.textDisabled} />
                             <TextInput
                                 className="flex-1 text-txt-primary text-[16px]"

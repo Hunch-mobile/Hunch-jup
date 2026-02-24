@@ -268,7 +268,7 @@ const sendBtnStyle = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 10,
         borderRadius: 12,
-        backgroundColor: '#e8d723',
+        backgroundColor: 'yellow',
     },
     btnFlex: {
         flex: 1,
@@ -328,6 +328,68 @@ export default function UserProfileScreen() {
     // Send USDC sheet state
     const [sendSheetOpen, setSendSheetOpen] = useState(false);
     const [sendSubmitting, setSendSubmitting] = useState(false);
+
+    const tradeStats = useMemo(() => {
+        if (!trades || trades.length === 0) {
+            return {
+                totalPnl: 0,
+                totalBets: 0,
+                winRate: null as number | null,
+            };
+        }
+
+        let realizedPnl = 0;
+        let betsWithPnl = 0;
+        let wins = 0;
+
+        for (const trade of trades) {
+            const amountValue = Number(trade.amount);
+            const market = (trade as TradeWithMarket).marketDetails;
+            const entryPriceCents = trade.quote ? Number(trade.quote) : null;
+
+            if (
+                !market ||
+                !Number.isFinite(amountValue) ||
+                !entryPriceCents ||
+                !Number.isFinite(entryPriceCents) ||
+                entryPriceCents <= 0
+            ) {
+                continue;
+            }
+
+            const isYes = trade.side === 'yes';
+            const currentPriceCents = isYes
+                ? Number(market.yesAsk || 0)
+                : Number(market.noAsk || 0);
+
+            if (!Number.isFinite(currentPriceCents) || currentPriceCents <= 0) {
+                continue;
+            }
+
+            const priceDiff = currentPriceCents - entryPriceCents;
+            const changePercent = (priceDiff / entryPriceCents) * 100;
+            const pnlDollar = (amountValue * changePercent) / 100;
+
+            if (!Number.isFinite(pnlDollar)) {
+                continue;
+            }
+
+            realizedPnl += pnlDollar;
+            betsWithPnl += 1;
+            if (pnlDollar > 0) {
+                wins += 1;
+            }
+        }
+
+        const winRate =
+            betsWithPnl > 0 ? (wins / betsWithPnl) * 100 : null;
+
+        return {
+            totalPnl: realizedPnl,
+            totalBets: trades.length,
+            winRate,
+        };
+    }, [trades]);
 
     const handleOpenMarketSheet = async (position: AggregatedPosition) => {
         let market = position.market;
@@ -722,10 +784,6 @@ export default function UserProfileScreen() {
         return (
             <View className="flex-1 bg-app-bg">
                 <SafeAreaView className="flex-1">
-                    <TouchableOpacity className="flex-row items-center gap-2 p-5" onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
-                        <Text className="text-txt-primary text-base font-medium">Back</Text>
-                    </TouchableOpacity>
                     <View className="flex-1 justify-center items-center px-10">
                         <Ionicons name="alert-circle-outline" size={64} color={Theme.error} />
                         <Text className="text-status-error text-base mt-4 mb-3 text-center">{error || "User not found"}</Text>
@@ -752,19 +810,12 @@ export default function UserProfileScreen() {
             <SafeAreaView className="flex-1" edges={['top']}>
                 <ScrollView
                     contentContainerStyle={{
+                        paddingTop: 40,
                         paddingHorizontal: 20,
                         paddingBottom: (!isOwnProfile && currentUser && isFollowing) ? insets.bottom + 88 : 24,
                     }}
                     showsVerticalScrollIndicator={false}
                 >
-                    {/* Header: back only (Copy Trade is fixed at bottom) */}
-                    <View className="flex-row items-center justify-between pt-4 pb-5">
-                        <TouchableOpacity className="justify-center items-center" onPress={() => router.back()}>
-                            <Ionicons name="chevron-back" size={24} color={Theme.textSecondary} />
-                        </TouchableOpacity>
-                        <View className="w-10" />
-                    </View>
-
                     {/* Profile Row */}
                     <View className="flex-row items-start gap-4 mb-4">
                         {/* Avatar */}
@@ -845,6 +896,41 @@ export default function UserProfileScreen() {
                                     )}
                                 </View>
                             )}
+
+                            <View className="flex-row mt-3 bg-app-card rounded-2xl px-3 py-2 border border-border/40">
+                                <View className="flex-1">
+                                    <Text className="text-[11px] text-txt-secondary mb-0.5">Total PnL</Text>
+                                    <Text
+                                        className={`text-[15px] font-semibold ${
+                                            tradeStats.totalPnl > 0
+                                                ? 'text-green-500'
+                                                : tradeStats.totalPnl < 0
+                                                ? 'text-[#FF10F0]'
+                                                : 'text-txt-primary'
+                                        }`}
+                                    >
+                                        {tradeStats.totalPnl === 0
+                                            ? '$0'
+                                            : `${tradeStats.totalPnl > 0 ? '+' : '-'}$${Math.abs(tradeStats.totalPnl).toFixed(0)}`}
+                                    </Text>
+                                </View>
+                                <View className="w-px bg-border/40 mx-2" />
+                                <View className="flex-1">
+                                    <Text className="text-[11px] text-txt-secondary mb-0.5">Total Bets</Text>
+                                    <Text className="text-[15px] font-semibold text-txt-primary">
+                                        {tradeStats.totalBets}
+                                    </Text>
+                                </View>
+                                <View className="w-px bg-border/40 mx-2" />
+                                <View className="flex-1">
+                                    <Text className="text-[11px] text-txt-secondary mb-0.5">Win Rate</Text>
+                                    <Text className="text-[15px] font-semibold text-txt-primary">
+                                        {tradeStats.winRate === null
+                                            ? '—'
+                                            : `${tradeStats.winRate.toFixed(0)}%`}
+                                    </Text>
+                                </View>
+                            </View>
                         </View>
                     </View>
 
@@ -852,20 +938,40 @@ export default function UserProfileScreen() {
 
                     {/* Trades */}
                     <View className="flex-1">
-                        {/* Tab Header */}
-                        <View className="flex-row mb-4 border-b border-border">
-                            <TouchableOpacity className="flex-1 items-center py-3 relative" onPress={() => animateToTab('active')}>
-                                <Text className={`text-sm ${activeTab === 'active' ? 'font-semibold text-txt-primary' : 'font-medium text-txt-secondary'}`}>
-                                    Active ({activePositions.length})
-                                </Text>
-                                {activeTab === 'active' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-txt-primary" />}
-                            </TouchableOpacity>
-                            <TouchableOpacity className="flex-1 items-center py-3 relative" onPress={() => animateToTab('previous')}>
-                                <Text className={`text-sm ${activeTab === 'previous' ? 'font-semibold text-txt-primary' : 'font-medium text-txt-secondary'}`}>
-                                    Previous ({previousPositions.length})
-                                </Text>
-                                {activeTab === 'previous' && <View className="absolute bottom-0 left-0 right-0 h-0.5 bg-txt-primary" />}
-                            </TouchableOpacity>
+                        {/* Tab Header - segmented control */}
+                        <View className="mb-4">
+                            <View className="flex-row bg-app-card rounded-2xl p-1 border border-border/40">
+                                <TouchableOpacity
+                                    className={`flex-1 py-2.5 rounded-xl items-center ${
+                                        activeTab === 'active' ? 'bg-black' : ''
+                                    }`}
+                                    onPress={() => animateToTab('active')}
+                                    activeOpacity={0.85}
+                                >
+                                    <Text
+                                        className={`text-sm font-semibold ${
+                                            activeTab === 'active' ? 'text-white' : 'text-txt-secondary'
+                                        }`}
+                                    >
+                                        Active ({activePositions.length})
+                                    </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    className={`flex-1 py-2.5 rounded-xl items-center ${
+                                        activeTab === 'previous' ? 'bg-black' : ''
+                                    }`}
+                                    onPress={() => animateToTab('previous')}
+                                    activeOpacity={0.85}
+                                >
+                                    <Text
+                                        className={`text-sm font-semibold ${
+                                            activeTab === 'previous' ? 'text-white' : 'text-txt-secondary'
+                                        }`}
+                                    >
+                                        Previous ({previousPositions.length})
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
 
                         {/* Sliding Lists */}

@@ -245,16 +245,8 @@ export default function FollowersFollowingScreen() {
     };
 
     return (
-        <View className="flex-1 bg-app-bg">
+        <View className="flex-1 bg-app-bg pt-4">
             <SafeAreaView className="flex-1">
-                {/* Header */}
-                <View className="flex-row items-center justify-between px-4 py-3">
-                    <TouchableOpacity className="w-9 h-9 rounded-full justify-center items-center" onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color={Theme.textPrimary} />
-                    </TouchableOpacity>
-                    <View className="flex-1" />
-                </View>
-
                 {/* Viewed user */}
                 <View className="px-5 pb-2">
                     <Text className="text-lg font-semibold text-txt-primary">

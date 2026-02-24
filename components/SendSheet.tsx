@@ -182,8 +182,7 @@ export default function SendSheet({
                     <View style={styles.topBar}>
                         <View style={{ width: 36 }} />
                         <View style={styles.topBarCenter}>
-                            <Text style={styles.topBarTitle}>Send USDC</Text>
-                            {recipientName && (
+                           {recipientName && (
                                 <Text style={styles.topBarSub}>to {recipientName}</Text>
                             )}
                         </View>
@@ -206,20 +205,14 @@ export default function SendSheet({
                             {amount || "0"}
                         </Text>
 
-                        <View style={styles.dollarRow}>
-                            <Text style={styles.dollarText}>${amountValue.toFixed(2)}</Text>
-                            <Ionicons
-                                name="swap-horizontal"
-                                size={14}
-                                color={TEXT_DIM}
-                                style={{ marginLeft: 6 }}
-                            />
-                        </View>
+                     
 
-                        {/* Balance pill */}
-                        <View style={styles.balancePill}>
-                            <Ionicons name="wallet-outline" size={14} color={TEXT_DIM} />
-                            <Text style={styles.balanceText}>{balance.toFixed(6)} USDC</Text>
+                        {/* Balance pill (right-aligned) */}
+                        <View style={{ alignSelf: "flex-end", marginRight: 24 }}>
+                            <View style={styles.balancePill}>
+                                <Ionicons name="wallet-outline" size={20} color={TEXT_DIM} />
+                                <Text style={styles.balanceText}>{balance.toFixed(1)} USDC</Text>
+                            </View>
                         </View>
 
                         {/* Insufficient warning */}
@@ -231,72 +224,48 @@ export default function SendSheet({
                     {/* ── CTA + Keypad ── */}
                     <View style={styles.keypadSection}>
                         {/* Summary row */}
-                        {amountValue > 0 && (
+                        {/* {amountValue > 0 && (
                             <View style={styles.summaryRow}>
                                 <Text style={styles.summaryLabel}>Sending</Text>
                                 <Text style={styles.summaryValue}>
                                     {amountValue.toFixed(6)} USDC
                                 </Text>
                             </View>
-                        )}
+                        )} */}
 
-                        {/* Send Button */}
-                        <TouchableOpacity
-                            activeOpacity={0.85}
-                            disabled={!canSend}
-                            onPress={handleSubmit}
-                            style={{ marginBottom: 14 }}
-                        >
-                            <LinearGradient
-                                colors={
-                                    canSend
-                                        ? ["#000000", "#1A1A1A"]
-                                        : ["#D1D5DB", "#E5E7EB"]
-                                }
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.ctaButton}
-                            >
-                                {submitting ? (
-                                    <ActivityIndicator size="small" color="#FFFFFF" />
-                                ) : (
-                                    <Text
-                                        style={[
-                                            styles.ctaText,
-                                            !canSend && styles.ctaTextDisabled,
-                                        ]}
-                                    >
-                                        {amountValue <= 0
-                                            ? "Enter amount"
-                                            : amountValue > balance
-                                                ? "Insufficient balance"
-                                                : `Send to ${recipientName || "User"}`}
-                                    </Text>
-                                )}
-                            </LinearGradient>
-                        </TouchableOpacity>
+                        {/* Quick amount actions */}
+                        <View style={styles.quickRow}>
+                            {[
+                                { label: "MAX", pct: 1 },
+                                { label: "75%", pct: 0.75 },
+                                { label: "50%", pct: 0.5 },
+                                { label: "CLEAR", pct: 0 },
+                            ].map((btn) => (
+                                <TouchableOpacity
+                                    key={btn.label}
+                                    style={styles.specialKey}
+                                    onPress={() =>
+                                        btn.label === "CLEAR"
+                                            ? setAmount("")
+                                            : setPercentage(btn.pct)
+                                    }
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={styles.specialKeyText}>{btn.label}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
 
                         {/* Keypad */}
                         <View style={styles.keypadGrid}>
                             {[
-                                { special: "MAX", pct: 1, digits: ["1", "2", "3"] },
-                                { special: "75%", pct: 0.75, digits: ["4", "5", "6"] },
-                                { special: "50%", pct: 0.5, digits: ["7", "8", "9"] },
-                                { special: "CLEAR", pct: 0, digits: [".", "0", "⌫"] },
+                                ["1", "2", "3"],
+                                ["4", "5", "6"],
+                                ["7", "8", "9"],
+                                [".", "0", "⌫"],
                             ].map((row, ri) => (
                                 <View key={ri} style={styles.keyRow}>
-                                    <TouchableOpacity
-                                        style={styles.specialKey}
-                                        onPress={() =>
-                                            row.special === "CLEAR"
-                                                ? setAmount("")
-                                                : setPercentage(row.pct)
-                                        }
-                                        activeOpacity={0.7}
-                                    >
-                                        <Text style={styles.specialKeyText}>{row.special}</Text>
-                                    </TouchableOpacity>
-                                    {row.digits.map((d) => (
+                                    {row.map((d) => (
                                         <TouchableOpacity
                                             key={d}
                                             style={styles.numKey}
@@ -317,6 +286,40 @@ export default function SendSheet({
                                 </View>
                             ))}
                         </View>
+
+                        {/* Send Button (bottom - slide-style pill) */}
+                        <TouchableOpacity
+                            activeOpacity={0.85}
+                            disabled={!canSend}
+                            onPress={handleSubmit}
+                            style={{ marginTop: 14 }}
+                        >
+                            <View style={[styles.ctaButton, !canSend && { opacity: 0.8 }]}>
+                                <View style={styles.ctaThumb}>
+                                    <Ionicons
+                                        name="arrow-forward"
+                                        size={16}
+                                        color="#FFFFFF"
+                                    />
+                                </View>
+                                {submitting ? (
+                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                ) : (
+                                    <Text
+                                        style={[
+                                            styles.ctaText,
+                                            !canSend && styles.ctaTextDisabled,
+                                        ]}
+                                    >
+                                        {amountValue <= 0
+                                            ? "Enter amount"
+                                            : amountValue > balance
+                                                ? "Insufficient balance"
+                                                : `Send to ${recipientName || "User"}`}
+                                    </Text>
+                                )}
+                            </View>
+                        </TouchableOpacity>
                     </View>
                 </Animated.View>
             </View>
@@ -367,9 +370,9 @@ const styles = StyleSheet.create({
         letterSpacing: 0.3,
     },
     topBarSub: {
-        fontSize: 12,
-        color: TEXT_DIM,
-        fontWeight: "500",
+        fontSize: 20,
+        color: TEXT_PRIMARY,
+        fontWeight: "700",
         marginTop: 1,
     },
     iconBtn: {
@@ -414,13 +417,13 @@ const styles = StyleSheet.create({
         backgroundColor: SURFACE_BG,
         borderRadius: 16,
         paddingHorizontal: 14,
-        paddingVertical: 8,
+        paddingVertical: 4,
         gap: 8,
         borderWidth: 1,
         borderColor: SURFACE_BORDER,
     },
     balanceText: {
-        fontSize: 14,
+        fontSize: 12,
         color: TEXT_DIM,
         fontWeight: "600",
     },
@@ -455,21 +458,34 @@ const styles = StyleSheet.create({
     },
     ctaButton: {
         height: 56,
-        borderRadius: 16,
-        justifyContent: "center",
+        borderRadius: 14,
+        backgroundColor: "#E5E7EB",
+        flexDirection: "row",
         alignItems: "center",
+        paddingHorizontal: 8,
     },
     ctaText: {
-        fontSize: 17,
-        fontWeight: "800",
-        color: "#FFFFFF",
-        letterSpacing: 0.5,
+        fontSize: 16,
+        fontWeight: "700",
+        color: TEXT_PRIMARY,
+        letterSpacing: 0.3,
+        flex: 1,
+        textAlign: "center",
     },
     ctaTextDisabled: {
         color: "rgba(17,24,28,0.55)",
     },
+    ctaThumb: {
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        backgroundColor: "#111827",
+        justifyContent: "center",
+        alignItems: "center",
+    },
     keypadGrid: {
         gap: 6,
+        marginTop: 8,
     },
     keyRow: {
         flexDirection: "row",
@@ -488,19 +504,28 @@ const styles = StyleSheet.create({
         color: TEXT_PRIMARY,
     },
     specialKey: {
-        width: 76,
-        height: 54,
-        borderRadius: 14,
+        flex: 1,
+        height: 38,
+        borderRadius: 999,
         backgroundColor: SURFACE_BG,
         justifyContent: "center",
         alignItems: "center",
         borderWidth: 1,
         borderColor: SURFACE_BORDER,
+        marginHorizontal: 4,
     },
     specialKeyText: {
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: "700",
         color: TEXT_PRIMARY,
         letterSpacing: 0.5,
+    },
+    quickRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 10,
+        marginTop: 2,
+        paddingHorizontal: 4,
     },
 });

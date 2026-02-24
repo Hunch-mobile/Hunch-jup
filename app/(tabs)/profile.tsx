@@ -655,39 +655,38 @@ export default function ProfileScreen() {
                                 <View style={styles.listPane}>
                                     {activeTab === 'positions' && (
                                         <View className="flex-row items-center justify-between mb-4">
-                                            <View className="flex-row gap-2">
-                                                {([
-                                                    { key: 'active', label: 'Active' },
-                                                    { key: 'previous', label: 'Previous' },
-                                                ] as const).map((item) => {
-                                                    const selected = positionFilter === item.key;
-                                                    return (
-                                                        <TouchableOpacity
-                                                            key={item.key}
-                                                            onPress={() => {
-                                                                setPositionFilter(item.key);
-                                                                setSortDirection(null);
-                                                                Haptics.selectionAsync();
-                                                            }}
-                                                            activeOpacity={0.75}
-                                                            style={[
-                                                                {
-                                                                    paddingHorizontal: 12,
-                                                                    paddingVertical: 8,
-                                                                    borderRadius: 999,
-                                                                    backgroundColor: selected ? '#000000' : '#E5E7EB',
-                                                                },
-                                                            ]}
-                                                        >
-                                                            <Text
-                                                                className="text-[13px] font-semibold"
-                                                                style={{ color: selected ? Theme.textInverse : Theme.textPrimary }}
+                                            {/* Active / Previous segmented control */}
+                                            <View className="flex-1 mr-3">
+                                                <View className="flex-row bg-app-card rounded-2xl p-1 border border-border/40">
+                                                    {([
+                                                        { key: 'active', label: 'Active' },
+                                                        { key: 'previous', label: 'Previous' },
+                                                    ] as const).map((item) => {
+                                                        const selected = positionFilter === item.key;
+                                                        return (
+                                                            <TouchableOpacity
+                                                                key={item.key}
+                                                                onPress={() => {
+                                                                    setPositionFilter(item.key);
+                                                                    setSortDirection(null);
+                                                                    Haptics.selectionAsync();
+                                                                }}
+                                                                activeOpacity={0.85}
+                                                                className={`flex-1 py-2 rounded-xl items-center ${
+                                                                    selected ? 'bg-black' : ''
+                                                                }`}
                                                             >
-                                                                {item.label}
-                                                            </Text>
-                                                        </TouchableOpacity>
-                                                    );
-                                                })}
+                                                                <Text
+                                                                    className={`text-[13px] font-semibold ${
+                                                                        selected ? 'text-white' : 'text-txt-secondary'
+                                                                    }`}
+                                                                >
+                                                                    {item.label}
+                                                                </Text>
+                                                            </TouchableOpacity>
+                                                        );
+                                                    })}
+                                                </View>
                                             </View>
 
                                             {/* Sort pill with toggle arrow (extreme right) */}
