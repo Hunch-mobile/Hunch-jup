@@ -514,34 +514,44 @@ export default function SocialScreen() {
             toHydrate.map(async (item) => {
                 const [marketDetails, candles] = await Promise.all([
                     getMarketDetails(item.marketTicker),
-                    marketsApi.fetchCandlesticksByMint({ ticker: item.marketTicker }).catch(() => [] as CandleData[]),
+                    marketsApi.fetchCandlesticksByMint({
+                        ticker: item.marketTicker,
+                        seriesTicker: item.eventTicker,
+                    }).catch(() => [] as CandleData[]),
                 ]);
                 return { item, marketDetails, candles };
             })
         ).then((results) => {
-            const updates: { id: string; ticker: string; marketDetails: Market; candles: CandleData[] }[] = [];
+            // Save candles regardless of whether marketDetails succeeded
+            const candleUpdates: { ticker: string; candles: CandleData[] }[] = [];
+            const marketUpdates: { id: string; marketDetails: Market }[] = [];
+
             results.forEach((r) => {
-                if (r.marketDetails)
-                    updates.push({
-                        id: r.item.id,
-                        ticker: r.item.marketTicker,
-                        marketDetails: r.marketDetails,
-                        candles: r.candles,
-                    });
+                if (r.candles.length > 0) {
+                    candleUpdates.push({ ticker: r.item.marketTicker, candles: r.candles });
+                }
+                if (r.marketDetails) {
+                    marketUpdates.push({ id: r.item.id, marketDetails: r.marketDetails });
+                }
             });
-            if (updates.length === 0) return;
-            setFeedItemsByMode((prev) => ({
-                ...prev,
-                [targetMode]: prev[targetMode].map((existing) => {
-                    const u = updates.find((x) => x.id === existing.id);
-                    return u ? { ...existing, marketDetails: u.marketDetails } : existing;
-                }),
-            }));
-            setCandlesMap((prev) => {
-                const next = { ...prev };
-                updates.forEach((u) => { next[u.ticker] = u.candles; });
-                return next;
-            });
+
+            if (marketUpdates.length > 0) {
+                setFeedItemsByMode((prev) => ({
+                    ...prev,
+                    [targetMode]: prev[targetMode].map((existing) => {
+                        const u = marketUpdates.find((x) => x.id === existing.id);
+                        return u ? { ...existing, marketDetails: u.marketDetails } : existing;
+                    }),
+                }));
+            }
+
+            if (candleUpdates.length > 0) {
+                setCandlesMap((prev) => {
+                    const next = { ...prev };
+                    candleUpdates.forEach((u) => { next[u.ticker] = u.candles; });
+                    return next;
+                });
+            }
         });
     }, []);
 

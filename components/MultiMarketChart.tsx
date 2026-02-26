@@ -93,6 +93,7 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
                                 : Math.max(0, endTs - (selectedFilter?.seconds || 7 * 24 * 60 * 60));
                         const candles = await marketsApi.fetchCandlesticksByMint({
                             ticker: market.ticker,
+                            seriesTicker: market.eventTicker,
                             startTs,
                             endTs,
                             periodInterval: 60,

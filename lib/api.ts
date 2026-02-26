@@ -1,8 +1,7 @@
-import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PositionsResponse, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse } from './types';
+import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse, UserPositionsResponse } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunchdotrun-roan.vercel.app';
 const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
-const DFLOW_CANDLESTICK_BASE_URL = 'http://hunchdotrun-roan.vercel.app';
 
 // Auth token getter - must be set by the app before making authenticated calls
 let _getAccessToken: (() => Promise<string | null>) | null = null;
@@ -442,6 +441,42 @@ export const api = {
         }
         return response.json();
     },
+
+    // User positions via /api/users/:userId/positions (no auth required)
+    getUserPositions: async (userId: string): Promise<UserPositionsResponse> => {
+        const response = await fetch(`${API_BASE_URL}/api/users/${userId}/positions`);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to get user positions');
+        }
+        const result = await safeJsonParse(response);
+        if (!result) throw new Error('Failed to get user positions');
+        return result as UserPositionsResponse;
+    },
+
+    // Posts endpoints
+    createPost: async (data: CreatePostRequest): Promise<Post> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/posts`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to create post');
+        }
+        const result = await safeJsonParse(response);
+        return result.post as Post;
+    },
+
+    deletePost: async (postId: string): Promise<void> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/posts/${postId}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to delete post');
+        }
+    },
 };
 
 const toNumberSafe = (value: unknown): number | null => {
@@ -582,6 +617,11 @@ const mapJupiterMarketToMarket = (market: any, eventId?: string): Market => {
             market?.eventImageUrl ||
             market?.featured_image_url ||
             undefined,
+        colorCode:
+            market?.colorCode ||
+            market?.metadata?.colorCode ||
+            market?.color_code ||
+            undefined,
     };
 };
 
@@ -697,7 +737,8 @@ export const marketsApi = {
         }
 
         // Use only /events endpoint (includeMarkets=true) for event+market data.
-        const { events } = await marketsApi.fetchEvents(200, { includeMarkets: true });
+        // Jupiter API hard-caps at 100 items — keep limit at or below 100.
+        const { events } = await marketsApi.fetchEvents(100, { includeMarkets: true });
         const matchedEvent = events.find((event) => event.ticker === eventTicker);
         if (!matchedEvent) {
             throw new Error(`Failed to fetch event details: event not found for ${eventTicker}`);
@@ -842,7 +883,8 @@ export const marketsApi = {
             }
         }
 
-        const { events } = await marketsApi.fetchEvents(200, { includeMarkets: true });
+        // Jupiter API hard-caps at 100 items — keep limit at or below 100.
+        const { events } = await marketsApi.fetchEvents(100, { includeMarkets: true });
         for (const event of events) {
             const market = event.markets?.find((m) => m.ticker === ticker);
             if (market) return market;
@@ -855,6 +897,7 @@ export const marketsApi = {
         ticker,
         marketTicker,
         marketId,
+        seriesTicker,
         startTs,
         endTs,
         periodInterval = 60,
@@ -862,12 +905,14 @@ export const marketsApi = {
         ticker?: string;
         marketTicker?: string;
         marketId?: string;
+        /** The series/event ticker (eventTicker) — used as {series} in the Kalshi endpoint */
+        seriesTicker?: string | null;
         startTs?: number;
         endTs?: number;
         periodInterval?: number;
     }): Promise<CandleData[]> => {
-        const resolvedTicker = marketTicker || marketId || ticker;
-        if (!resolvedTicker) return [];
+        const resolvedMarketId = marketTicker || marketId || ticker;
+        if (!resolvedMarketId) return [];
 
         const nowTs = Math.floor(Date.now() / 1000);
         const effectiveEndTs = typeof endTs === 'number' && Number.isFinite(endTs) ? endTs : nowTs;
@@ -876,14 +921,42 @@ export const marketsApi = {
                 ? startTs
                 : Math.max(0, effectiveEndTs - 7 * 24 * 60 * 60);
 
-        const params = new URLSearchParams({
-            startTs: String(effectiveStartTs),
-            endTs: String(effectiveEndTs),
-            periodInterval: String(Math.max(1, Math.floor(periodInterval))),
-        });
-        const requestUrl = `${DFLOW_CANDLESTICK_BASE_URL}/api/dflow/market/${encodeURIComponent(
-            resolvedTicker
-        )}/candlesticks?${params.toString()}`;
+        // Kalshi API only accepts specific period_interval values (in minutes).
+        // Pick the smallest valid interval that is >= the desired granularity AND keeps
+        // the candle count within MAX_CANDLES per request.
+        const KALSHI_VALID_INTERVALS = [1, 60, 1440] as const; // minutes, ascending
+        const MAX_CANDLES = 1000;
+        const rangeSeconds = effectiveEndTs - effectiveStartTs;
+        const desiredInterval = Math.max(1, Math.floor(periodInterval));
+        const safeInterval =
+            KALSHI_VALID_INTERVALS.find(
+                (v) => v >= desiredInterval && rangeSeconds <= v * 60 * MAX_CANDLES
+            ) ?? KALSHI_VALID_INTERVALS[KALSHI_VALID_INTERVALS.length - 1];
+
+        // Build the Kalshi candlesticks URL:
+        // /api/kalshi/series/{series}/markets/{marketId}/candlesticks
+        // Falls back to legacy dflow endpoint when no seriesTicker is available.
+        let requestUrl: string;
+        if (seriesTicker) {
+            const params = new URLSearchParams({
+                start_ts: String(effectiveStartTs),
+                end_ts: String(effectiveEndTs),
+                period_interval: String(safeInterval),
+            });
+            requestUrl = `${API_BASE_URL}/api/kalshi/series/${encodeURIComponent(
+                seriesTicker
+            )}/markets/${encodeURIComponent(resolvedMarketId)}/candlesticks?${params.toString()}`;
+        } else {
+            // Legacy fallback — no series ticker available
+            const params = new URLSearchParams({
+                start_ts: String(effectiveStartTs),
+                end_ts: String(effectiveEndTs),
+                period_interval: String(safeInterval),
+            });
+            requestUrl = `${API_BASE_URL}/api/kalshi/series/_/markets/${encodeURIComponent(
+                resolvedMarketId
+            )}/candlesticks?${params.toString()}`;
+        }
 
         const now = Date.now();
         const cached = candlestickRequestCache.get(requestUrl);

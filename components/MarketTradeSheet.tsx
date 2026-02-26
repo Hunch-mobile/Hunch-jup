@@ -11,8 +11,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, Image, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -320,17 +321,10 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
             if (propEventTitle) setEventTitle(propEventTitle);
             return;
         }
-
         const fetchEventTitle = async () => {
-            const eventTicker = market?.eventTicker;
-            if (!eventTicker) return;
-
-            const event = await getEventDetails(eventTicker);
-            if (event?.title) {
-                setEventTitle(event.title);
-            }
+            const event = await getEventDetails(market!.eventTicker!);
+            if (event?.title) setEventTitle(event.title);
         };
-
         fetchEventTitle();
     }, [visible, market?.eventTicker, propEventTitle]);
 
@@ -399,6 +393,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                 const periodInterval = TIME_FILTER_INTERVALS[timeFilter];
                 const candles = await marketsApi.fetchCandlesticksByMint({
                     marketTicker: market.ticker,
+                    seriesTicker: market.eventTicker,
                     startTs,
                     endTs,
                     periodInterval,
@@ -605,37 +600,60 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                 paddingBottom: Math.max(insets.bottom, 20),
                                 height: sheetHeight,
                                 transform: [{ translateY: slideAnim }],
+                                borderTopColor: market?.colorCode ? market.colorCode + '66' : Theme.border,
+                                borderLeftColor: market?.colorCode ? market.colorCode + '22' : Theme.border,
+                                borderRightColor: market?.colorCode ? market.colorCode + '22' : Theme.border,
                             },
                         ]}
                     >
                         <Pressable onPress={(e) => e.stopPropagation()}>
                             <View>
+                                {/* drag handle */}
                                 <View className="items-center py-2">
-                                    <View className="w-12 h-1.5 rounded-full bg-border" />
+                                    <View
+                                        className="w-12 h-1.5 rounded-full"
+                                        style={{ backgroundColor: market?.colorCode ? market.colorCode + 'bb' : Theme.border }}
+                                    />
                                 </View>
 
+                                {/* ── Header: market avatar + titles + price ────── */}
                                 <View className="mb-4">
-                                    <Text className="text-lg font-medium text-txt-secondary mb-2" numberOfLines={2}>
-                                        {eventTitle || market?.subtitle || 'Event'}
-                                    </Text>
-                                    <View className="flex-row items-center justify-between">
-                                        <Text className="text-xl font-bold text-txt-primary flex-1" numberOfLines={1}>
-                                            {selectedSide === 'yes'
-                                                ? (market?.yesSubTitle || market?.subtitle || 'Yes')
-                                                : (market?.noSubTitle || market?.subtitle || 'No')}
-                                        </Text>
-                                        <Text
-                                            className="text-2xl font-bold"
-                                            style={{
-                                                color: selectedSide === 'yes' ? '#32de12' : Theme.chartNegative,
-                                            }}
-                                        >
-                                            {(() => {
-                                                const price = scrubPrice ?? chartCandles[chartCandles.length - 1]?.close;
-                                                if (typeof price !== 'number') return '—';
-                                                return `${(price * 100).toFixed(1)}%`;
-                                            })()}
-                                        </Text>
+                                    <View className="flex-row items-center gap-3">
+                                        {/* Market image as avatar / profile picture */}
+                                        {market?.image_url ? (
+                                            <View style={styles.marketAvatar}>
+                                                <Image
+                                                    source={{ uri: market.image_url }}
+                                                    style={{ width: '100%', height: '100%' }}
+                                                    resizeMode="cover"
+                                                />
+                                                {market?.colorCode && (
+                                                    <View style={[StyleSheet.absoluteFill, { borderRadius: 14, borderWidth: 2, borderColor: market.colorCode + 'aa' }]} />
+                                                )}
+                                            </View>
+                                        ) : null}
+
+                                        {/* Title + price block */}
+                                        <View className="flex-1">
+                                            <Text className="text-sm font-semibold text-txt-secondary mb-1" numberOfLines={1}>
+                                                {eventTitle || market?.subtitle || ''}
+                                            </Text>
+                                            <Text className="text-base font-bold text-txt-primary mb-1" numberOfLines={2}>
+                                                {selectedSide === 'yes'
+                                                    ? (market?.yesSubTitle || market?.title || 'Yes')
+                                                    : (market?.noSubTitle || market?.title || 'No')}
+                                            </Text>
+                                            <Text
+                                                className="text-2xl font-bold"
+                                                style={{ color: selectedSide === 'yes' ? '#32de12' : Theme.chartNegative }}
+                                            >
+                                                {(() => {
+                                                    const price = scrubPrice ?? chartCandles[chartCandles.length - 1]?.close;
+                                                    if (typeof price !== 'number') return '—';
+                                                    return `${(price * 100).toFixed(1)}%`;
+                                                })()}
+                                            </Text>
+                                        </View>
                                     </View>
                                 </View>
 
@@ -814,6 +832,16 @@ const styles = StyleSheet.create({
         borderLeftWidth: 1,
         borderRightWidth: 1,
         borderColor: Theme.border,
+    },
+    marketAvatar: {
+        width: 72,
+        height: 72,
+        borderRadius: 16,
+        overflow: 'hidden',
+        backgroundColor: Theme.bgCard,
+        borderWidth: 2,
+        borderColor: Theme.border,
+        flexShrink: 0,
     },
     backdropTint: {
         ...StyleSheet.absoluteFillObject,

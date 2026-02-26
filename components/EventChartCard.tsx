@@ -87,6 +87,7 @@ export const EventChartCard: React.FC<EventChartCardProps> = ({
                 const startTs = Math.max(0, endTs - 7 * 24 * 60 * 60);
                 const data = await marketsApi.fetchCandlesticksByMint({
                     ticker: market.ticker,
+                    seriesTicker: market.eventTicker,
                     startTs,
                     endTs,
                     periodInterval: 60,

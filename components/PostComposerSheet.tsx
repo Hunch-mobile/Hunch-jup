@@ -1,6 +1,6 @@
-import { Theme } from '@/constants/theme';
+﻿import { Theme } from '@/constants/theme';
 import { api } from '@/lib/api';
-import { AggregatedPosition, User } from '@/lib/types';
+import { User, UserPosition } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState } from 'react';
@@ -8,27 +8,22 @@ import {
     ActivityIndicator,
     FlatList,
     Image,
+    Keyboard,
     KeyboardAvoidingView,
     Modal,
     Platform,
     Pressable,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
+    TouchableWithoutFeedback,
     View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const defaultProfileImage = require('@/assets/default.jpeg');
-
-interface EmbeddedPosition {
-    marketTicker: string;
-    side: 'yes' | 'no';
-    title: string;
-    subtitle?: string;
-    totalCostBasis: number;
-}
 
 interface PostComposerSheetProps {
     visible: boolean;
@@ -36,6 +31,8 @@ interface PostComposerSheetProps {
     backendUser: User | null;
     onPostSuccess?: () => void;
 }
+
+type PositionTab = 'active' | 'previous';
 
 export default function PostComposerSheet({
     visible,
@@ -45,10 +42,13 @@ export default function PostComposerSheet({
 }: PostComposerSheetProps) {
     const insets = useSafeAreaInsets();
     const [text, setText] = useState('');
-    const [activePositions, setActivePositions] = useState<AggregatedPosition[]>([]);
+    const [activePositions, setActivePositions] = useState<UserPosition[]>([]);
+    const [previousPositions, setPreviousPositions] = useState<UserPosition[]>([]);
     const [loadingPositions, setLoadingPositions] = useState(false);
     const [showPositionPicker, setShowPositionPicker] = useState(false);
-    const [embeddedPositions, setEmbeddedPositions] = useState<EmbeddedPosition[]>([]);
+    const [positionTab, setPositionTab] = useState<PositionTab>('active');
+    // Only one position can be attached per post
+    const [embeddedPosition, setEmbeddedPosition] = useState<UserPosition | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
@@ -57,8 +57,9 @@ export default function PostComposerSheet({
         }
         if (!visible) {
             setText('');
-            setEmbeddedPositions([]);
+            setEmbeddedPosition(null);
             setShowPositionPicker(false);
+            setPositionTab('active');
         }
     }, [visible, backendUser]);
 
@@ -66,8 +67,9 @@ export default function PostComposerSheet({
         if (!backendUser) return;
         setLoadingPositions(true);
         try {
-            const resp = await api.getPositions(backendUser.id);
-            setActivePositions(resp.positions.active || []);
+            const resp = await api.getUserPositions(backendUser.id);
+            setActivePositions(resp.positions || []);
+            setPreviousPositions(resp.previousPositions || []);
         } catch (err) {
             console.error('Failed to load positions:', err);
         } finally {
@@ -75,52 +77,40 @@ export default function PostComposerSheet({
         }
     };
 
-    const addPosition = useCallback((pos: AggregatedPosition) => {
-        const already = embeddedPositions.some(e => e.marketTicker === pos.marketTicker && e.side === pos.side);
-        if (already) return;
-
+    const selectPosition = useCallback((pos: UserPosition) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setEmbeddedPositions(prev => [
-            ...prev,
-            {
-                marketTicker: pos.marketTicker,
-                side: pos.side,
-                title: pos.market?.title || pos.marketTicker,
-                subtitle: pos.side === 'yes' ? pos.market?.yesSubTitle : pos.market?.noSubTitle,
-                totalCostBasis: pos.totalCostBasis,
-            },
-        ]);
+        setEmbeddedPosition(pos);
         setShowPositionPicker(false);
-    }, [embeddedPositions]);
+    }, []);
 
-    const removePosition = useCallback((ticker: string, side: string) => {
-        setEmbeddedPositions(prev => prev.filter(e => !(e.marketTicker === ticker && e.side === side)));
+    const clearPosition = useCallback(() => {
+        setEmbeddedPosition(null);
     }, []);
 
     const handlePost = async () => {
-        if (!text.trim() && embeddedPositions.length === 0) return;
+        const hasContent = text.trim().length > 0;
+        const hasPosition = embeddedPosition !== null;
+        if (!hasContent && !hasPosition) return;
         if (!backendUser) return;
 
         setIsSubmitting(true);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
         try {
-            // For each embedded position, create a dummy trade with the post text as quote
-            if (embeddedPositions.length > 0) {
-                for (const pos of embeddedPositions) {
-                    await api.createTrade({
-                        userId: backendUser.id,
-                        marketTicker: pos.marketTicker,
-                        side: pos.side,
-                        amount: '0',
-                        transactionSig: `post-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-                        quote: text.trim() || undefined,
-                        isDummy: true,
-                    });
-                }
+            if (hasPosition) {
+                await api.createPost({
+                    content: text.trim() || undefined,
+                    postType: 'position_share',
+                    marketTicker: embeddedPosition!.marketTicker,
+                    side: embeddedPosition!.side,
+                    positionSize: embeddedPosition!.netSize,
+                    entryPrice: embeddedPosition!.avgEntryPrice,
+                });
             } else {
-                // Post without position — just a text post on the first available market
-                // For now, skip if no positions embedded
+                await api.createPost({
+                    content: text.trim(),
+                    postType: 'text',
+                });
             }
 
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -134,8 +124,58 @@ export default function PostComposerSheet({
         }
     };
 
-    const canPost = text.trim().length > 0 || embeddedPositions.length > 0;
+    const canPost = text.trim().length > 0 || embeddedPosition !== null;
     const avatarUrl = backendUser?.avatarUrl?.replace('_normal', '');
+    const currentTabData = positionTab === 'active' ? activePositions : previousPositions;
+
+    const renderPositionRow = ({ item }: { item: UserPosition }) => {
+        const isYes = item.side === 'yes';
+        const isSelected =
+            embeddedPosition?.marketTicker === item.marketTicker &&
+            embeddedPosition?.side === item.side;
+        const pnlColor = (item.pnlPercent ?? 0) >= 0 ? '#32de12' : '#FF10F0';
+
+        return (
+            <TouchableOpacity
+                style={[styles.positionRow, isSelected && styles.positionRowSelected]}
+                onPress={() => selectPosition(item)}
+                activeOpacity={0.7}
+            >
+                {item.imageUrl ? (
+                    <Image source={{ uri: item.imageUrl }} style={styles.positionImage} />
+                ) : (
+                    <View style={[styles.positionImage, styles.positionImagePlaceholder]}>
+                        <Ionicons name="stats-chart" size={14} color="#9CA3AF" />
+                    </View>
+                )}
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.positionTitle} numberOfLines={1}>
+                        {item.marketSubtitle || item.marketTitle || item.marketTicker}
+                    </Text>
+                    <View style={styles.positionMeta}>
+                        <View style={[styles.sideBadge, { backgroundColor: isYes ? '#F0FFF4' : '#FFF0F5' }]}>
+                            <Text style={[styles.sideBadgeText, { color: isYes ? '#32de12' : '#FF10F0', fontSize: 11 }]}>
+                                {item.side.toUpperCase()}
+                            </Text>
+                        </View>
+                        <Text style={styles.positionMetaText}>
+                            ${item.enteredAmount.toFixed(2)}
+                        </Text>
+                        {item.pnlPercent != null && (
+                            <Text style={[styles.positionPnl, { color: pnlColor }]}>
+                                {item.pnlPercent >= 0 ? '+' : ''}{item.pnlPercent.toFixed(1)}%
+                            </Text>
+                        )}
+                    </View>
+                </View>
+                {isSelected ? (
+                    <Ionicons name="checkmark-circle" size={24} color="#32de12" />
+                ) : (
+                    <Ionicons name="add-circle-outline" size={24} color={Theme.textPrimary} />
+                )}
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -165,7 +205,13 @@ export default function PostComposerSheet({
                     keyboardVerticalOffset={insets.top + 50}
                 >
                     {/* Compose Area */}
-                    <View style={styles.composeArea}>
+                    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                    <ScrollView
+                        style={{ flex: 1 }}
+                        contentContainerStyle={styles.composeArea}
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator={false}
+                    >
                         <View style={styles.avatarRow}>
                             <View style={styles.avatar}>
                                 <Image
@@ -173,11 +219,9 @@ export default function PostComposerSheet({
                                     style={styles.avatarImage}
                                 />
                             </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.displayName}>
-                                    {backendUser?.displayName || backendUser?.username || 'You'}
-                                </Text>
-                            </View>
+                            <Text style={styles.displayName}>
+                                {backendUser?.displayName || backendUser?.username || 'You'}
+                            </Text>
                         </View>
 
                         <TextInput
@@ -196,49 +240,92 @@ export default function PostComposerSheet({
                             <Text style={styles.charCount}>{text.length}/500</Text>
                         )}
 
-                        {/* Embedded Positions */}
-                        {embeddedPositions.length > 0 && (
-                            <View style={styles.embeddedList}>
-                                {embeddedPositions.map((pos) => (
-                                    <View key={`${pos.marketTicker}-${pos.side}`} style={styles.embeddedCard}>
-                                        <View style={styles.embeddedCardContent}>
-                                            <Text
-                                                style={[
-                                                    styles.embeddedSide,
-                                                    { color: pos.side === 'yes' ? '#32de12' : '#FF10F0' },
-                                                ]}
-                                            >
-                                                {pos.side.toUpperCase()}
-                                            </Text>
-                                            <View style={{ flex: 1, marginLeft: 10 }}>
-                                                <Text style={styles.embeddedTitle} numberOfLines={1}>
-                                                    {pos.subtitle || pos.title}
-                                                </Text>
-                                                <Text style={styles.embeddedAmount}>
-                                                    ${pos.totalCostBasis.toFixed(2)}
+                        {/* Embedded Position Card */}
+                        {embeddedPosition && (
+                            <View style={styles.embeddedCard}>
+                                {/* Image + title row */}
+                                <View style={styles.embeddedCardTop}>
+                                    {embeddedPosition.imageUrl ? (
+                                        <Image
+                                            source={{ uri: embeddedPosition.imageUrl }}
+                                            style={styles.embeddedMarketImage}
+                                        />
+                                    ) : (
+                                        <View style={[styles.embeddedMarketImage, styles.embeddedMarketImagePlaceholder]}>
+                                            <Ionicons name="stats-chart" size={16} color="#9CA3AF" />
+                                        </View>
+                                    )}
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.embeddedTitle} numberOfLines={2}>
+                                            {embeddedPosition.marketSubtitle || embeddedPosition.marketTitle || embeddedPosition.marketTicker}
+                                        </Text>
+                                        <View style={styles.embeddedCardBadges}>
+                                            <View style={[
+                                                styles.sideBadge,
+                                                { backgroundColor: embeddedPosition.side === 'yes' ? '#F0FFF4' : '#FFF0F5' }
+                                            ]}>
+                                                <Text style={[
+                                                    styles.sideBadgeText,
+                                                    { color: embeddedPosition.side === 'yes' ? '#32de12' : '#FF10F0' }
+                                                ]}>
+                                                    {embeddedPosition.side.toUpperCase()}
                                                 </Text>
                                             </View>
-                                            <TouchableOpacity
-                                                onPress={() => removePosition(pos.marketTicker, pos.side)}
-                                                hitSlop={10}
-                                            >
-                                                <Ionicons name="close-circle" size={22} color="#9CA3AF" />
-                                            </TouchableOpacity>
+                                            {embeddedPosition.isClosed && (
+                                                <View style={styles.closedBadge}>
+                                                    <Text style={styles.closedBadgeText}>Closed</Text>
+                                                </View>
+                                            )}
                                         </View>
                                     </View>
-                                ))}
+                                    <TouchableOpacity onPress={clearPosition} hitSlop={12}>
+                                        <Ionicons name="close-circle" size={22} color="#9CA3AF" />
+                                    </TouchableOpacity>
+                                </View>
+                                {/* Stats row */}
+                                <View style={styles.embeddedStats}>
+                                    <View style={styles.embeddedStat}>
+                                        <Text style={styles.embeddedStatLabel}>Entry</Text>
+                                        <Text style={styles.embeddedStatValue}>
+                                            {(embeddedPosition.avgEntryPrice * 100).toFixed(1)}¢
+                                        </Text>
+                                    </View>
+                                    <View style={styles.embeddedStat}>
+                                        <Text style={styles.embeddedStatLabel}>Size</Text>
+                                        <Text style={styles.embeddedStatValue}>
+                                            ${embeddedPosition.enteredAmount.toFixed(2)}
+                                        </Text>
+                                    </View>
+                                    {embeddedPosition.pnlPercent != null && (
+                                        <View style={styles.embeddedStat}>
+                                            <Text style={styles.embeddedStatLabel}>P&L</Text>
+                                            <Text style={[
+                                                styles.embeddedStatValue,
+                                                { color: embeddedPosition.pnlPercent >= 0 ? '#32de12' : '#FF10F0' }
+                                            ]}>
+                                                {embeddedPosition.pnlPercent >= 0 ? '+' : ''}{embeddedPosition.pnlPercent.toFixed(1)}%
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
                             </View>
                         )}
-                    </View>
+                    </ScrollView>
+                    </TouchableWithoutFeedback>
 
                     {/* Toolbar */}
                     <View style={[styles.toolbar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
                         <TouchableOpacity
                             style={styles.toolbarButton}
-                            onPress={() => setShowPositionPicker(true)}
+                            onPress={() => {
+                                Keyboard.dismiss();
+                                setShowPositionPicker(true);
+                            }}
                         >
-                            <Ionicons name="stats-chart" size={22} color={Theme.textPrimary} />
-                            <Text style={styles.toolbarButtonText}>Add Position</Text>
+                            <Ionicons name="stats-chart" size={20} color={Theme.textPrimary} />
+                            <Text style={styles.toolbarButtonText}>
+                                {embeddedPosition ? 'Change Position' : 'Add Position'}
+                            </Text>
                         </TouchableOpacity>
                     </View>
                 </KeyboardAvoidingView>
@@ -255,60 +342,45 @@ export default function PostComposerSheet({
                     <Pressable style={{ flex: 1 }} onPress={() => setShowPositionPicker(false)} />
                     <View style={[styles.pickerSheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
                         <View style={styles.pickerHandle} />
-                        <Text style={styles.pickerTitle}>Your Active Positions</Text>
+
+                        {/* Active / Previous tabs */}
+                        <View style={styles.tabRow}>
+                            <TouchableOpacity
+                                style={[styles.tab, positionTab === 'active' && styles.tabActive]}
+                                onPress={() => setPositionTab('active')}
+                            >
+                                <Text style={[styles.tabText, positionTab === 'active' && styles.tabTextActive]}>
+                                    Active ({activePositions.length})
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.tab, positionTab === 'previous' && styles.tabActive]}
+                                onPress={() => setPositionTab('previous')}
+                            >
+                                <Text style={[styles.tabText, positionTab === 'previous' && styles.tabTextActive]}>
+                                    Previous ({previousPositions.length})
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
 
                         {loadingPositions ? (
                             <View style={styles.pickerLoading}>
                                 <ActivityIndicator size="large" color={Theme.textSecondary} />
                             </View>
-                        ) : activePositions.length === 0 ? (
+                        ) : currentTabData.length === 0 ? (
                             <View style={styles.pickerEmpty}>
                                 <Ionicons name="wallet-outline" size={40} color="#D1D5DB" />
-                                <Text style={styles.pickerEmptyText}>No active positions</Text>
+                                <Text style={styles.pickerEmptyText}>
+                                    No {positionTab === 'active' ? 'active' : 'previous'} positions
+                                </Text>
                             </View>
                         ) : (
                             <FlatList
-                                data={activePositions}
+                                data={currentTabData}
                                 keyExtractor={(item) => `${item.marketTicker}-${item.side}`}
                                 style={{ maxHeight: 400 }}
-                                renderItem={({ item }) => {
-                                    const isYes = item.side === 'yes';
-                                    const subtitle = isYes ? item.market?.yesSubTitle : item.market?.noSubTitle;
-                                    const alreadyAdded = embeddedPositions.some(
-                                        e => e.marketTicker === item.marketTicker && e.side === item.side
-                                    );
-
-                                    return (
-                                        <TouchableOpacity
-                                            style={[styles.positionRow, alreadyAdded && styles.positionRowDisabled]}
-                                            onPress={() => !alreadyAdded && addPosition(item)}
-                                            disabled={alreadyAdded}
-                                            activeOpacity={0.7}
-                                        >
-                                            <Text
-                                                style={[
-                                                    styles.positionSide,
-                                                    { color: isYes ? '#32de12' : '#FF10F0' },
-                                                ]}
-                                            >
-                                                {item.side.toUpperCase()}
-                                            </Text>
-                                            <View style={{ flex: 1, marginLeft: 12 }}>
-                                                <Text style={styles.positionTitle} numberOfLines={1}>
-                                                    {subtitle || item.market?.title || item.marketTicker}
-                                                </Text>
-                                                <Text style={styles.positionMeta}>
-                                                    ${item.totalCostBasis.toFixed(2)} invested
-                                                </Text>
-                                            </View>
-                                            {alreadyAdded ? (
-                                                <Ionicons name="checkmark-circle" size={24} color="#32de12" />
-                                            ) : (
-                                                <Ionicons name="add-circle-outline" size={24} color={Theme.textPrimary} />
-                                            )}
-                                        </TouchableOpacity>
-                                    );
-                                }}
+                                renderItem={renderPositionRow}
+                                showsVerticalScrollIndicator={false}
                             />
                         )}
                     </View>
@@ -350,10 +422,12 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         paddingHorizontal: 20,
         borderRadius: 20,
-        backgroundColor: '#D1D5DB',
+        backgroundColor: '#E5E7EB',
+        minWidth: 64,
+        alignItems: 'center',
     },
     postButtonActive: {
-        backgroundColor: '#000000',
+        backgroundColor: '#e8d723',
     },
     postButtonText: {
         fontSize: 15,
@@ -361,24 +435,24 @@ const styles = StyleSheet.create({
         color: '#9CA3AF',
     },
     postButtonTextActive: {
-        color: '#FFFFFF',
+        color: '#111827',
     },
     composeArea: {
-        flex: 1,
         paddingHorizontal: 20,
         paddingTop: 16,
+        paddingBottom: 8,
     },
     avatarRow: {
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 12,
+        gap: 12,
     },
     avatar: {
         width: 44,
         height: 44,
         borderRadius: 22,
         overflow: 'hidden',
-        marginRight: 12,
         backgroundColor: '#F3F4F6',
     },
     avatarImage: {
@@ -404,36 +478,83 @@ const styles = StyleSheet.create({
         textAlign: 'right',
         marginTop: 4,
     },
-    embeddedList: {
-        marginTop: 16,
-        gap: 10,
-    },
+    // Embedded position card
     embeddedCard: {
+        marginTop: 16,
         backgroundColor: '#F9FAFB',
         borderRadius: 14,
         borderWidth: 1,
         borderColor: '#E5E7EB',
         padding: 14,
+        gap: 10,
     },
-    embeddedCardContent: {
+    embeddedCardTop: {
         flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 10,
+    },
+    embeddedMarketImage: {
+        width: 52,
+        height: 52,
+        borderRadius: 10,
+    },
+    embeddedMarketImagePlaceholder: {
+        backgroundColor: '#F3F4F6',
+        justifyContent: 'center',
         alignItems: 'center',
     },
-    embeddedSide: {
-        fontSize: 18,
-        fontWeight: '900',
-        letterSpacing: 1,
+    embeddedCardBadges: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 6,
+    },
+    sideBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    sideBadgeText: {
+        fontSize: 13,
+        fontWeight: '800',
+        letterSpacing: 0.5,
+    },
+    closedBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 6,
+        backgroundColor: '#E5E7EB',
+    },
+    closedBadgeText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#6B7280',
     },
     embeddedTitle: {
         fontSize: 14,
-        fontWeight: '600',
+        fontWeight: '700',
+        color: '#111827',
+        lineHeight: 19,
+        flexShrink: 1,
+    },
+    embeddedStats: {
+        flexDirection: 'row',
+        gap: 20,
+    },
+    embeddedStat: {
+        gap: 2,
+    },
+    embeddedStatLabel: {
+        fontSize: 11,
+        color: '#9CA3AF',
+        fontWeight: '500',
+    },
+    embeddedStatValue: {
+        fontSize: 14,
+        fontWeight: '700',
         color: '#111827',
     },
-    embeddedAmount: {
-        fontSize: 12,
-        color: '#6B7280',
-        marginTop: 2,
-    },
+    // Toolbar
     toolbar: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -457,6 +578,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#111827',
     },
+    // Picker sheet
     pickerOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.3)',
@@ -477,11 +599,35 @@ const styles = StyleSheet.create({
         alignSelf: 'center',
         marginBottom: 16,
     },
-    pickerTitle: {
-        fontSize: 18,
-        fontWeight: '700',
+    tabRow: {
+        flexDirection: 'row',
+        marginBottom: 12,
+        borderRadius: 12,
+        backgroundColor: '#F3F4F6',
+        padding: 4,
+        gap: 4,
+    },
+    tab: {
+        flex: 1,
+        paddingVertical: 8,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    tabActive: {
+        backgroundColor: '#FFFFFF',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    tabText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#6B7280',
+    },
+    tabTextActive: {
         color: '#111827',
-        marginBottom: 16,
     },
     pickerLoading: {
         paddingVertical: 40,
@@ -504,14 +650,22 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#F3F4F6',
     },
-    positionRowDisabled: {
-        opacity: 0.5,
+    positionRowSelected: {
+        backgroundColor: '#FFFDE7',
+        borderRadius: 12,
+        paddingHorizontal: 10,
+        borderBottomWidth: 0,
+        marginBottom: 4,
     },
-    positionSide: {
-        fontSize: 16,
-        fontWeight: '900',
-        width: 36,
-        letterSpacing: 0.5,
+    positionImage: {
+        width: 44,
+        height: 44,
+        borderRadius: 10,
+    },
+    positionImagePlaceholder: {
+        backgroundColor: '#F3F4F6',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     positionTitle: {
         fontSize: 15,
@@ -519,8 +673,17 @@ const styles = StyleSheet.create({
         color: '#111827',
     },
     positionMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginTop: 2,
+    },
+    positionMetaText: {
         fontSize: 13,
         color: '#6B7280',
-        marginTop: 2,
+    },
+    positionPnl: {
+        fontSize: 13,
+        fontWeight: '700',
     },
 });

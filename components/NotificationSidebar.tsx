@@ -10,7 +10,6 @@ import {
     Animated,
     Dimensions,
     Image,
-    Pressable,
     SectionList,
     StyleSheet,
     Text,
@@ -21,7 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const defaultProfileImage = require('@/assets/default.jpeg');
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SIDEBAR_WIDTH = SCREEN_WIDTH * 0.82;
+const SIDEBAR_WIDTH = SCREEN_WIDTH;
 
 type ActivityItem =
     | { type: 'trade'; data: Trade }
@@ -84,7 +83,6 @@ export default function NotificationSidebar({
 }: NotificationSidebarProps) {
     const insets = useSafeAreaInsets();
     const slideAnim = useRef(new Animated.Value(SCREEN_WIDTH)).current;
-    const backdropOpacity = useRef(new Animated.Value(0)).current;
     const [isRendered, setIsRendered] = useState(false);
     const [loading, setLoading] = useState(false);
     const [activities, setActivities] = useState<ActivityItem[]>([]);
@@ -93,32 +91,18 @@ export default function NotificationSidebar({
         if (visible) {
             setIsRendered(true);
             loadActivity();
-            Animated.parallel([
-                Animated.spring(slideAnim, {
-                    toValue: SCREEN_WIDTH - SIDEBAR_WIDTH,
-                    useNativeDriver: true,
-                    tension: 65,
-                    friction: 11,
-                }),
-                Animated.timing(backdropOpacity, {
-                    toValue: 1,
-                    duration: 250,
-                    useNativeDriver: true,
-                }),
-            ]).start();
+            Animated.spring(slideAnim, {
+                toValue: 0,
+                useNativeDriver: true,
+                tension: 65,
+                friction: 11,
+            }).start();
         } else {
-            Animated.parallel([
-                Animated.timing(slideAnim, {
-                    toValue: SCREEN_WIDTH,
-                    duration: 200,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(backdropOpacity, {
-                    toValue: 0,
-                    duration: 200,
-                    useNativeDriver: true,
-                }),
-            ]).start(({ finished }) => {
+            Animated.timing(slideAnim, {
+                toValue: SCREEN_WIDTH,
+                duration: 200,
+                useNativeDriver: true,
+            }).start(({ finished }) => {
                 if (finished) setIsRendered(false);
             });
         }
@@ -234,12 +218,7 @@ export default function NotificationSidebar({
 
     return (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-            {/* Backdrop */}
-            <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
-                <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
-            </Animated.View>
-
-            {/* Sidebar */}
+            {/* Full-screen sidebar */}
             <Animated.View
                 style={[
                     styles.sidebar,
@@ -296,19 +275,13 @@ export default function NotificationSidebar({
 }
 
 const styles = StyleSheet.create({
-    backdrop: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.35)',
-    },
     sidebar: {
         position: 'absolute',
         top: 0,
         bottom: 0,
+        left: 0,
+        right: 0,
         backgroundColor: '#FFFFFF',
-        shadowColor: '#000',
-        shadowOffset: { width: -4, height: 0 },
-        shadowOpacity: 0.15,
-        shadowRadius: 20,
         elevation: 20,
     },
     sidebarHeader: {

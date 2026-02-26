@@ -775,19 +775,34 @@ export default function UserProfileScreen() {
     }, [trades]);
 
     useEffect(() => {
-        const activeTradeTickers = trades
+        const activeTrades = trades
             .filter((trade) => trade.marketDetails?.status === 'active')
-            .map((trade) => trade.marketTicker);
-        const uniqueTickers = Array.from(new Set(activeTradeTickers));
-        const tickersToFetch = uniqueTickers.filter((ticker) => !loadedCandleTickers.current.has(ticker));
+            .map((trade) => ({
+                marketTicker: trade.marketTicker,
+                eventTicker: trade.marketDetails?.eventTicker || trade.eventTicker,
+            }));
+        const uniqueByTicker = new Map<string, string | undefined>();
+        activeTrades.forEach(({ marketTicker, eventTicker }) => {
+            if (!uniqueByTicker.has(marketTicker)) {
+                uniqueByTicker.set(marketTicker, eventTicker);
+            }
+        });
+        const uniqueTickers = Array.from(uniqueByTicker.entries()).map(([ticker, seriesTicker]) => ({
+            ticker,
+            seriesTicker,
+        }));
+        const tickersToFetch = uniqueTickers.filter(({ ticker }) => !loadedCandleTickers.current.has(ticker));
         if (tickersToFetch.length === 0) return;
 
         let cancelled = false;
         const loadCandles = async () => {
             const results = await Promise.all(
-                tickersToFetch.map(async (ticker) => ({
+                tickersToFetch.map(async ({ ticker, seriesTicker }) => ({
                     ticker,
-                    candles: await marketsApi.fetchCandlesticksByMint({ ticker }).catch(() => [] as CandleData[]),
+                    candles: await marketsApi.fetchCandlesticksByMint({
+                        ticker,
+                        seriesTicker,
+                    }).catch(() => [] as CandleData[]),
                 }))
             );
             if (cancelled) return;

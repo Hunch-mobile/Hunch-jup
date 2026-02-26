@@ -199,6 +199,7 @@ export interface DelegationStatus {
 export interface Market {
     marketId?: string;
     ticker: string;
+    seriesTicker?: string;
     title: string;
     subtitle?: string;
     status: string; // 'active', 'finalized', 'resolved', 'closed'
@@ -223,6 +224,7 @@ export interface Market {
     noAsk?: string | null;
     yesMint?: string;
     noMint?: string;
+    colorCode?: string;
     accounts?: {
         [key: string]: {
             marketLedger?: string;
@@ -348,6 +350,61 @@ export interface Series {
 
 export interface SeriesResponse {
     series: Series[];
+}
+
+// User Positions from /api/users/:userId/positions
+export interface UserPosition {
+    marketTicker: string;
+    side: 'yes' | 'no';
+    netSize: number;
+    avgEntryPrice: number;
+    tradeCount: number;
+    lastTradedAt: string;
+    marketTitle: string;
+    marketSubtitle: string;
+    imageUrl: string | null;
+    colorCode: string | null;
+    currentPrice: number | null;
+    enteredAmount: number;
+    realizedPnl: number | null;
+    unrealizedPnl: number | null;
+    totalPnl: number | null;
+    pnlPercent: number | null;
+    isClosed: boolean;
+}
+
+export interface UserPositionsResponse {
+    positions: UserPosition[];
+    previousPositions: UserPosition[];
+}
+
+// Post Types
+export interface Post {
+    id: string;
+    userId: string;
+    content: string | null;
+    postType: 'text' | 'position_share';
+    marketTicker: string | null;
+    side: 'yes' | 'no' | null;
+    positionSize: number | null;
+    entryPrice: number | null;
+    createdAt: string;
+    updatedAt: string;
+    user?: {
+        id: string;
+        displayName: string | null;
+        avatarUrl: string | null;
+        walletAddress: string;
+    };
+}
+
+export interface CreatePostRequest {
+    content?: string;
+    postType: 'text' | 'position_share';
+    marketTicker?: string;
+    side?: 'yes' | 'no';
+    positionSize?: number;
+    entryPrice?: number;
 }
 
 // Jupiter prediction API response types
