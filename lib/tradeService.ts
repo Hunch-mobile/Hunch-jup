@@ -1,7 +1,7 @@
 // Trade service for Jupiter prediction order integration via backend.
 // Handles order requests, transaction signing, and send/confirm flow.
 
-import { Connection, VersionedTransaction } from '@solana/web3.js';
+import { clusterApiUrl, Connection, VersionedTransaction } from '@solana/web3.js';
 import { authenticatedFetch } from './api';
 
 // Constants
@@ -98,6 +98,11 @@ export function isSimulationError(error: any): boolean {
         message.includes('insufficient funds') ||
         message.includes('custom program error')
     );
+}
+
+function isMissingAccountCreditError(error: any): boolean {
+    const message = error?.message?.toLowerCase() || '';
+    return message.includes('attempt to debit an account but found no record of a prior credit');
 }
 
 /**
@@ -500,13 +505,14 @@ export function fromRawAmount(rawAmount: string | number, decimals: number = 6):
  * Flow (Privy Sponsor):
  * 1. POST /api/send-usdc  →  backend builds UNSIGNED SPL transfer tx, returns base64
  * 2. Client decodes → VersionedTransaction
- * 3. provider.request('signAndSendTransaction', { sponsorTransaction: true })
+ * 3. provider.request('signAndSendTransaction', { options: { sponsor: true } })
  *    → Privy co-signs as fee payer + user signs + Privy broadcasts
  *
  * Backend does NOT need a sponsor private key — Privy handles fee payment.
  */
 export async function sendUSDC({
     provider,
+    wallet,
     connection,
     fromAddress,
     toAddress,
@@ -515,6 +521,7 @@ export async function sendUSDC({
     senderName,
 }: {
     provider: any;
+    wallet?: any;
     connection: Connection;
     fromAddress: string;
     toAddress: string;
@@ -550,20 +557,41 @@ export async function sendUSDC({
     // Step 2: Deserialize (UNSIGNED — backend did NOT sponsor-sign it)
     const transactionBytes = Uint8Array.from(Buffer.from(txBase64, 'base64'));
     const tx = VersionedTransaction.deserialize(transactionBytes);
-    console.log('[TradeService] Unsigned tx decoded, submitting via Privy with sponsorTransaction: true...');
+    console.log('[TradeService] Unsigned tx decoded, submitting via Privy with options.sponsor: true...');
 
     // Step 3: Privy acts as fee payer + user signs + Privy broadcasts
-    try {
-        const result = await provider.request({
+    const sendWithConnection = async (conn: Connection) =>
+        provider.request({
             method: 'signAndSendTransaction',
             params: {
                 transaction: tx,
-                connection,
+                wallet,
+                chain: 'solana:mainnet',
+                connection: conn,
+                sponsor: true,
                 options: {
-                    sponsorTransaction: true, // Privy pays SOL fee
+                    // Privy docs use `sponsor`; keep legacy key too for SDK compatibility.
+                    sponsor: true,
+                    sponsorTransaction: true,
                 },
             },
         });
+
+    try {
+        let result: any;
+        try {
+            result = await sendWithConnection(connection);
+        } catch (err: any) {
+            // Retry once on explicit mainnet RPC when provider/connection cluster mismatch
+            // causes "Attempt to debit an account but found no record of a prior credit."
+            if (isMissingAccountCreditError(err)) {
+                const fallbackConn = new Connection(clusterApiUrl('mainnet-beta'), 'confirmed');
+                console.warn('[TradeService] Retrying USDC send on mainnet RPC due to account credit simulation error...');
+                result = await sendWithConnection(fallbackConn);
+            } else {
+                throw err;
+            }
+        }
 
         const signature: string =
             typeof result === 'string'

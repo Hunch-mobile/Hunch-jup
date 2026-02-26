@@ -7,6 +7,7 @@ import { ListFooterSkeleton, SocialFeedSkeleton } from '@/components/skeletons';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, getMarketDetails, marketsApi } from "@/lib/api";
+import { invertCandlesForNoSide } from "@/lib/marketUtils";
 import { User as BackendUser, CandleData, Event, EventEvidence, Market, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
@@ -146,15 +147,6 @@ const getEntryPnl = (candles: CandleData[], entryTimestamp: number, isYes: boole
     };
 };
 
-const transformNoCandles = (candles: CandleData[] = []) => {
-    if (candles.length === 0) return candles;
-    return candles.map((candle) => {
-        if (typeof candle.close !== 'number') return candle;
-        const nextClose = 1 - candle.close;
-        return nextClose === candle.close ? candle : { ...candle, close: nextClose };
-    });
-};
-
 // Chart dimensions for FeedCard
 const FEED_CARD_CHART_WIDTH = SCREEN_WIDTH - 40 - 28; // mx-5 (40) + p-3.5 (28)
 const FEED_CARD_CHART_HEIGHT = 72;
@@ -188,7 +180,7 @@ const FeedCard = ({
     const entryTimestamp = Math.floor(new Date(item.createdAt).getTime() / 1000);
     const priceChange = candles ? (getEntryPnl(candles, entryTimestamp, isYes) || getPriceChange(candles)) : null;
     const chartCandles = useMemo(
-        () => (isYes ? (candles || []) : transformNoCandles(candles || [])),
+        () => (isYes ? (candles || []) : invertCandlesForNoSide(candles || [])),
         [candles, isYes]
     );
     const pnlText = priceChange ? `${priceChange.isPositive ? '+' : ''}${priceChange.changePercent}%` : (isYes ? '+0.0%' : '-0.0%');
@@ -514,18 +506,42 @@ export default function SocialScreen() {
         }
     };
 
+    const HYDRATE_LIMIT = 8;
     const hydrateMarketDetails = useCallback((items: FeedItem[], targetMode: 'following' | 'global') => {
-        items.forEach(async (item) => {
-            const marketDetails = await getMarketDetails(item.marketTicker);
-            if (!marketDetails) return;
-            setFeedItemsByMode(prev => ({
+        const toHydrate = items.slice(0, HYDRATE_LIMIT);
+        if (toHydrate.length === 0) return;
+        Promise.all(
+            toHydrate.map(async (item) => {
+                const [marketDetails, candles] = await Promise.all([
+                    getMarketDetails(item.marketTicker),
+                    marketsApi.fetchCandlesticksByMint({ ticker: item.marketTicker }).catch(() => [] as CandleData[]),
+                ]);
+                return { item, marketDetails, candles };
+            })
+        ).then((results) => {
+            const updates: { id: string; ticker: string; marketDetails: Market; candles: CandleData[] }[] = [];
+            results.forEach((r) => {
+                if (r.marketDetails)
+                    updates.push({
+                        id: r.item.id,
+                        ticker: r.item.marketTicker,
+                        marketDetails: r.marketDetails,
+                        candles: r.candles,
+                    });
+            });
+            if (updates.length === 0) return;
+            setFeedItemsByMode((prev) => ({
                 ...prev,
-                [targetMode]: prev[targetMode].map(existing =>
-                    existing.id === item.id ? { ...existing, marketDetails } : existing
-                ),
+                [targetMode]: prev[targetMode].map((existing) => {
+                    const u = updates.find((x) => x.id === existing.id);
+                    return u ? { ...existing, marketDetails: u.marketDetails } : existing;
+                }),
             }));
-            // No candlestick endpoint in Jupiter prediction API; keep chart state empty.
-            setCandlesMap(prev => ({ ...prev, [item.marketTicker]: [] }));
+            setCandlesMap((prev) => {
+                const next = { ...prev };
+                updates.forEach((u) => { next[u.ticker] = u.candles; });
+                return next;
+            });
         });
     }, []);
 

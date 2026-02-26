@@ -1,7 +1,8 @@
-import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreateTradeRequest, DelegationStatus, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PositionsResponse, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse } from './types';
+import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PositionsResponse, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunchdotrun-roan.vercel.app';
 const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
+const DFLOW_CANDLESTICK_BASE_URL = 'http://hunchdotrun-roan.vercel.app';
 
 // Auth token getter - must be set by the app before making authenticated calls
 let _getAccessToken: (() => Promise<string | null>) | null = null;
@@ -87,12 +88,16 @@ export const api = {
     },
 
     getUser: async (userId: string): Promise<User> => {
+        const cached = userCache.get(userId);
+        if (cached && Date.now() - cached.timestamp < CACHE_DURATION) return cached.data;
         const response = await fetch(`${API_BASE_URL}/api/users/${userId}`);
         if (!response.ok) {
             const error = await safeJsonParse(response);
             throw new Error(error?.error || 'Failed to get user');
         }
-        return response.json();
+        const user = await response.json();
+        userCache.set(userId, { data: user, timestamp: Date.now() });
+        return user;
     },
 
     registerPushToken: async (expoPushToken: string): Promise<void> => {
@@ -470,6 +475,76 @@ type HomeFeedResult = {
 const HOME_FEED_REQUEST_CACHE_DURATION = 20 * 1000; // 20 seconds
 const homeFeedRequestCache = new Map<string, { data: HomeFeedResult; timestamp: number }>();
 const homeFeedInFlightRequests = new Map<string, Promise<HomeFeedResult>>();
+const CANDLESTICK_REQUEST_CACHE_DURATION = 20 * 1000; // 20 seconds
+const candlestickRequestCache = new Map<string, { data: CandleData[]; timestamp: number }>();
+const candlestickInFlightRequests = new Map<string, Promise<CandleData[]>>();
+
+const toUnitPrice = (rawValue: unknown, rawDollarValue: unknown): number | null => {
+    const fromDollar = toNumberSafe(rawDollarValue);
+    if (fromDollar !== null) return fromDollar;
+
+    const n = toNumberSafe(rawValue);
+    if (n === null) return null;
+    // Prefer dollars when present; otherwise assume cents when >1.
+    return n > 1 ? n / 100 : n;
+};
+
+const mapDFlowCandlesticksToCandles = (payload: DFlowCandlesticksResponse | null): CandleData[] => {
+    if (!payload?.candlesticks?.length) return [];
+
+    return payload.candlesticks
+        .map((row) => {
+            const timestamp = toNumberSafe((row as any)?.end_period_ts);
+            const open = toUnitPrice((row as any)?.price?.open, (row as any)?.price?.open_dollars);
+            const high = toUnitPrice((row as any)?.price?.high, (row as any)?.price?.high_dollars);
+            const low = toUnitPrice((row as any)?.price?.low, (row as any)?.price?.low_dollars);
+            const close = toUnitPrice((row as any)?.price?.close, (row as any)?.price?.close_dollars);
+            const previous = toUnitPrice((row as any)?.price?.previous, (row as any)?.price?.previous_dollars);
+            const volume = toNumberSafe((row as any)?.volume) ?? 0;
+
+            if (timestamp === null) {
+                return null;
+            }
+            const fallback = previous;
+            const normalizedOpen = open ?? fallback;
+            const normalizedHigh = high ?? fallback;
+            const normalizedLow = low ?? fallback;
+            const normalizedClose = close ?? fallback;
+            if (
+                normalizedOpen === null ||
+                normalizedHigh === null ||
+                normalizedLow === null ||
+                normalizedClose === null
+            ) {
+                return null;
+            }
+            if (normalizedHigh < normalizedLow) {
+                // If source high/low are missing/inverted around fallback values,
+                // recover by recomputing from available normalized points.
+                const recoveredHigh = Math.max(normalizedOpen, normalizedHigh, normalizedLow, normalizedClose);
+                const recoveredLow = Math.min(normalizedOpen, normalizedHigh, normalizedLow, normalizedClose);
+                return {
+                    timestamp,
+                    open: normalizedOpen,
+                    high: recoveredHigh,
+                    low: recoveredLow,
+                    close: normalizedClose,
+                    volume,
+                } as CandleData;
+            }
+
+            return {
+                timestamp,
+                open: normalizedOpen,
+                high: normalizedHigh,
+                low: normalizedLow,
+                close: normalizedClose,
+                volume,
+            } as CandleData;
+        })
+        .filter((candle): candle is CandleData => candle !== null)
+        .sort((a, b) => a.timestamp - b.timestamp);
+};
 
 const mapJupiterMarketToMarket = (market: any, eventId?: string): Market => {
     const buyYes = microUsdToUnitPrice(market?.pricing?.buyYesPriceUsd);
@@ -490,7 +565,7 @@ const mapJupiterMarketToMarket = (market: any, eventId?: string): Market => {
         subtitle: market?.metadata?.subtitle || market?.eventTitle || '',
         status: normalizedStatus,
         yesSubTitle: market?.metadata?.title || market?.marketTitle,
-        noSubTitle: market?.metadata?.subtitle,
+        noSubTitle: market?.metadata?.title || market?.marketTitle,
         openTime: market?.openTime ?? market?.metadata?.openTime,
         closeTime: market?.closeTime ?? market?.metadata?.closeTime,
         volume: toNumberSafe(market?.pricing?.volume) ?? undefined,
@@ -776,14 +851,83 @@ export const marketsApi = {
         throw new Error(`Market not found for id: ${ticker}`);
     },
 
-    fetchCandlesticksByMint: async (): Promise<CandleData[]> => {
-        // No candlestick endpoint in current Jupiter API surface.
-        return [];
+    fetchCandlesticksByMint: async ({
+        ticker,
+        marketTicker,
+        marketId,
+        startTs,
+        endTs,
+        periodInterval = 60,
+    }: {
+        ticker?: string;
+        marketTicker?: string;
+        marketId?: string;
+        startTs?: number;
+        endTs?: number;
+        periodInterval?: number;
+    }): Promise<CandleData[]> => {
+        const resolvedTicker = marketTicker || marketId || ticker;
+        if (!resolvedTicker) return [];
+
+        const nowTs = Math.floor(Date.now() / 1000);
+        const effectiveEndTs = typeof endTs === 'number' && Number.isFinite(endTs) ? endTs : nowTs;
+        const effectiveStartTs =
+            typeof startTs === 'number' && Number.isFinite(startTs)
+                ? startTs
+                : Math.max(0, effectiveEndTs - 7 * 24 * 60 * 60);
+
+        const params = new URLSearchParams({
+            startTs: String(effectiveStartTs),
+            endTs: String(effectiveEndTs),
+            periodInterval: String(Math.max(1, Math.floor(periodInterval))),
+        });
+        const requestUrl = `${DFLOW_CANDLESTICK_BASE_URL}/api/dflow/market/${encodeURIComponent(
+            resolvedTicker
+        )}/candlesticks?${params.toString()}`;
+
+        const now = Date.now();
+        const cached = candlestickRequestCache.get(requestUrl);
+        if (cached && now - cached.timestamp < CANDLESTICK_REQUEST_CACHE_DURATION) {
+            return cached.data;
+        }
+
+        const inFlight = candlestickInFlightRequests.get(requestUrl);
+        if (inFlight) {
+            return inFlight;
+        }
+
+        const requestPromise = (async () => {
+            const response = await fetch(requestUrl);
+            if (!response.ok) {
+                const error = await safeJsonParse(response);
+                throw new Error(error?.error || `Failed to fetch candlesticks (${response.status})`);
+            }
+            const payload = (await safeJsonParse(response)) as DFlowCandlesticksResponse | null;
+            const candles = mapDFlowCandlesticksToCandles(payload);
+
+            candlestickRequestCache.set(requestUrl, { data: candles, timestamp: now });
+            if (candlestickRequestCache.size > 200) {
+                for (const [key, value] of candlestickRequestCache) {
+                    if (now - value.timestamp >= CANDLESTICK_REQUEST_CACHE_DURATION) {
+                        candlestickRequestCache.delete(key);
+                    }
+                }
+            }
+            return candles;
+        })();
+
+        candlestickInFlightRequests.set(requestUrl, requestPromise);
+        try {
+            return await requestPromise;
+        } finally {
+            candlestickInFlightRequests.delete(requestUrl);
+        }
     },
 };
 
 // Market details cache to avoid repeated API calls
 const marketCache = new Map<string, { data: Market; timestamp: number }>();
+const userCache = new Map<string, { data: User; timestamp: number }>();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 const indexMappedEvents = (events: Event[]): void => {

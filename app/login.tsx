@@ -137,7 +137,8 @@ export default function LoginScreen() {
             }
 
             console.log('==========================================');
-            setLoadingProvider(null);
+            setDrawerOpen(false);
+            // Keep loadingProvider set — cleared when sync completes
         },
     });
 
@@ -180,6 +181,11 @@ export default function LoginScreen() {
         }, 1000);
         return () => clearInterval(interval);
     }, []);
+
+    // Force-close drawer when authenticated (prevents drawer appearing on Home during nav)
+    useEffect(() => {
+        if (backendUser) setDrawerOpen(false);
+    }, [backendUser]);
 
     useEffect(() => {
         const syncUser = async () => {
@@ -254,6 +260,7 @@ export default function LoginScreen() {
                 }
             } finally {
                 setIsSyncing(false);
+                setLoadingProvider(null);
                 syncLockRef.current = false;
                 console.log('========== SYNC COMPLETE ==========');
             }
@@ -308,6 +315,7 @@ export default function LoginScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         setError("");
         setWalletPendingRetry(false);
+        setDrawerOpen(false);
         setLoadingProvider(provider);
         console.log(`[Login] Starting ${provider} OAuth flow...`);
         console.log('[Login] App Config:', {
@@ -318,8 +326,21 @@ export default function LoginScreen() {
         oauth.login({ provider });
     };
 
+    const isRedirectingOrSyncing = loadingProvider !== null || isSyncing;
+
+    // Never show drawer when redirecting, syncing, or authenticated
+    const shouldShowDrawer = drawerOpen && !backendUser && !isRedirectingOrSyncing;
+
     return (
         <View style={styles.container}>
+            {/* Full-screen loading overlay when returning from OAuth or syncing */}
+            {isRedirectingOrSyncing && (
+                <View style={styles.loadingOverlay} pointerEvents="box-only">
+                    <ActivityIndicator size="large" color="#000" />
+                    <Text style={styles.loadingOverlayText}>Signing you in...</Text>
+                </View>
+            )}
+
             {/* Animated hero (frame1 → frame2 → frame3) */}
             <Animated.View
                 style={[
@@ -385,9 +406,9 @@ export default function LoginScreen() {
                 </View>
             </View>
 
-            {/* Login Drawer */}
+            {/* Login Drawer — hide when authenticated or redirecting to avoid showing on Home */}
             <Modal
-                visible={drawerOpen}
+                visible={shouldShowDrawer}
                 transparent
                 animationType="slide"
                 onRequestClose={closeDrawer}
@@ -492,6 +513,19 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#fde704',
     },
+    loadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(253, 231, 4, 0.95)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+    },
+    loadingOverlayText: {
+        marginTop: 16,
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#000',
+    },
     bottomArea: {
         position: 'absolute',
         bottom: 0,
@@ -511,10 +545,10 @@ const styles = StyleSheet.create({
         paddingTop: 60,
     },
     heroImageWrap: {
-        flex: 1,
         width: '100%',
         alignItems: 'center',
         justifyContent: 'center',
+        paddingTop: 40,
     },
     hatPlayArrow: {
         position: 'absolute',
@@ -525,7 +559,7 @@ const styles = StyleSheet.create({
     },
     heroImage: {
         width: width * 0.9,
-        height: height * 0.85,
+        height: height * 0.6,
     },
     buttonContainer: {
         width: '100%',

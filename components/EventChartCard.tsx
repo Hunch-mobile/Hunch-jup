@@ -1,4 +1,5 @@
 import { Theme } from '@/constants/theme';
+import { marketsApi } from '@/lib/api';
 import { CandleData, Market } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -77,10 +78,36 @@ export const EventChartCard: React.FC<EventChartCardProps> = ({
         }
     }, [basePrice, isInteracting]);
 
-    // Jupiter prediction API does not expose candlestick data.
     useEffect(() => {
-        setCandles([]);
-        setLoading(false);
+        let cancelled = false;
+        const loadCandles = async () => {
+            setLoading(true);
+            try {
+                const endTs = Math.floor(Date.now() / 1000);
+                const startTs = Math.max(0, endTs - 7 * 24 * 60 * 60);
+                const data = await marketsApi.fetchCandlesticksByMint({
+                    ticker: market.ticker,
+                    startTs,
+                    endTs,
+                    periodInterval: 60,
+                });
+                if (!cancelled) {
+                    setCandles(data);
+                }
+            } catch {
+                if (!cancelled) {
+                    setCandles([]);
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            }
+        };
+        loadCandles();
+        return () => {
+            cancelled = true;
+        };
     }, [market.ticker]);
 
     const handlePriceSelect = useCallback((price: number, _index: number) => {

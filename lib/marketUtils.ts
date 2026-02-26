@@ -1,4 +1,4 @@
-import { Event, Market } from './types';
+import { CandleData, Event, Market } from './types';
 
 /**
  * Format a decimal probability value to a percentage string
@@ -193,4 +193,19 @@ export const getScoredEventsForRail = (
         .slice(0, limit);
 
     return scoredEvents;
+};
+
+/**
+ * Convert Yes-side candles into No-side candles (No = 1 - Yes).
+ * High/low are swapped after inversion to preserve OHLC ordering.
+ */
+export const invertCandlesForNoSide = (candles: CandleData[] = []): CandleData[] => {
+    if (!candles.length) return candles;
+    return candles.map((candle) => ({
+        ...candle,
+        open: 1 - candle.open,
+        high: 1 - candle.low,
+        low: 1 - candle.high,
+        close: 1 - candle.close,
+    }));
 };

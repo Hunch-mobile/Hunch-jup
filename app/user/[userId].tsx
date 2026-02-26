@@ -292,6 +292,7 @@ export default function UserProfileScreen() {
         active: [],
         previous: [],
     });
+    const [eventTitleByTicker, setEventTitleByTicker] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
     const [tradesLoading, setTradesLoading] = useState(false);
     const [isLoadingPositions, setIsLoadingPositions] = useState(true);
@@ -512,20 +513,6 @@ export default function UserProfileScreen() {
     }, [currentUser?.walletAddress]);
 
     useEffect(() => {
-        if (userId) {
-            loadProfile();
-            loadTrades();
-            loadPositions();
-            if (currentUser && !isOwnProfile) {
-                checkFollowStatus();
-                // Load copy settings
-                fetchAllCopySettings();
-            }
-        }
-        loadUsdcBalance();
-    }, [userId, currentUser, loadUsdcBalance]);
-
-    useEffect(() => {
         if (copySettings && userId) {
             setIsCopying(copySettings.some(s => s.leaderId === userId));
         }
@@ -549,17 +536,14 @@ export default function UserProfileScreen() {
         try {
             setTradesLoading(true);
             const data = await api.getUserTrades(userId as string, 50);
-            setTrades(data);
-            data.forEach(async (trade, index) => {
-                const marketDetails = await getMarketDetails(trade.marketTicker);
-                if (marketDetails) {
-                    setTrades(prev => {
-                        const updated = [...prev];
-                        updated[index] = { ...updated[index], marketDetails };
-                        return updated;
-                    });
-                }
-            });
+            const tickers = [...new Set(data.map((t) => t.marketTicker))];
+            const markets = await Promise.all(tickers.map((t) => getMarketDetails(t)));
+            const marketMap = new Map(tickers.map((t, i) => [t, markets[i]]));
+            const withMarkets = data.map((t) => ({
+                ...t,
+                marketDetails: marketMap.get(t.marketTicker) ?? undefined,
+            }));
+            setTrades(withMarkets);
         } catch (err) {
             console.error("Failed to fetch trades:", err);
         } finally {
@@ -578,6 +562,54 @@ export default function UserProfileScreen() {
             setIsLoadingPositions(false);
         }
     };
+
+    useEffect(() => {
+        if (!userId) return;
+        let cancelled = false;
+        const run = async () => {
+            try {
+                await Promise.all([
+                    (async () => {
+                        const data = await api.getUser(userId as string);
+                        if (!cancelled) setProfile(data);
+                    })(),
+                    (async () => {
+                        const data = await api.getUserTrades(userId as string, 50);
+                        const tickers = [...new Set(data.map((t) => t.marketTicker))];
+                        const markets = await Promise.all(tickers.map((t) => getMarketDetails(t)));
+                        const marketMap = new Map(tickers.map((t, i) => [t, markets[i]]));
+                        const withMarkets = data.map((t) => ({
+                            ...t,
+                            marketDetails: marketMap.get(t.marketTicker) ?? undefined,
+                        }));
+                        if (!cancelled) setTrades(withMarkets);
+                    })(),
+                    (async () => {
+                        const data = await api.getPositions(userId as string);
+                        if (!cancelled) setPositions(data.positions);
+                    })(),
+                ]);
+            } catch (err: any) {
+                if (!cancelled) setError(err?.message || "Failed to load profile");
+            } finally {
+                if (!cancelled) setLoading(false);
+                if (!cancelled) setTradesLoading(false);
+                if (!cancelled) setIsLoadingPositions(false);
+                if (!cancelled) {
+                    if (currentUser && !isOwnProfile) {
+                        checkFollowStatus();
+                        fetchAllCopySettings();
+                    }
+                    loadUsdcBalance();
+                }
+            }
+        };
+        setLoading(true);
+        setTradesLoading(true);
+        setIsLoadingPositions(true);
+        run();
+        return () => { cancelled = true; };
+    }, [userId]);
 
     const checkFollowStatus = async () => {
         if (!currentUser) return;
@@ -742,7 +774,6 @@ export default function UserProfileScreen() {
         };
     }, [trades]);
 
-    // Jupiter prediction API does not expose candlestick data.
     useEffect(() => {
         const activeTradeTickers = trades
             .filter((trade) => trade.marketDetails?.status === 'active')
@@ -753,7 +784,12 @@ export default function UserProfileScreen() {
 
         let cancelled = false;
         const loadCandles = async () => {
-            const results = tickersToFetch.map((ticker) => ({ ticker, candles: [] as CandleData[] }));
+            const results = await Promise.all(
+                tickersToFetch.map(async (ticker) => ({
+                    ticker,
+                    candles: await marketsApi.fetchCandlesticksByMint({ ticker }).catch(() => [] as CandleData[]),
+                }))
+            );
             if (cancelled) return;
             setCandlesByTicker((prev) => {
                 const next = { ...prev };
@@ -769,6 +805,24 @@ export default function UserProfileScreen() {
             cancelled = true;
         };
     }, [trades]);
+
+    const activePositions = positions.active;
+    const previousPositions = positions.previous;
+
+    useEffect(() => {
+        const tickers = [...new Set([...activePositions, ...previousPositions].map((p) => p.eventTicker).filter(Boolean))] as string[];
+        if (tickers.length === 0) return;
+        let cancelled = false;
+        Promise.all(tickers.map((t) => getEventDetails(t)))
+            .then((events) => {
+                if (cancelled) return;
+                const next: Record<string, string> = {};
+                tickers.forEach((t, i) => { if (events[i]?.title) next[t] = events[i].title; });
+                setEventTitleByTicker((prev) => ({ ...prev, ...next }));
+            })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, [activePositions, previousPositions]);
 
     if (loading) {
         return (
@@ -796,14 +850,10 @@ export default function UserProfileScreen() {
         );
     }
 
-    const displayName = profile.displayName || `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}`;
-    // Use displayName directly - it already includes @ if present from backend
-    const username = displayName;
+    const username = profile.username
+        ? (profile.username.startsWith('@') ? profile.username : `@${profile.username}`)
+        : `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}`;
     const profileImageUrl = profile.avatarUrl?.replace('_normal', '');
-
-    // Use positions from API
-    const activePositions = positions.active;
-    const previousPositions = positions.previous;
 
     return (
         <View className="flex-1 bg-app-bg">
@@ -992,6 +1042,7 @@ export default function UserProfileScreen() {
                                                 <PositionCard
                                                     key={`${position.marketTicker}-${position.side}`}
                                                     position={position}
+                                                    eventTitle={position.eventTicker ? eventTitleByTicker[position.eventTicker] : undefined}
                                                     onPress={() => handleOpenMarketSheet(position)}
                                                 />
                                             ))}
@@ -1015,6 +1066,7 @@ export default function UserProfileScreen() {
                                                     key={`${position.marketTicker}-${position.side}`}
                                                     position={position}
                                                     isPrevious
+                                                    eventTitle={position.eventTicker ? eventTitleByTicker[position.eventTicker] : undefined}
                                                     onPress={() => handleOpenMarketSheet(position)}
                                                 />
                                             ))}
@@ -1113,7 +1165,7 @@ export default function UserProfileScreen() {
                 isOpen={copyModalVisible}
                 onClose={() => setCopyModalVisible(false)}
                 leaderId={userId as string}
-                leaderName={profile?.displayName || 'User'}
+                leaderName={username || 'User'}
                 onSave={() => {
                     fetchAllCopySettings();
                     setCopyModalVisible(false);
@@ -1150,6 +1202,7 @@ export default function UserProfileScreen() {
                             const provider = await solanaWallet.getProvider();
                             await sendUSDC({
                                 provider,
+                                wallet: solanaWallet,
                                 connection,
                                 fromAddress: currentUser.walletAddress,
                                 toAddress,

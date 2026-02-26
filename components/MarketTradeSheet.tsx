@@ -3,7 +3,8 @@ import LightChart from '@/components/LightChart';
 import { Toast } from '@/components/Toast';
 import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
-import { api, getEventDetails } from "@/lib/api";
+import { api, getEventDetails, marketsApi } from "@/lib/api";
+import { invertCandlesForNoSide } from "@/lib/marketUtils";
 import { executeTrade, fromRawAmount, requestOrder, toRawAmount, USDC_MINT } from "@/lib/tradeService";
 import { User as BackendUser, CandleData, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,17 +18,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SHEET_CHART_HEIGHT = 200;
 const SWIPE_THRESHOLD = 0.7;
-
-// Transform candles for "No" side display
-const transformNoCandles = (candles: CandleData[] = []): CandleData[] => {
-    return candles.map(c => ({
-        ...c,
-        open: 1 - c.open,
-        high: 1 - c.low,
-        low: 1 - c.high,
-        close: 1 - c.close,
-    }));
-};
 
 // SwipeToTrade component
 const SwipeToTrade = ({
@@ -173,6 +163,13 @@ const TIME_FILTER_OPTIONS: { key: TimeFilter; label: string; seconds: number }[]
     { key: '1m', label: '1M', seconds: 30 * 24 * 60 * 60 },
     { key: 'all', label: 'All', seconds: 365 * 24 * 60 * 60 },
 ];
+
+const TIME_FILTER_INTERVALS: Record<TimeFilter, 1 | 60 | 1440> = {
+    '24h': 1,
+    '1w': 60,
+    '1m': 60,
+    'all': 1440,
+};
 
 export interface MarketTradeSheetProps {
     visible: boolean;
@@ -393,8 +390,20 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
         const fetchFilteredCandles = async () => {
             setIsLoadingCandles(true);
             try {
-                    // Jupiter prediction routes do not expose candlestick data.
-                    setFilteredCandles([]);
+                const selectedFilter = TIME_FILTER_OPTIONS.find((opt) => opt.key === timeFilter);
+                const endTs = Math.floor(Date.now() / 1000);
+                const startTs =
+                    timeFilter === 'all'
+                        ? Math.max(0, endTs - 365 * 24 * 60 * 60)
+                        : Math.max(0, endTs - (selectedFilter?.seconds || 7 * 24 * 60 * 60));
+                const periodInterval = TIME_FILTER_INTERVALS[timeFilter];
+                const candles = await marketsApi.fetchCandlesticksByMint({
+                    marketTicker: market.ticker,
+                    startTs,
+                    endTs,
+                    periodInterval,
+                });
+                setFilteredCandles(candles);
             } catch (error) {
                 console.error('Failed to fetch filtered candles:', error);
                 setFilteredCandles(initialCandles || []);
@@ -516,7 +525,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
 
     const displayCandles = filteredCandles.length > 0 ? filteredCandles : (initialCandles || []);
     const chartCandles = useMemo(
-        () => (selectedSide === 'no' ? transformNoCandles(displayCandles) : displayCandles),
+        () => (selectedSide === 'no' ? invertCandlesForNoSide(displayCandles) : displayCandles),
         [displayCandles, selectedSide]
     );
     const chartContainerRef = useRef<View>(null);

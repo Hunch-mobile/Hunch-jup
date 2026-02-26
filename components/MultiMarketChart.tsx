@@ -1,4 +1,5 @@
 import { Theme } from '@/constants/theme';
+import { marketsApi } from '@/lib/api';
 import { CandleData, Market } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -77,16 +78,47 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
     const chartWidth = SCREEN_WIDTH - CHART_PADDING * 2;
     const drawableWidth = chartWidth - RIGHT_PADDING;
 
-    // Jupiter prediction API does not expose candlestick data.
     useEffect(() => {
-        const results = markets.slice(0, 4).map((market) => ({
-            market,
-            candles: [],
-            color: CHART_GREEN,
-            loading: false,
-        }));
-        setMarketData(results);
-        setLoading(false);
+        let cancelled = false;
+        const loadMarketCandles = async () => {
+            setLoading(true);
+            try {
+                const selectedFilter = TIME_FILTER_OPTIONS.find((opt) => opt.key === timeFilter);
+                const endTs = Math.floor(Date.now() / 1000);
+                const results = await Promise.all(
+                    markets.slice(0, 4).map(async (market, index) => {
+                        const startTs =
+                            timeFilter === 'all'
+                                ? Math.max(0, market.openTime || endTs - 365 * 24 * 60 * 60)
+                                : Math.max(0, endTs - (selectedFilter?.seconds || 7 * 24 * 60 * 60));
+                        const candles = await marketsApi.fetchCandlesticksByMint({
+                            ticker: market.ticker,
+                            startTs,
+                            endTs,
+                            periodInterval: 60,
+                        }).catch(() => [] as CandleData[]);
+
+                        return {
+                            market,
+                            candles,
+                            color: index % 2 === 0 ? CHART_GREEN : CHART_PINK,
+                            loading: false,
+                        };
+                    })
+                );
+                if (!cancelled) {
+                    setMarketData(results);
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            }
+        };
+        loadMarketCandles();
+        return () => {
+            cancelled = true;
+        };
     }, [markets, timeFilter]);
 
     // Skeleton pulse animation

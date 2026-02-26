@@ -151,17 +151,33 @@ export default function FollowersFollowingScreen() {
         })
     ).current;
 
+    const loadedTabsRef = useRef<Set<TabType>>(new Set());
+
     useEffect(() => {
-        if (userId) {
-            loadViewedUser();
+        if (!userId) return;
+        loadedTabsRef.current = new Set();
+        loadViewedUser();
+        const tab = (initialTab as TabType) || 'followers';
+        if (tab === 'followers') {
             loadFollowers();
+            loadedTabsRef.current.add('followers');
+        } else {
             loadFollowing();
-            if (backendUser) {
-                loadMyFollowingList();
-                loadCopySettings();
-            }
+            loadedTabsRef.current.add('following');
+        }
+        if (backendUser) {
+            loadMyFollowingList();
+            loadCopySettings();
         }
     }, [userId, backendUser]);
+
+    useEffect(() => {
+        const tab = activeTab;
+        if (loadedTabsRef.current.has(tab)) return;
+        loadedTabsRef.current.add(tab);
+        if (tab === 'followers') loadFollowers();
+        else loadFollowing();
+    }, [activeTab]);
 
     const loadCopySettings = async () => {
         if (!backendUser) return;

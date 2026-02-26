@@ -63,6 +63,7 @@ export default function ProfileScreen() {
         previous: [],
     });
     const [isLoadingPositions, setIsLoadingPositions] = useState(true);
+    const [eventTitleByTicker, setEventTitleByTicker] = useState<Record<string, string>>({});
 
     // Sell position state
     const [sellSheetVisible, setSellSheetVisible] = useState(false);
@@ -201,10 +202,44 @@ export default function ProfileScreen() {
     }, [slideAnim, indicatorAnim, paneWidth, tabWidth]);
 
     useEffect(() => {
-        loadProfile();
-        loadTrades();
-        loadPositions();
-    }, [backendUser]);
+        if (!backendUser) return;
+        let cancelled = false;
+        const run = async () => {
+            setIsLoading(true);
+            setIsLoadingPositions(true);
+            try {
+                await Promise.all([
+                    (async () => {
+                        const data = await api.getUser(backendUser.id);
+                        if (!cancelled) setProfileData(data);
+                    })(),
+                    (async () => {
+                        const data = await api.getUserTrades(backendUser.id, 50);
+                        if (!cancelled) setTrades(data);
+                    })(),
+                    (async () => {
+                        const data = await api.getPositions(backendUser.id);
+                        if (!cancelled) setPositions(data.positions);
+                    })(),
+                ]);
+            } catch (error) {
+                console.error("Failed to load profile data:", error);
+            } finally {
+                if (!cancelled) {
+                    setIsLoading(false);
+                    setIsLoadingPositions(false);
+                }
+                // Defer non-critical: balances and copy settings (don't block initial paint)
+                if (!cancelled) {
+                    loadSolBalance();
+                    loadUsdcBalance();
+                    fetchAllCopySettings();
+                }
+            }
+        };
+        run();
+        return () => { cancelled = true; };
+    }, [backendUser?.id]);
 
     useEffect(() => {
         const loop = Animated.loop(
@@ -307,14 +342,23 @@ export default function ProfileScreen() {
         }
     }, [walletAddress]);
 
-    useEffect(() => {
-        loadSolBalance();
-        loadUsdcBalance();
-        fetchAllCopySettings();
-    }, [loadSolBalance, loadUsdcBalance, fetchAllCopySettings]);
-
     const activePositions = positions.active;
     const previousPositions = positions.previous;
+
+    useEffect(() => {
+        const tickers = [...new Set([...activePositions, ...previousPositions].map((p) => p.eventTicker).filter(Boolean))] as string[];
+        if (tickers.length === 0) return;
+        let cancelled = false;
+        Promise.all(tickers.map((t) => getEventDetails(t)))
+            .then((events) => {
+                if (cancelled) return;
+                const next: Record<string, string> = {};
+                tickers.forEach((t, i) => { if (events[i]?.title) next[t] = events[i].title; });
+                setEventTitleByTicker((prev) => ({ ...prev, ...next }));
+            })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, [activePositions, previousPositions]);
 
     const getPnlValue = useCallback((p: AggregatedPosition): number => {
         const pnl =
@@ -339,6 +383,12 @@ export default function ProfileScreen() {
 
     const displayedCount =
         positionFilter === 'previous' ? previousPositions.length : activePositions.length;
+
+    const togglePositionFilter = useCallback(() => {
+        setPositionFilter((prev) => (prev === 'active' ? 'previous' : 'active'));
+        setSortDirection(null);
+        Haptics.selectionAsync();
+    }, []);
 
     const handleLogout = async () => {
         try {
@@ -579,6 +629,7 @@ export default function ProfileScreen() {
                                 tradesCount={trades.length}
                                 balance={cashBalance}
                                 walletAddress={walletAddress || ""}
+                                wallet={solanaWallet}
                                 walletProvider={walletProvider}
                                 connection={connection}
                                 onWithdrawSuccess={(amount) => {
@@ -655,39 +706,37 @@ export default function ProfileScreen() {
                                 <View style={styles.listPane}>
                                     {activeTab === 'positions' && (
                                         <View className="flex-row items-center justify-between mb-4">
-                                            {/* Active / Previous segmented control */}
-                                            <View className="flex-1 mr-3">
-                                                <View className="flex-row bg-app-card rounded-2xl p-1 border border-border/40">
-                                                    {([
-                                                        { key: 'active', label: 'Active' },
-                                                        { key: 'previous', label: 'Previous' },
-                                                    ] as const).map((item) => {
-                                                        const selected = positionFilter === item.key;
-                                                        return (
-                                                            <TouchableOpacity
-                                                                key={item.key}
-                                                                onPress={() => {
-                                                                    setPositionFilter(item.key);
-                                                                    setSortDirection(null);
-                                                                    Haptics.selectionAsync();
-                                                                }}
-                                                                activeOpacity={0.85}
-                                                                className={`flex-1 py-2 rounded-xl items-center ${
-                                                                    selected ? 'bg-black' : ''
-                                                                }`}
-                                                            >
-                                                                <Text
-                                                                    className={`text-[13px] font-semibold ${
-                                                                        selected ? 'text-white' : 'text-txt-secondary'
-                                                                    }`}
-                                                                >
-                                                                    {item.label}
-                                                                </Text>
-                                                            </TouchableOpacity>
-                                                        );
-                                                    })}
-                                                </View>
-                                            </View>
+                                            {/* Active / Previous single-toggle pill */}
+                                            {(() => {
+                                                const isPrevious = positionFilter === 'previous';
+                                                const filterColor = isPrevious ? '#FF10F0' : '#00e000';
+                                                return (
+                                                    <TouchableOpacity
+                                                        onPress={togglePositionFilter}
+                                                        activeOpacity={0.75}
+                                                        style={{
+                                                            paddingHorizontal: 12,
+                                                            paddingVertical: 8,
+                                                            borderRadius: 999,
+                                                            flexDirection: 'row',
+                                                            alignItems: 'center',
+                                                            gap: 6,
+                                                        }}
+                                                    >
+                                                        <Ionicons
+                                                            name="ellipse"
+                                                            size={10}
+                                                            color={filterColor}
+                                                        />
+                                                        <Text
+                                                            className="text-[18px] font-semibold"
+                                                            style={{ color: filterColor }}
+                                                        >
+                                                            {isPrevious ? 'Previous' : 'Active'}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                );
+                                            })()}
 
                                             {/* Sort pill with toggle arrow (extreme right) */}
                                             {(() => {
@@ -757,6 +806,7 @@ export default function ProfileScreen() {
                                                         key={`${positionFilter}-${position.marketTicker}-${position.side}-${index}`}
                                                         position={position}
                                                         isPrevious={positionFilter === 'previous'}
+                                                        eventTitle={position.eventTicker ? eventTitleByTicker[position.eventTicker] : undefined}
                                                         onPress={() => positionFilter !== 'previous'
                                                             ? handleOpenActionSheet(position)
                                                             : handleOpenMarketSheet(position)

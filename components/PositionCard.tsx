@@ -37,12 +37,15 @@ interface PositionCardProps {
     position: AggregatedPosition;
     isPrevious?: boolean;
     onPress: () => void;
+    /** Pre-fetched event title; avoids per-card API call when provided */
+    eventTitle?: string | null;
 }
 
 export default function PositionCard({
     position,
     isPrevious = false,
     onPress,
+    eventTitle: propEventTitle,
 }: PositionCardProps) {
     const isYes = position.side === 'yes';
     const marketTitle = position.market?.title || position.marketTicker;
@@ -59,15 +62,15 @@ export default function PositionCard({
         : '—';
     const openedAt = formatOpenedAt(position.trades || []);
 
-    const [eventTitle, setEventTitle] = useState<string | null>(null);
+    const [fetchedEventTitle, setFetchedEventTitle] = useState<string | null>(null);
+    const eventTitle = propEventTitle ?? fetchedEventTitle;
 
     useEffect(() => {
-        if (position.eventTicker) {
-            getEventDetails(position.eventTicker).then(event => {
-                if (event) setEventTitle(event.title);
-            }).catch(err => console.error('Failed to fetch event title:', err));
-        }
-    }, [position.eventTicker]);
+        if (propEventTitle != null || !position.eventTicker) return;
+        getEventDetails(position.eventTicker).then(event => {
+            if (event) setFetchedEventTitle(event.title);
+        }).catch(() => {});
+    }, [position.eventTicker, propEventTitle]);
 
     return (
         <TouchableOpacity

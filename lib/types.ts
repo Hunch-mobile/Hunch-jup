@@ -287,6 +287,25 @@ export interface CandlesResponse {
     resolution: string;
 }
 
+export interface DFlowCandlePricePoint {
+    close: number | null;
+    high: number | null;
+    low: number | null;
+    open: number | null;
+    previous?: number | null;
+}
+
+export interface DFlowCandlestick {
+    end_period_ts: number;
+    price?: DFlowCandlePricePoint | null;
+    volume?: number | null;
+}
+
+export interface DFlowCandlesticksResponse {
+    candlesticks: DFlowCandlestick[];
+    ticker: string;
+}
+
 export interface CandlesticksByMintResponse {
     candlesticks: CandleData[];
     ticker: string;

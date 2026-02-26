@@ -22,6 +22,8 @@ interface CreditCardProps {
     tradesCount: number;
     balance?: number;
     walletAddress?: string;
+    /** Embedded Solana wallet instance (Privy) */
+    wallet?: any;
     /** Privy wallet provider — used for signing USDC transfers */
     walletProvider?: any;
     /** Solana connection — used for sending transfer tx */
@@ -30,7 +32,7 @@ interface CreditCardProps {
     onWithdrawSuccess?: (amount: number) => void;
 }
 
-export default function CreditCard({ tradesCount, balance = 0, walletAddress, walletProvider, connection, onWithdrawSuccess }: CreditCardProps) {
+export default function CreditCard({ tradesCount, balance = 0, walletAddress, wallet, walletProvider, connection, onWithdrawSuccess }: CreditCardProps) {
     const [isFlipped, setIsFlipped] = useState(false);
     const [copied, setCopied] = useState(false);
     const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -252,6 +254,7 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress, wa
                         setWithdrawSubmitting(true);
                         await sendUSDC({
                             provider: walletProvider,
+                            wallet,
                             connection,
                             fromAddress: walletAddress,
                             toAddress,

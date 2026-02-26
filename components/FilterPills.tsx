@@ -38,7 +38,11 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange, pr
     const renderPill = useCallback(({ item, index }: { item: string; index: number }) => {
         const isSelected = item === selectedCategory;
         // Show only the first word to avoid long labels
-        const label = item.split(' ')[0];
+        const rawLabel = item === 'all' ? 'hot' : item.split(' ')[0];
+        const label =
+            rawLabel.length > 0
+                ? rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1).toLowerCase()
+                : '';
         return (
             <TouchableOpacity
                 onPress={() => handlePress(item, index)}
