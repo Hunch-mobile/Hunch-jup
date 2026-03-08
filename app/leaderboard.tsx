@@ -11,8 +11,6 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const YELLOW = '#FACC15';
-const YELLOW_DARK = '#EAB308';
 const hunchBadge = require("@/assets/icon-blue.png");
 
 const CATEGORIES: { value: LeaderboardCategory; label: string }[] = [
@@ -183,14 +181,14 @@ export default function LeaderboardScreen() {
                                 onPress={() => handleCategoryChange(cat.value)}
                                 className="mr-2 rounded-full"
                                 style={{
-                                    backgroundColor: category === cat.value ? YELLOW : '#F3F4F6',
+                                    backgroundColor: category === cat.value ? 'transparent' : 'transparent',
                                     paddingHorizontal: 16,
                                     paddingVertical: 8,
                                 }}
                             >
                                 <Text
-                                    className="text-sm font-semibold"
-                                    style={{ color: category === cat.value ? '#000' : Theme.textSecondary }}
+                                    className={category === cat.value ? "text-[22px] font-bold" : "text-[17px]"}
+                                    style={{ color: category === cat.value ? Theme.textPrimary : Theme.textSecondary }}
                                 >
                                     {cat.label}
                                 </Text>
@@ -208,14 +206,14 @@ export default function LeaderboardScreen() {
                                     onPress={() => handleTimePeriodChange(period.value)}
                                     className="rounded-lg"
                                     style={{
-                                        backgroundColor: timePeriod === period.value ? YELLOW : 'transparent',
+                                        backgroundColor: timePeriod === period.value ? Theme.textPrimary : 'transparent',
                                         paddingHorizontal: 12,
                                         paddingVertical: 6,
                                     }}
                                 >
                                     <Text
                                         className="text-xs font-semibold"
-                                        style={{ color: timePeriod === period.value ? '#000' : Theme.textSecondary }}
+                                        style={{ color: timePeriod === period.value ? Theme.bgMain : Theme.textSecondary }}
                                     >
                                         {period.label}
                                     </Text>
@@ -236,7 +234,7 @@ export default function LeaderboardScreen() {
                             <Ionicons
                                 name={orderBy === 'PNL' ? 'trending-up' : 'bar-chart'}
                                 size={14}
-                                color={YELLOW_DARK}
+                                color={Theme.textPrimary}
                             />
                             <Text className="text-xs font-semibold" style={{ color: Theme.textPrimary }}>
                                 {orderBy === 'PNL' ? 'PnL' : 'Volume'}
@@ -248,7 +246,7 @@ export default function LeaderboardScreen() {
                 {/* Leaderboard List */}
                 {loading ? (
                     <View className="flex-1 items-center justify-center">
-                        <ActivityIndicator size="large" color={YELLOW_DARK} />
+                        <ActivityIndicator size="large" color={Theme.textSecondary} />
                     </View>
                 ) : (
                     <FlatList
@@ -260,7 +258,7 @@ export default function LeaderboardScreen() {
                             <RefreshControl
                                 refreshing={refreshing}
                                 onRefresh={handleRefresh}
-                                tintColor={YELLOW_DARK}
+                                tintColor={Theme.textSecondary}
                             />
                         }
                         onEndReached={handleLoadMore}

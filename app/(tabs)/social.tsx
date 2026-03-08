@@ -60,6 +60,9 @@ const SearchResultRow = ({
     onPress: () => void;
 }) => {
     const avatarUrl = item.avatarUrl?.replace('_normal', '');
+    const username = item.username || item.walletAddress || 'anon';
+    const displayHandle = formatHandle(username);
+    const displayName = item.displayName || "Anonymous";
 
     return (
         <TouchableOpacity
@@ -67,7 +70,7 @@ const SearchResultRow = ({
             onPress={onPress}
             activeOpacity={0.7}
         >
-            <View className="w-12 h-12 rounded-full justify-center items-center mr-3.5 bg-app-card border border-border">
+            <View className="w-12 h-12 rounded-full justify-center items-center mr-3.5 bg-app-card border border-border overflow-hidden">
                 <Image
                     source={avatarUrl ? { uri: avatarUrl } : defaultProfileImage}
                     className="w-full h-full rounded-full"
@@ -75,10 +78,10 @@ const SearchResultRow = ({
             </View>
             <View className="flex-1">
                 <Text className="text-base font-semibold text-txt-primary mb-0.5">
-                    {item.displayName || "Anonymous"}
+                    {displayName}
                 </Text>
                 <Text className="text-[13px] text-txt-disabled font-mono mb-1.5">
-                    {item.walletAddress.slice(0, 6)}...{item.walletAddress.slice(-4)}
+                    {displayHandle}
                 </Text>
                 <View className="flex-row items-center">
                     <Text className="text-xs text-txt-secondary">
@@ -151,6 +154,14 @@ const getEntryPnl = (candles: CandleData[], entryTimestamp: number, isYes: boole
 const FEED_CARD_CHART_WIDTH = SCREEN_WIDTH - 40 - 28; // mx-5 (40) + p-3.5 (28)
 const FEED_CARD_CHART_HEIGHT = 72;
 
+// Utility to condense long wallet addresses into manageable shorts
+const formatHandle = (handle: string) => {
+    if (handle.startsWith('0x') && handle.length >= 42) {
+        return `${handle.slice(0, 6)}...${handle.slice(-4)}`;
+    }
+    return handle;
+};
+
 // Feed card component
 const FeedCard = ({
     item,
@@ -172,7 +183,8 @@ const FeedCard = ({
     const avatarUrl = item.user?.avatarUrl?.replace('_normal', '');
     const totalBought = Number.parseFloat(item.amount || '0');
     const rawName = item.user?.displayName?.trim();
-    const handle = rawName ? rawName.replace(/^@+/, '') : item.user?.walletAddress?.slice(0, 6) || 'anonymous';
+    const rawHandle = rawName ? rawName.replace(/^@+/, '') : item.user?.walletAddress || 'anonymous';
+    const handle = formatHandle(rawHandle);
     const isSell = item.action === 'SELL';
     const actionLabel = isSell ? 'Sell' : 'Buy';
 
@@ -521,7 +533,7 @@ export default function SocialScreen() {
                     getMarketDetails(item.marketTicker),
                     item.conditionId
                         ? polymarketApi.getCandlesticks({
-                            conditionId: item.conditionId,
+                            conditionId: item.conditionId.split('_')[0],
                             startTime: Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60,
                             endTime: Math.floor(Date.now() / 1000),
                             interval: 60,
@@ -890,16 +902,6 @@ export default function SocialScreen() {
                             <View className="flex-1" />
 
                             {/* Leaderboard + Search + Bell */}
-                            <View className="flex-row items-center gap-1">
-                                <TouchableOpacity
-                                    className="w-10 h-10 rounded-full justify-center items-center"
-                                    onPress={() => {
-                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        router.push('/leaderboard');
-                                    }}
-                                >
-                                    <Ionicons name="trophy-outline" size={22} color={Theme.textPrimary} />
-                                </TouchableOpacity>
                                 <TouchableOpacity
                                     className="w-10 h-10 rounded-full justify-center items-center"
                                     onPress={() => setShowSearch(true)}

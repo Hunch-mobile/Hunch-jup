@@ -559,12 +559,15 @@ export const polymarketApi = {
         endTime: number;
         interval?: 1 | 60 | 1440;
     }): Promise<CandleData[]> => {
+        // Strip any appended `_0` or `_1` suffix to get the raw 0x 64-character hash
+        const baseConditionId = conditionId.split('_')[0];
+
         const params = new URLSearchParams({
             start_time: startTime.toString(),
             end_time: endTime.toString(),
             interval: interval.toString(),
         });
-        const url = `${API_BASE_URL}/api/polymarket/candlesticks/${encodeURIComponent(conditionId)}?${params.toString()}`;
+        const url = `${API_BASE_URL}/api/polymarket/candlesticks/${encodeURIComponent(baseConditionId)}?${params.toString()}`;
         const response = await fetch(url);
         if (!response.ok) {
             const error = await safeJsonParse(response);
@@ -1117,6 +1120,10 @@ export const marketsApi = {
         const resolvedMarketId = marketTicker || marketId || ticker;
         if (!resolvedMarketId) return [];
 
+        // Polymarket conditionally appends `_0` (Yes) or `_1` (No) to token identifiers, but the conditionId 
+        // needed for candlesticks is just the base 0x... hex string. Strip any _{number} suffix.
+        const baseConditionId = resolvedMarketId.split('_')[0];
+
         const nowTs = Math.floor(Date.now() / 1000);
         const effectiveEndTs = typeof endTs === 'number' && Number.isFinite(endTs) ? endTs : nowTs;
         const effectiveStartTs =
@@ -1124,42 +1131,13 @@ export const marketsApi = {
                 ? startTs
                 : Math.max(0, effectiveEndTs - 7 * 24 * 60 * 60);
 
-        // Kalshi API only accepts specific period_interval values (in minutes).
-        // Pick the smallest valid interval that is >= the desired granularity AND keeps
-        // the candle count within MAX_CANDLES per request.
-        const KALSHI_VALID_INTERVALS = [1, 60, 1440] as const; // minutes, ascending
-        const MAX_CANDLES = 1000;
-        const rangeSeconds = effectiveEndTs - effectiveStartTs;
-        const desiredInterval = Math.max(1, Math.floor(periodInterval));
-        const safeInterval =
-            KALSHI_VALID_INTERVALS.find(
-                (v) => v >= desiredInterval && rangeSeconds <= v * 60 * MAX_CANDLES
-            ) ?? KALSHI_VALID_INTERVALS[KALSHI_VALID_INTERVALS.length - 1];
-
-        // Build the Kalshi candlesticks URL:
-        // /api/kalshi/series/{series}/markets/{marketId}/candlesticks
-        // Falls back to legacy dflow endpoint when no seriesTicker is available.
-        let requestUrl: string;
-        if (seriesTicker) {
-            const params = new URLSearchParams({
-                start_ts: String(effectiveStartTs),
-                end_ts: String(effectiveEndTs),
-                period_interval: String(safeInterval),
-            });
-            requestUrl = `${API_BASE_URL}/api/kalshi/series/${encodeURIComponent(
-                seriesTicker
-            )}/markets/${encodeURIComponent(resolvedMarketId)}/candlesticks?${params.toString()}`;
-        } else {
-            // Legacy fallback — no series ticker available
-            const params = new URLSearchParams({
-                start_ts: String(effectiveStartTs),
-                end_ts: String(effectiveEndTs),
-                period_interval: String(safeInterval),
-            });
-            requestUrl = `${API_BASE_URL}/api/kalshi/series/_/markets/${encodeURIComponent(
-                resolvedMarketId
-            )}/candlesticks?${params.toString()}`;
-        }
+        const interval = periodInterval >= 1440 ? 1440 : periodInterval >= 60 ? 60 : 1;
+        const params = new URLSearchParams({
+            start_time: String(effectiveStartTs),
+            end_time: String(effectiveEndTs),
+            interval: String(interval),
+        });
+        const requestUrl = `${API_BASE_URL}/api/polymarket/candlesticks/${encodeURIComponent(baseConditionId)}?${params.toString()}`;
 
         const now = Date.now();
         const cached = candlestickRequestCache.get(requestUrl);
@@ -1173,13 +1151,12 @@ export const marketsApi = {
         }
 
         const requestPromise = (async () => {
-            const response = await fetch(requestUrl);
-            if (!response.ok) {
-                const error = await safeJsonParse(response);
-                throw new Error(error?.error || `Failed to fetch candlesticks (${response.status})`);
-            }
-            const payload = (await safeJsonParse(response)) as DFlowCandlesticksResponse | null;
-            const candles = mapDFlowCandlesticksToCandles(payload);
+            const candles = await polymarketApi.getCandlesticks({
+                conditionId: baseConditionId,
+                startTime: effectiveStartTs,
+                endTime: effectiveEndTs,
+                interval: interval as 1 | 60 | 1440,
+            });
 
             candlestickRequestCache.set(requestUrl, { data: candles, timestamp: now });
             if (candlestickRequestCache.size > 200) {

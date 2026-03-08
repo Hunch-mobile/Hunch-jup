@@ -12,10 +12,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 // Import theme
 import { Theme } from "@/constants/theme";
 
-// Tab configuration
 const TAB_CONFIG = [
   { name: "index", title: "Home", icon: "home", iconOutline: "home-outline" },
   { name: "social", title: "Feed", icon: "people", iconOutline: "people-outline" },
+  { name: "leaderboard", title: "Rank", icon: "trophy", iconOutline: "trophy-outline" },
   { name: "profile", title: "Profile", icon: "person", iconOutline: "person-outline" },
 ] as const;
 
@@ -234,6 +234,7 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "Home" }} />
       <Tabs.Screen name="social" options={{ title: "Feed" }} />
+      <Tabs.Screen name="leaderboard" options={{ title: "Rank" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile" }} />
     </Tabs>
   );
