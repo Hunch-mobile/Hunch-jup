@@ -10,14 +10,14 @@ import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
 import { api, getEventDetails, marketsApi } from "@/lib/api";
-import { executeTrade, isDemoTrading, DEMO_BALANCE_USD, toRawAmount } from "@/lib/tradeService";
+import { executeTrade, toRawAmount } from "@/lib/tradeService";
 import { AggregatedPosition, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet, usePrivy } from "@privy-io/expo";
 import { useFundSolanaWallet } from "@privy-io/expo/ui";
 import { clusterApiUrl, Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import * as Haptics from "expo-haptics";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Dimensions, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -43,7 +43,7 @@ const formatPercent = (value: number | null | undefined) => {
 
 export default function ProfileScreen() {
     const { user, logout } = usePrivy();
-    const { backendUser, setBackendUser } = useUser();
+    const { backendUser, setBackendUser, usdcBalance, deductBalance, setUsdcBalance, positions, isLoadingPositions, addOptimisticPosition, refreshPositions } = useUser();
     const { wallets } = useEmbeddedSolanaWallet();
     const solanaWallet = wallets?.[0];
     const router = useRouter();
@@ -57,12 +57,6 @@ export default function ProfileScreen() {
     const [settingsVisible, setSettingsVisible] = useState(false);
     const [solBalance, setSolBalance] = useState<number | null>(null);
     const [solUsdPrice, setSolUsdPrice] = useState<number | null>(null);
-    const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
-    const [positions, setPositions] = useState<{ active: AggregatedPosition[]; previous: AggregatedPosition[] }>({
-        active: [],
-        previous: [],
-    });
-    const [isLoadingPositions, setIsLoadingPositions] = useState(true);
     const [eventTitleByTicker, setEventTitleByTicker] = useState<Record<string, string>>({});
 
     // Sell position state
@@ -206,7 +200,6 @@ export default function ProfileScreen() {
         let cancelled = false;
         const run = async () => {
             setIsLoading(true);
-            setIsLoadingPositions(true);
             try {
                 await Promise.all([
                     (async () => {
@@ -217,17 +210,12 @@ export default function ProfileScreen() {
                         const data = await api.getUserTrades(backendUser.id, 50);
                         if (!cancelled) setTrades(data);
                     })(),
-                    (async () => {
-                        const data = await api.getPositions(backendUser.id);
-                        if (!cancelled) setPositions(data.positions);
-                    })(),
                 ]);
             } catch (error) {
                 console.error("Failed to load profile data:", error);
             } finally {
                 if (!cancelled) {
                     setIsLoading(false);
-                    setIsLoadingPositions(false);
                 }
                 // Defer non-critical: balances and copy settings (don't block initial paint)
                 if (!cancelled) {
@@ -277,21 +265,15 @@ export default function ProfileScreen() {
         }
     };
 
-    const loadPositions = async () => {
-        if (!backendUser) {
-            setIsLoadingPositions(false);
-            return;
-        }
-        try {
-            setIsLoadingPositions(true);
-            const data = await api.getPositions(backendUser.id);
-            setPositions(data.positions);
-        } catch (error) {
-            console.error("Failed to load positions:", error);
-        } finally {
-            setIsLoadingPositions(false);
-        }
-    };
+    useFocusEffect(
+        useCallback(() => {
+            if (backendUser) {
+                refreshPositions();
+            }
+        }, [backendUser?.id])
+    );
+
+    const loadPositions = () => refreshPositions();
 
     const walletAddress = profileData?.walletAddress || backendUser?.walletAddress;
 
@@ -319,27 +301,8 @@ export default function ProfileScreen() {
     }, [walletAddress]);
 
     const loadUsdcBalance = useCallback(async () => {
-        if (!walletAddress) {
-            setUsdcBalance(null);
-            return;
-        }
-        try {
-            const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
-            const connection = new Connection(rpcUrl, 'confirmed');
-            const usdcMint = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
-            const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-                new PublicKey(walletAddress),
-                { mint: usdcMint }
-            );
-            const totalBalance = tokenAccounts.value.reduce((sum, accountInfo) => {
-                const amount = accountInfo.account.data?.parsed?.info?.tokenAmount?.uiAmount;
-                return sum + (typeof amount === 'number' ? amount : 0);
-            }, 0);
-            setUsdcBalance(isDemoTrading ? DEMO_BALANCE_USD : totalBalance);
-        } catch (error) {
-            console.error("Failed to load USDC balance:", error);
-            setUsdcBalance(isDemoTrading ? DEMO_BALANCE_USD : null);
-        }
+        // Balance lives in UserContext (shared across screens)
+        setUsdcBalance(1000);
     }, [walletAddress]);
 
     const activePositions = positions.active;
@@ -634,7 +597,7 @@ export default function ProfileScreen() {
                                 connection={connection}
                                 onWithdrawSuccess={(amount) => {
                                     // Optimistic update — instant balance feedback
-                                    setUsdcBalance(prev => Math.max(0, (prev ?? 0) - amount));
+                                    setUsdcBalance(prev => Math.max(0, (prev ?? 1000) - amount));
                                     loadUsdcBalance(); // background sync
                                 }}
                             />
@@ -900,7 +863,12 @@ export default function ProfileScreen() {
                     setSelectedActionPosition(null);
                 }}
                 position={selectedActionPosition}
-                onViewMarket={(ticker) => router.push({ pathname: '/market/[ticker]', params: { ticker } })}
+                onViewMarket={() => {
+                    const eventTicker = selectedActionPosition?.eventTicker;
+                    if (eventTicker) {
+                        router.push({ pathname: '/event/[ticker]', params: { ticker: eventTicker } });
+                    }
+                }}
                 onSell={(position) => handleOpenSell(position)}
             />
 
@@ -937,9 +905,38 @@ export default function ProfileScreen() {
             <MarketTradeSheet
                 visible={marketSheetVisible}
                 onClose={handleCloseMarketSheet}
-                onTradeSuccess={() => {
+                onTradeSuccess={(tradeData: any) => {
+                    // Optimistic insert — show position in Active immediately
+                    if (tradeData?.marketTicker && selectedMarket) {
+                        addOptimisticPosition({
+                            marketTicker: tradeData.marketTicker,
+                            eventTicker: tradeData.eventTicker || null,
+                            side: tradeData.side as 'yes' | 'no',
+                            totalUsdcAmount: Number(tradeData.amount) || 0,
+                            totalTokenAmount: tradeData.executedOutAmount ? Number(tradeData.executedOutAmount) / 1_000_000 : 0,
+                            averageEntryPrice: Number(tradeData.entryPrice) || 0,
+                            currentPrice: null,
+                            currentValue: null,
+                            profitLoss: null,
+                            profitLossPercentage: null,
+                            tradeCount: 1,
+                            market: selectedMarket,
+                            eventImageUrl: null,
+                            trades: [],
+                            totalCostBasis: Number(tradeData.amount) || 0,
+                            totalTokensBought: tradeData.executedOutAmount ? Number(tradeData.executedOutAmount) / 1_000_000 : 0,
+                            totalTokensSold: 0,
+                            totalSellProceeds: 0,
+                            realizedPnL: 0,
+                            unrealizedPnL: null,
+                            totalPnL: null,
+                            positionStatus: 'OPEN',
+                        });
+                    }
+                    // Optimistic balance deduction — instant feedback
+                    const spent = Number(tradeData?.amount) || 0;
+                    if (spent > 0) deductBalance(spent);
                     loadPositions();
-                    loadUsdcBalance();
                     loadTrades();
                 }}
                 market={selectedMarket}

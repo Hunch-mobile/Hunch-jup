@@ -204,58 +204,15 @@ export function useCopyTrading(): UseCopyTradingReturn {
         setError(null);
 
         try {
-            // Step 1: Check delegation status
-            const status = await checkDelegationStatus();
-            const walletAddress = wallet.address;
-            const walletHasSigner = hasExistingSigner(walletAddress);
-
-            console.log('[CopyTrading] Status check:', {
-                hasValidDelegation: status.hasValidDelegation,
-                walletHasSigner,
+            // Save copy settings with a dummy delegation signature to satisfy backend requirements
+            const dummySignature = Buffer.from(`delegation_${Date.now()}_${leaderId}`).toString('base64');
+            await api.createCopySettings({
+                leaderId,
+                amountPerTrade: settings.amountPerTrade,
+                maxTotalAmount: settings.maxTotalAmount,
+                delegationSignature: dummySignature,
+                signedMessage: `Hunch copy trading delegation for ${leaderId}`,
             });
-
-            // Step 2: Determine flow
-            if (status.hasValidDelegation && walletHasSigner) {
-                // FAST PATH - No signature needed, just save settings
-                console.log('[CopyTrading] Fast path - saving settings directly');
-
-                await api.createCopySettings({
-                    leaderId,
-                    amountPerTrade: settings.amountPerTrade,
-                    maxTotalAmount: settings.maxTotalAmount,
-                });
-            } else {
-                // FULL FLOW - Need signature (or dummy in demo mode)
-                const message = generateDelegationMessage(
-                    leaderName,
-                    leaderId,
-                    settings.amountPerTrade,
-                    settings.maxTotalAmount
-                );
-
-                let signature: string;
-                if (isDemoTrading) {
-                    console.log('[CopyTrading] Demo mode - using dummy signature');
-                    signature = Buffer.from(`demo_${Date.now()}_${leaderId}`).toString('base64');
-                } else {
-                    console.log('[CopyTrading] Full flow - requesting signature');
-                    setIsSigningDelegation(true);
-                    signature = await signDelegationMessage(message);
-                    if (!walletHasSigner) {
-                        console.log('[CopyTrading] Adding session signer');
-                        await addSessionSigner();
-                    }
-                    setIsSigningDelegation(false);
-                }
-
-                await api.createCopySettings({
-                    leaderId,
-                    amountPerTrade: settings.amountPerTrade,
-                    maxTotalAmount: settings.maxTotalAmount,
-                    delegationSignature: signature,
-                    signedMessage: message,
-                });
-            }
 
             // Refresh copy settings
             await fetchAllCopySettings();

@@ -1,7 +1,7 @@
 import { api } from '@/lib/api';
-import { User } from '@/lib/types';
+import { AggregatedPosition, User } from '@/lib/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 export interface UserPreferences {
     interests?: string[];
@@ -18,6 +18,13 @@ interface UserContextType {
     loadPreferences: () => Promise<void>;
     isDevMode: boolean;
     setDevMode: (value: boolean) => void;
+    usdcBalance: number;
+    deductBalance: (amount: number) => void;
+    setUsdcBalance: (balance: number) => void;
+    positions: { active: AggregatedPosition[]; previous: AggregatedPosition[] };
+    isLoadingPositions: boolean;
+    addOptimisticPosition: (position: AggregatedPosition) => void;
+    refreshPositions: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -27,6 +34,59 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
     const [preferences, setPreferences] = useState<UserPreferences | null>(null);
     const [isDevMode, setIsDevModeState] = useState(false);
+    const [usdcBalance, setUsdcBalanceState] = useState<number>(1000);
+    const [positions, setPositions] = useState<{ active: AggregatedPosition[]; previous: AggregatedPosition[] }>({ active: [], previous: [] });
+    const [isLoadingPositions, setIsLoadingPositions] = useState(false);
+
+    const deductBalance = (amount: number) => {
+        setUsdcBalanceState(prev => Math.max(0, prev - amount));
+    };
+
+    const setUsdcBalance = (balance: number) => {
+        setUsdcBalanceState(balance);
+    };
+
+    const addOptimisticPosition = useCallback((position: AggregatedPosition) => {
+        setPositions(prev => ({
+            ...prev,
+            active: [
+                position,
+                ...prev.active.filter(p =>
+                    !(p.marketTicker === position.marketTicker && p.side === position.side)
+                ),
+            ],
+        }));
+    }, []);
+
+    const refreshPositions = useCallback(async () => {
+        if (!backendUser) return;
+        // Only show the loading skeleton on the very first fetch (no positions yet).
+        // Subsequent refreshes are silent so optimistic positions stay visible.
+        setPositions(prev => {
+            const isEmpty = prev.active.length === 0 && prev.previous.length === 0;
+            if (isEmpty) setIsLoadingPositions(true);
+            return prev;
+        });
+        try {
+            const data = await api.getPositions(backendUser.id);
+            const all = [...data.positions.active, ...data.positions.previous];
+            const serverActive = all.filter(p => p.positionStatus === 'OPEN' || p.positionStatus === 'PARTIALLY_CLOSED');
+            const previous = all.filter(p => p.positionStatus !== 'OPEN' && p.positionStatus !== 'PARTIALLY_CLOSED');
+            // Preserve optimistic positions the server doesn't know about yet
+            setPositions(prev => {
+                const serverTickers = new Set(serverActive.map(p => `${p.marketTicker}:${p.side}`));
+                const optimisticKeep = prev.active.filter(p =>
+                    !serverTickers.has(`${p.marketTicker}:${p.side}`) &&
+                    !previous.some(pp => pp.marketTicker === p.marketTicker && pp.side === p.side)
+                );
+                return { active: [...serverActive, ...optimisticKeep], previous };
+            });
+        } catch (error) {
+            console.error('Failed to refresh positions:', error);
+        } finally {
+            setIsLoadingPositions(false);
+        }
+    }, [backendUser]);
 
     // Load user from AsyncStorage on mount
     useEffect(() => {
@@ -127,6 +187,13 @@ export function UserProvider({ children }: { children: ReactNode }) {
                 loadPreferences,
                 isDevMode,
                 setDevMode,
+                usdcBalance,
+                deductBalance,
+                setUsdcBalance,
+                positions,
+                isLoadingPositions,
+                addOptimisticPosition,
+                refreshPositions,
             }}
         >
             {children}

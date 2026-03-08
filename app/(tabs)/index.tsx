@@ -50,7 +50,7 @@ type FeedItem =
   | { type: 'news'; data: EventEvidence[] };
 
 export default function HomeScreen() {
-  const { preferences, backendUser } = useUser();
+  const { preferences, backendUser, deductBalance, addOptimisticPosition } = useUser();
   const { fundWallet } = useFundSolanaWallet();
   const { wallets } = useEmbeddedSolanaWallet();
   const router = useRouter();
@@ -544,7 +544,36 @@ export default function HomeScreen() {
       <MarketTradeSheet
         visible={marketSheetVisible}
         onClose={handleCloseMarketSheet}
-        onTradeSuccess={() => { }}
+        onTradeSuccess={(tradeData) => {
+          const spent = Number(tradeData?.amount) || 0;
+          if (spent > 0) deductBalance(spent);
+          if (tradeData?.marketTicker && selectedMarket) {
+            addOptimisticPosition({
+              marketTicker: tradeData.marketTicker,
+              eventTicker: tradeData.eventTicker || null,
+              side: tradeData.side as 'yes' | 'no',
+              totalUsdcAmount: Number(tradeData.amount) || 0,
+              totalTokenAmount: tradeData.executedOutAmount ? Number(tradeData.executedOutAmount) / 1_000_000 : 0,
+              averageEntryPrice: Number(tradeData.entryPrice) || 0,
+              currentPrice: null,
+              currentValue: null,
+              profitLoss: null,
+              profitLossPercentage: null,
+              tradeCount: 1,
+              market: selectedMarket,
+              eventImageUrl: null,
+              trades: [],
+              totalCostBasis: Number(tradeData.amount) || 0,
+              totalTokensBought: tradeData.executedOutAmount ? Number(tradeData.executedOutAmount) / 1_000_000 : 0,
+              totalTokensSold: 0,
+              totalSellProceeds: 0,
+              realizedPnL: 0,
+              unrealizedPnL: null,
+              totalPnL: null,
+              positionStatus: 'OPEN',
+            });
+          }
+        }}
         market={selectedMarket}
         conditionId={selectedMarket?.conditionId ?? undefined}
         backendUser={backendUser || null}

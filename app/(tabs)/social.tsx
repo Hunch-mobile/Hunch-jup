@@ -205,6 +205,7 @@ const FeedCard = ({
     onChartPress,
     onFollow,
     isFollowInProgress,
+    isLoadingTrade,
 }: {
     item: ExternalFeedItem;
     candles?: CandleData[];
@@ -213,6 +214,7 @@ const FeedCard = ({
     onChartPress: () => void;
     onFollow?: () => void;
     isFollowInProgress?: boolean;
+    isLoadingTrade?: boolean;
 }) => {
     const isYes = item.side === 'yes';
     const market = item.marketDetails;
@@ -271,8 +273,8 @@ const FeedCard = ({
     return (
         <TouchableOpacity
             className="mx-5 mb-5"
-            onPress={onChartPress}
-            activeOpacity={0.9}
+            onPress={isLoadingTrade ? undefined : onChartPress}
+            activeOpacity={isLoadingTrade ? 1 : 0.9}
         >
             {/* Header */}
             <View className="flex-row items-center mb-2">
@@ -318,7 +320,12 @@ const FeedCard = ({
             </View>
 
             {/* Market Card */}
-            <View className="bg-white rounded-[24px] p-3.5 border border-[#E8E8E8] shadow-sm">
+            <View className="bg-white rounded-[24px] p-3.5 border border-[#E8E8E8] shadow-sm" style={{ opacity: isLoadingTrade ? 0.6 : 1 }}>
+                {isLoadingTrade && (
+                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 24, justifyContent: 'center', alignItems: 'center', zIndex: 10, backgroundColor: 'rgba(255,255,255,0.5)' }}>
+                        <ActivityIndicator size="small" color="#6b7280" />
+                    </View>
+                )}
                 <View className="flex-row items-center gap-3 mb-3.5">
                     <Text
                         className={`font-black ${item.outcome === 'No' ? 'text-[#FF10F0]' : 'text-[#32de12]'}`}
@@ -385,7 +392,7 @@ const FeedCard = ({
 
 
 export default function SocialScreen() {
-    const { backendUser } = useUser();
+    const { backendUser, deductBalance, addOptimisticPosition } = useUser();
     const { wallets } = useEmbeddedSolanaWallet();
     const insets = useSafeAreaInsets();
 
@@ -528,9 +535,20 @@ export default function SocialScreen() {
         }).start();
     }, [showSearch]);
 
-    const handleOpenTradeSheet = useCallback((item: ExternalFeedItem) => {
-        setTradeSheetItem(item);
-        setTradeSheetVisible(true);
+    const [loadingTradeForId, setLoadingTradeForId] = useState<string | null>(null);
+
+    const handleOpenTradeSheet = useCallback(async (item: ExternalFeedItem) => {
+        setLoadingTradeForId(item.id);
+        try {
+            const jupiterMarket = await marketsApi.fetchMarketByConditionId(item.conditionId);
+            setTradeSheetItem({ ...item, marketDetails: jupiterMarket });
+        } catch (err) {
+            console.error('Failed to fetch market by conditionId:', err);
+            setTradeSheetItem(item);
+        } finally {
+            setLoadingTradeForId(null);
+            setTradeSheetVisible(true);
+        }
     }, []);
 
     const handleOpenSearchMarket = useCallback((market: Market, event?: Event) => {
@@ -1201,6 +1219,7 @@ export default function SocialScreen() {
                                                                 onChartPress={() => handleOpenTradeSheet(entry.data)}
                                                                 onFollow={pageMode === 'global' && backendUser ? () => handleFollowExternalTrader(entry.data.trader.walletAddress) : undefined}
                                                                 isFollowInProgress={followingExternalInProgress.has(entry.data.trader.walletAddress)}
+                                                                isLoadingTrade={loadingTradeForId === entry.data.id}
                                                             />
                                                         ) : (
                                                             <NewsCard item={entry.data} />
@@ -1231,7 +1250,35 @@ export default function SocialScreen() {
                 visible={tradeSheetVisible}
                 onClose={handleCloseTradeSheet}
                 onTradeSuccess={(tradeData, displayInfo, tradeId) => {
-                    // Trade saved successfully, quote sheet will show from within MarketTradeSheet
+                    const spent = Number(tradeData?.amount) || 0;
+                    if (spent > 0) deductBalance(spent);
+                    const market = tradeSheetItem?.marketDetails || selectedSearchMarket || null;
+                    if (tradeData?.marketTicker && market) {
+                        addOptimisticPosition({
+                            marketTicker: tradeData.marketTicker,
+                            eventTicker: tradeData.eventTicker || null,
+                            side: tradeData.side as 'yes' | 'no',
+                            totalUsdcAmount: Number(tradeData.amount) || 0,
+                            totalTokenAmount: tradeData.executedOutAmount ? Number(tradeData.executedOutAmount) / 1_000_000 : 0,
+                            averageEntryPrice: Number(tradeData.entryPrice) || 0,
+                            currentPrice: null,
+                            currentValue: null,
+                            profitLoss: null,
+                            profitLossPercentage: null,
+                            tradeCount: 1,
+                            market,
+                            eventImageUrl: null,
+                            trades: [],
+                            totalCostBasis: Number(tradeData.amount) || 0,
+                            totalTokensBought: tradeData.executedOutAmount ? Number(tradeData.executedOutAmount) / 1_000_000 : 0,
+                            totalTokensSold: 0,
+                            totalSellProceeds: 0,
+                            realizedPnL: 0,
+                            unrealizedPnL: null,
+                            totalPnL: null,
+                            positionStatus: 'OPEN',
+                        });
+                    }
                 }}
                 onRefreshFeed={() => loadFeed({ targetMode: mode, reset: true })}
                 market={tradeSheetItem?.marketDetails || selectedSearchMarket || null}

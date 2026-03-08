@@ -5,10 +5,10 @@ import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
 import { api, getEventDetails, marketsApi, polymarketApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
-import { executeTrade, fromRawAmount, requestOrder, toRawAmount, USDC_MINT, isDemoTrading, DEMO_BALANCE_USD } from "@/lib/tradeService";
+import { createDemoTradeResult, fromRawAmount, toRawAmount } from "@/lib/tradeService";
 import { User as BackendUser, CandleData, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection } from "@solana/web3.js";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -263,7 +263,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
     const [isFetchingQuote, setIsFetchingQuote] = useState(false);
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Debounced quote fetching
+    // Debounced quote fetching (dummy — no real order request)
     useEffect(() => {
         if (!visible || !market || !backendUser || !amount || parseFloat(amount) <= 0) {
             setQuoteOutAmount(null);
@@ -275,39 +275,20 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
         }
 
         setIsFetchingQuote(true);
-        debounceTimerRef.current = setTimeout(async () => {
+        debounceTimerRef.current = setTimeout(() => {
             try {
-                if (!market.ticker) {
-                    setIsFetchingQuote(false);
-                    return;
-                }
-
-                const rawAmount = toRawAmount(Number(amount), 6);
-                const order = await requestOrder({
-                    userPublicKey: backendUser.walletAddress,
-                    amount: rawAmount,
-                    marketId: market.ticker,
-                    isYes: selectedSide === 'yes',
-                    isBuy: true,
-                    slippageBps: 100,
-                });
-
-                setQuoteOutAmount(Number(order.outAmount));
-            } catch (error: any) {
-                console.error("Failed to fetch quote:", error);
-
-                const errorMessage = error?.message || "";
-                if (errorMessage.includes("Zero out amount") || errorMessage.includes("500")) {
-                    setTradeError("Amount too low");
-                } else {
-                    setTradeError(null); // Don't show error for other fetch failures, just clear quote
-                }
-
+                const price = selectedSide === 'yes'
+                    ? (market.yesAsk ? parseFloat(market.yesAsk) : market.yesBid ? parseFloat(market.yesBid) : 0.5)
+                    : (market.noAsk ? parseFloat(market.noAsk) : market.noBid ? parseFloat(market.noBid) : 0.5);
+                const rawAmount = Number(toRawAmount(Number(amount), 6));
+                const estimatedTokens = price > 0 ? rawAmount / price : rawAmount * 2;
+                setQuoteOutAmount(Math.floor(estimatedTokens));
+            } catch {
                 setQuoteOutAmount(null);
             } finally {
                 setIsFetchingQuote(false);
             }
-        }, 500); // 500ms debounce
+        }, 300);
 
         return () => {
             if (debounceTimerRef.current) {
@@ -329,26 +310,11 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
         fetchEventTitle();
     }, [visible, market?.eventTicker, propEventTitle]);
 
-    // Fetch USDC Balance
+    // Fetch USDC Balance (always show demo balance for now)
     useEffect(() => {
         if (!visible || !backendUser?.walletAddress) return;
-        const fetchBalance = async () => {
-            try {
-                const usdcMintKey = new PublicKey(USDC_MINT);
-                const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-                    new PublicKey(backendUser.walletAddress),
-                    { mint: usdcMintKey }
-                );
-                const total = tokenAccounts.value.reduce((sum, acc) =>
-                    sum + (acc.account.data.parsed.info.tokenAmount.uiAmount || 0), 0);
-                setUsdcBalance(isDemoTrading ? DEMO_BALANCE_USD : total);
-            } catch (e) {
-                console.error("Failed to load USDC balance", e);
-                if (isDemoTrading) setUsdcBalance(DEMO_BALANCE_USD);
-            }
-        };
-        fetchBalance();
-    }, [visible, backendUser, connection]);
+        setUsdcBalance(1000);
+    }, [visible, backendUser]);
 
     const finalizeTrade = async (quote?: string) => {
         if (!lastTradeId) {
@@ -473,15 +439,14 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
 
             const rawAmount = toRawAmount(Number(amount), 6);
 
-            const { signature, order } = await executeTrade({
-                provider: walletProvider,
-                connection,
-                userPublicKey: backendUser.walletAddress,
-                amount: rawAmount,
-                marketId: market.ticker,
-                isYes: selectedSide === 'yes',
+            // Use dummy trade execution — no real on-chain transaction
+            const price = selectedSide === 'yes'
+                ? (market.yesAsk ? parseFloat(market.yesAsk) : market.yesBid ? parseFloat(market.yesBid) : 0.5)
+                : (market.noAsk ? parseFloat(market.noAsk) : market.noBid ? parseFloat(market.noBid) : 0.5);
+            const { signature, order } = createDemoTradeResult({
+                rawAmount: String(rawAmount),
                 isBuy: true,
-                slippageBps: 100,
+                price,
             });
 
             const estimatedSpendUsdc = fromRawAmount(order.inAmount, 6).toFixed(2);
@@ -500,7 +465,6 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                 executedInAmount: order.inAmount,
                 executedOutAmount: order.outAmount,
                 entryPrice,
-                isDummy: true,
             };
 
             const savedTrade = await api.createTrade(tradeData);

@@ -2,7 +2,7 @@ import { Theme } from '@/constants/theme';
 import { getEventDetails } from "@/lib/api";
 import { AggregatedPosition } from "@/lib/types";
 import { useEffect, useState } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, Text, TouchableOpacity, View } from "react-native";
 
 const defaultProfileImage = require("@/assets/default.jpeg");
 
@@ -48,7 +48,6 @@ export default function PositionCard({
     eventTitle: propEventTitle,
 }: PositionCardProps) {
     const isYes = position.side === 'yes';
-    const marketTitle = position.market?.title || position.marketTicker;
     const subtitle = isYes ? position.market?.yesSubTitle : position.market?.noSubTitle;
     const pnlValue = position.totalPnL ?? position.profitLoss ?? position.unrealizedPnL ?? position.realizedPnL ?? null;
     const pnlPercent = position.profitLossPercentage ?? (
@@ -64,6 +63,7 @@ export default function PositionCard({
 
     const [fetchedEventTitle, setFetchedEventTitle] = useState<string | null>(null);
     const eventTitle = propEventTitle ?? fetchedEventTitle;
+    const marketTitle = position.market?.title || eventTitle || position.marketTicker;
 
     useEffect(() => {
         if (propEventTitle != null || !position.eventTicker) return;
@@ -88,7 +88,7 @@ export default function PositionCard({
                     >
                         {isYes ? 'YES' : 'NO'}
                         </Text>{" "}
-                        on {subtitle || position.market?.subtitle}
+                        on {subtitle || position.market?.subtitle || marketTitle}
                     </Text>
                     {openedAt ? (
                         <Text className="text-xs text-txt-disabled shrink-0">
