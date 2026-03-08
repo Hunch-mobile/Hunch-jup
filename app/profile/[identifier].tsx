@@ -1,6 +1,7 @@
 import CopySettingsModal from "@/components/CopySettingsModal";
 import PolymarketPositionCard from "@/components/PolymarketPositionCard";
-import { PositionsSkeleton, UserProfileSkeleton } from "@/components/skeletons";
+import { Skeleton } from "@/components/Skeleton";
+import { PositionsSkeleton } from "@/components/skeletons";
 import { Theme } from "@/constants/theme";
 import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
@@ -12,7 +13,7 @@ import { Image } from "expo-image";
 import * as Linking from "expo-linking";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, Easing, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -47,7 +48,7 @@ export default function UnifiedProfileScreen() {
     // Polymarket positions (for external profiles)
     const [positions, setPositions] = useState<PolymarketPosition[]>([]);
     const [closedPositions, setClosedPositions] = useState<PolymarketClosedPosition[]>([]);
-    const [positionsLoading, setPositionsLoading] = useState(false);
+    const [positionsLoading, setPositionsLoading] = useState(true);
 
     // Copy trading
     const { copySettings, fetchAllCopySettings } = useCopyTrading();
@@ -55,6 +56,20 @@ export default function UnifiedProfileScreen() {
     const [copyModalVisible, setCopyModalVisible] = useState(false);
 
     const slideAnim = useRef(new Animated.Value(0)).current;
+    const indicatorAnim = useRef(new Animated.Value(0)).current;
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    const tabWidth = (SCREEN_WIDTH - 40) / 2;
+
+    useEffect(() => {
+        const pulse = Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulseAnim, { toValue: 0.4, duration: 800, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+                Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+            ])
+        );
+        pulse.start();
+        return () => pulse.stop();
+    }, [pulseAnim]);
 
     const loadProfile = useCallback(async () => {
         if (!identifier) return;
@@ -70,6 +85,8 @@ export default function UnifiedProfileScreen() {
             // If external profile, load Polymarket positions
             if (profileData.profileType === 'external') {
                 loadPolymarketPositions(profileData.walletAddress);
+            } else {
+                setPositionsLoading(false);
             }
         } catch (err: any) {
             console.error('Failed to load profile:', err);
@@ -122,8 +139,14 @@ export default function UnifiedProfileScreen() {
             tension: 50,
             friction: 7,
         }).start();
+        Animated.timing(indicatorAnim, {
+            toValue: tab === 'active' ? 0 : tabWidth,
+            duration: 260,
+            useNativeDriver: true,
+            easing: Easing.out(Easing.cubic),
+        }).start();
         setActiveTab(tab);
-    }, [slideAnim]);
+    }, [slideAnim, indicatorAnim, tabWidth]);
 
     const handleFollow = async () => {
         if (!profile || profile.isOwnProfile || followLoading) return;
@@ -164,17 +187,7 @@ export default function UnifiedProfileScreen() {
         Linking.openURL(`https://x.com/${xUsername}`);
     };
 
-    if (loading) {
-        return (
-            <View className="flex-1 bg-app-bg">
-                <SafeAreaView className="flex-1">
-                    <UserProfileSkeleton />
-                </SafeAreaView>
-            </View>
-        );
-    }
-
-    if (error || !profile) {
+    if (error || (!loading && !profile)) {
         return (
             <View className="flex-1 bg-app-bg">
                 <SafeAreaView className="flex-1">
@@ -190,20 +203,24 @@ export default function UnifiedProfileScreen() {
         );
     }
 
-    const isExternal = profile.profileType === 'external';
+    const isLikelyExternal = /^0x[0-9a-fA-F]+$/i.test(identifier || '');
+    const isExternal = profile !== null ? profile.profileType === 'external' : isLikelyExternal;
     const externalProfile = profile as ExternalProfile;
     const hunchProfile = profile as HunchProfile;
-    const showCopyButton = isExternal && !profile.isOwnProfile && !!backendUser && profile.isFollowing;
+    const showCopyButton = !!(profile && isExternal && !profile.isOwnProfile && backendUser && profile.isFollowing);
 
-    const displayName = profile.displayName || 
+    const rawDisplayName = profile ? (profile.displayName ||
         (isExternal ? `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}` : hunchProfile.username) ||
-        `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}`;
+        `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}`) : '';
+    const displayName = /^0x[0-9a-fA-F]{10,}/.test(rawDisplayName)
+        ? `${rawDisplayName.slice(0, 5)}...${rawDisplayName.slice(-3)}`
+        : rawDisplayName;
 
-    const username = isExternal 
+    const username = profile ? (isExternal
         ? (externalProfile.xUsername ? `@${externalProfile.xUsername}` : null)
-        : (hunchProfile.username ? `@${hunchProfile.username}` : null);
+        : (hunchProfile.username ? `@${hunchProfile.username}` : null)) : null;
 
-    const profileImageUrl = profile.avatarUrl?.replace('_normal', '');
+    const profileImageUrl = profile?.avatarUrl?.replace('_normal', '');
 
     return (
         <View className="flex-1 bg-app-bg">
@@ -216,17 +233,22 @@ export default function UnifiedProfileScreen() {
                     }}
                     showsVerticalScrollIndicator={false}
                 >
-                    {/* Back Button */}
-                    <TouchableOpacity
-                        onPress={() => router.back()}
-                        className="w-10 h-10 rounded-full items-center justify-center mb-4"
-                        style={{ backgroundColor: '#F3F4F6' }}
-                    >
-                        <Ionicons name="chevron-back" size={20} color={Theme.textPrimary} />
-                    </TouchableOpacity>
-
                     {/* Profile Header */}
                     <View className="flex-row items-start gap-4 mb-5">
+                        {loading ? (
+                            <>
+                                <Skeleton width={64} height={64} borderRadius={999} />
+                                <View className="flex-1 pt-1 gap-3">
+                                    <Skeleton width={160} height={24} borderRadius={6} />
+                                    <Skeleton width={110} height={18} borderRadius={4} />
+                                    <View className="flex-row gap-5">
+                                        <Skeleton width={80} height={18} borderRadius={4} />
+                                    </View>
+                                    <Skeleton width={100} height={40} borderRadius={12} />
+                                </View>
+                            </>
+                        ) : (
+                        <>
                         {/* Avatar with Badge */}
                         <View className="relative">
                             <View className="w-16 h-16 rounded-full bg-app-card justify-center items-center overflow-hidden"
@@ -279,46 +301,56 @@ export default function UnifiedProfileScreen() {
                             {/* Follower/Following Counts */}
                             <View className="flex-row gap-5 mb-3">
                                 <Text className="text-base text-txt-secondary">
-                                    <Text className="font-semibold text-txt-primary">{profile.followerCount || 0}</Text> Followers
+                                    <Text className="font-semibold text-txt-primary">{profile?.followerCount || 0}</Text> Followers
                                 </Text>
                                 {!isExternal && (
                                     <Text className="text-base text-txt-secondary">
-                                        <Text className="font-semibold text-txt-primary">{profile.followingCount || 0}</Text> Following
+                                        <Text className="font-semibold text-txt-primary">{profile?.followingCount || 0}</Text> Following
                                     </Text>
                                 )}
                             </View>
 
                             {/* Follow Button */}
-                            {!profile.isOwnProfile && backendUser && (
+                            {!profile?.isOwnProfile && backendUser && (
                                 <TouchableOpacity
                                     onPress={handleFollow}
                                     disabled={followLoading}
                                     className="flex-row items-center justify-center gap-2 px-4 py-2.5 rounded-xl"
                                     style={{
-                                        backgroundColor: profile.isFollowing ? '#F3F4F6' : YELLOW,
+                                        backgroundColor: profile?.isFollowing ? '#F3F4F6' : '#000',
                                     }}
                                 >
                                     {followLoading ? (
-                                        <ActivityIndicator size="small" color="#000" />
+                                        <ActivityIndicator size="small" color={profile?.isFollowing ? '#000' : '#fff'} />
                                     ) : (
-                                        <>
-                                            <Ionicons
-                                                name={profile.isFollowing ? 'checkmark' : 'add'}
-                                                size={18}
-                                                color="#000"
-                                            />
-                                            <Text className="text-sm font-semibold" style={{ color: '#000' }}>
-                                                {profile.isFollowing ? 'Following' : 'Follow'}
-                                            </Text>
-                                        </>
+                                        <Text className="text-sm font-semibold" style={{ color: profile?.isFollowing ? '#000' : '#fff' }}>
+                                            {profile?.isFollowing ? 'Following' : 'Follow'}
+                                        </Text>
                                     )}
                                 </TouchableOpacity>
                             )}
                         </View>
+                        </>
+                        )}
                     </View>
 
                     {/* Stats Card for External Profile */}
-                    {isExternal && (externalProfile.cachedPnl !== null || externalProfile.cachedVolume !== null) && (
+                    {loading && isLikelyExternal && (
+                        <View className="flex-row rounded-2xl px-4 py-4 mb-6"
+                            style={{ backgroundColor: `${YELLOW}12`, borderWidth: 1, borderColor: `${YELLOW}30` }}
+                        >
+                            <View className="flex-1 gap-2">
+                                <Skeleton width={60} height={12} borderRadius={4} />
+                                <Skeleton width={90} height={22} borderRadius={6} />
+                            </View>
+                            <View style={{ width: 1, backgroundColor: `${YELLOW}40`, marginHorizontal: 12 }} />
+                            <View className="flex-1 gap-2">
+                                <Skeleton width={60} height={12} borderRadius={4} />
+                                <Skeleton width={90} height={22} borderRadius={6} />
+                            </View>
+                        </View>
+                    )}
+                    {!loading && isExternal && (externalProfile.cachedPnl !== null || externalProfile.cachedVolume !== null) && (
                         <View className="flex-row rounded-2xl px-4 py-4 mb-6"
                             style={{ backgroundColor: `${YELLOW}12`, borderWidth: 1, borderColor: `${YELLOW}30` }}
                         >
@@ -346,43 +378,113 @@ export default function UnifiedProfileScreen() {
                         </View>
                     )}
 
-                    {/* Bio for External */}
-                    {isExternal && externalProfile.bio && (
-                        <Text className="text-sm text-txt-secondary mb-6">
-                            {externalProfile.bio}
-                        </Text>
-                    )}
+                    {/* Win Rate Card (replaces bio) */}
+                    {isExternal && closedPositions.length > 0 && (() => {
+                        const wins = closedPositions.filter(p => p.realizedPnl > 0).length;
+                        const total = closedPositions.length;
+                        const winRate = total > 0 ? (wins / total) * 100 : 0;
+                        const avgWin = wins > 0
+                            ? closedPositions.filter(p => p.realizedPnl > 0).reduce((s, p) => s + p.realizedPnl, 0) / wins
+                            : 0;
+                        const losses = total - wins;
+                        const avgLoss = losses > 0
+                            ? Math.abs(closedPositions.filter(p => p.realizedPnl <= 0).reduce((s, p) => s + p.realizedPnl, 0) / losses)
+                            : 0;
+                        const profitFactor = avgLoss > 0 ? avgWin / avgLoss : avgWin > 0 ? 999 : 1;
+                        // Only show win rate when there's enough data to be meaningful (at least one loss)
+                        const showWinRate = losses > 0;
+                        return (
+                            <View className="rounded-2xl px-4 py-4 mb-6" style={{ backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#F3F4F6' }}>
+                                <Text className="text-xs font-semibold text-txt-disabled uppercase mb-3">Performance</Text>
+                                <View className="flex-row justify-between">
+                                    {showWinRate && (
+                                        <View className="items-center">
+                                            <Text className="text-lg font-bold" style={{ color: winRate >= 50 ? '#16A34A' : '#DC2626' }}>
+                                                {winRate.toFixed(0)}%
+                                            </Text>
+                                            <Text className="text-[11px] text-txt-disabled mt-0.5">Win Rate</Text>
+                                        </View>
+                                    )}
+                                    <View className="items-center">
+                                        <Text className="text-lg font-bold text-txt-primary">{wins}/{total}</Text>
+                                        <Text className="text-[11px] text-txt-disabled mt-0.5">W/L</Text>
+                                    </View>
+                                    <View className="items-center">
+                                        <Text className="text-lg font-bold" style={{ color: avgWin > 0 ? '#16A34A' : Theme.textSecondary }}>
+                                            ${avgWin >= 1000 ? `${(avgWin/1000).toFixed(1)}K` : avgWin.toFixed(0)}
+                                        </Text>
+                                        <Text className="text-[11px] text-txt-disabled mt-0.5">Avg Win</Text>
+                                    </View>
+                                    <View className="items-center">
+                                        <Text className="text-lg font-bold text-txt-primary">
+                                            {profitFactor >= 99 ? '∞' : profitFactor.toFixed(1)}x
+                                        </Text>
+                                        <Text className="text-[11px] text-txt-disabled mt-0.5">PF</Text>
+                                    </View>
+                                </View>
+                            </View>
+                        );
+                    })()}
 
                     {/* Positions Section for External Profiles */}
                     {isExternal && (
                         <View className="flex-1">
                             {/* Tab Header */}
-                            <View className="mb-4">
-                                <View className="flex-row rounded-2xl p-1" style={{ backgroundColor: '#F3F4F6' }}>
-                                    <TouchableOpacity
-                                        className="flex-1 py-2.5 rounded-xl items-center"
-                                        style={{ backgroundColor: activeTab === 'active' ? YELLOW : 'transparent' }}
-                                        onPress={() => animateToTab('active')}
-                                        activeOpacity={0.85}
-                                    >
-                                        <Text className="text-sm font-semibold"
-                                            style={{ color: activeTab === 'active' ? '#000' : Theme.textSecondary }}
+                            <View className="mb-4 flex-row items-center justify-between">
+                                {/* Underline tab header matching (tabs)/profile.tsx */}
+                                <View className="flex-1">
+                                    <View className="flex-row relative border-b border-border/30 pb-1">
+                                        {/* Animated sliding underline */}
+                                        <Animated.View
+                                            style={{
+                                                position: 'absolute',
+                                                bottom: -1,
+                                                left: 0,
+                                                height: 2,
+                                                width: tabWidth,
+                                                backgroundColor: '#000000',
+                                                transform: [{ translateX: indicatorAnim }],
+                                            }}
+                                        />
+                                        <TouchableOpacity
+                                            className="flex-1 items-center py-3"
+                                            onPress={() => animateToTab('active')}
+                                            activeOpacity={0.6}
                                         >
-                                            Active ({positions.length})
-                                        </Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        className="flex-1 py-2.5 rounded-xl items-center"
-                                        style={{ backgroundColor: activeTab === 'previous' ? YELLOW : 'transparent' }}
-                                        onPress={() => animateToTab('previous')}
-                                        activeOpacity={0.85}
-                                    >
-                                        <Text className="text-sm font-semibold"
-                                            style={{ color: activeTab === 'previous' ? '#000' : Theme.textSecondary }}
+                                            <View className="flex-row items-center gap-2">
+                                                {activeTab === 'active' && (
+                                                    <Animated.View
+                                                        style={{
+                                                            width: 8,
+                                                            height: 8,
+                                                            borderRadius: 4,
+                                                            backgroundColor: Theme.success,
+                                                            opacity: pulseAnim,
+                                                            transform: [{ scale: pulseAnim }],
+                                                        }}
+                                                    />
+                                                )}
+                                                <Text
+                                                    className="text-base font-bold"
+                                                    style={{ color: activeTab === 'active' ? Theme.textPrimary : Theme.textSecondary }}
+                                                >
+                                                    ACTIVE{activeTab === 'active' ? ` (${positions.length})` : ''}
+                                                </Text>
+                                            </View>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            className="flex-1 items-center py-3"
+                                            onPress={() => animateToTab('previous')}
+                                            activeOpacity={0.6}
                                         >
-                                            Closed ({closedPositions.length})
-                                        </Text>
-                                    </TouchableOpacity>
+                                            <Text
+                                                className="text-base font-bold"
+                                                style={{ color: activeTab === 'previous' ? Theme.textPrimary : Theme.textSecondary }}
+                                            >
+                                                CLOSED{activeTab === 'previous' ? ` (${closedPositions.length})` : ''}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
                             </View>
 
@@ -437,7 +539,7 @@ export default function UnifiedProfileScreen() {
                     )}
 
                     {/* For Hunch profiles, redirect to existing user profile */}
-                    {!isExternal && (
+                    {!isExternal && profile && (
                         <View className="p-6 items-center">
                             <TouchableOpacity
                                 onPress={() => router.replace({ pathname: '/user/[userId]', params: { userId: profile.id } })}

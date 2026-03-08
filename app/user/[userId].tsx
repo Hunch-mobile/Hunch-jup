@@ -1005,33 +1005,29 @@ export default function UserProfileScreen() {
                     <View className="flex-1">
                         {/* Tab Header - segmented control */}
                         <View className="mb-4">
-                            <View className="flex-row bg-app-card rounded-2xl p-1 border border-border/40">
+                            <View className="flex-row rounded-2xl p-1" style={{ backgroundColor: '#F3F4F6' }}>
                                 <TouchableOpacity
-                                    className={`flex-1 py-2.5 rounded-xl items-center ${
-                                        activeTab === 'active' ? 'bg-black' : ''
-                                    }`}
+                                    className="flex-1 py-2.5 rounded-xl items-center"
+                                    style={{ backgroundColor: activeTab === 'active' ? '#FEEC28' : 'transparent' }}
                                     onPress={() => animateToTab('active')}
                                     activeOpacity={0.85}
                                 >
                                     <Text
-                                        className={`text-sm font-semibold ${
-                                            activeTab === 'active' ? 'text-white' : 'text-txt-secondary'
-                                        }`}
+                                        className="text-sm font-semibold"
+                                        style={{ color: activeTab === 'active' ? '#000' : Theme.textSecondary }}
                                     >
                                         Active ({activePositions.length})
                                     </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    className={`flex-1 py-2.5 rounded-xl items-center ${
-                                        activeTab === 'previous' ? 'bg-black' : ''
-                                    }`}
+                                    className="flex-1 py-2.5 rounded-xl items-center"
+                                    style={{ backgroundColor: activeTab === 'previous' ? '#FEEC28' : 'transparent' }}
                                     onPress={() => animateToTab('previous')}
                                     activeOpacity={0.85}
                                 >
                                     <Text
-                                        className={`text-sm font-semibold ${
-                                            activeTab === 'previous' ? 'text-white' : 'text-txt-secondary'
-                                        }`}
+                                        className="text-sm font-semibold"
+                                        style={{ color: activeTab === 'previous' ? '#000' : Theme.textSecondary }}
                                     >
                                         Previous ({previousPositions.length})
                                     </Text>
@@ -1195,6 +1191,7 @@ export default function UserProfileScreen() {
                     loadUsdcBalance();
                 }}
                 market={selectedMarket}
+                conditionId={selectedMarket?.conditionId ?? undefined}
                 backendUser={currentUser || null}
                 walletProvider={walletProvider}
                 connection={connection}

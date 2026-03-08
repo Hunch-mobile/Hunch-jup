@@ -1,4 +1,4 @@
-import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, ExternalFollowRelationship, Follow, FollowersResponse, FollowExternalRequest, FollowingResponse, LeaderboardParams, LeaderboardResponse, Market, OnboardingStep, PolymarketClosedPositionsParams, PolymarketClosedPositionsResponse, PolymarketPositionsParams, PolymarketPositionsResponse, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, UnifiedProfile, UnifiedProfileResponse, User, UsernameCheckResponse, UserPositionsResponse } from './types';
+import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, ExternalFollowRelationship, ExternalTrade, ExternalTradeFeedResponse, Follow, FollowersResponse, FollowExternalRequest, FollowingResponse, LeaderboardParams, LeaderboardResponse, Market, OnboardingStep, PolymarketClosedPositionsParams, PolymarketClosedPositionsResponse, PolymarketPositionsParams, PolymarketPositionsResponse, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, UnifiedProfile, UnifiedProfileResponse, User, UsernameCheckResponse, UserPositionsResponse } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunchdotrun-roan.vercel.app';
 const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
@@ -587,13 +587,14 @@ export const polymarketApi = {
         }
         if (candleArray) {
             for (const c of candleArray) {
-                if (!c.yes_ask) continue;
+                // Skip empty time-bucket candles (no trading activity → all OHLC = 0)
+                if (!c.yes_ask || c.yes_ask.close === 0) continue;
                 candles.push({
                     timestamp: c.end_period_ts,
-                    open: c.yes_ask.open,
-                    high: c.yes_ask.high,
-                    low: c.yes_ask.low,
-                    close: c.yes_ask.close,
+                    open: c.yes_ask.open / 100,
+                    high: c.yes_ask.high / 100,
+                    low: c.yes_ask.low / 100,
+                    close: c.yes_ask.close / 100,
                     volume: c.volume || 0,
                 });
             }
@@ -611,7 +612,9 @@ export const profilesApi = {
     getProfile: async (identifier: string, viewerId?: string): Promise<UnifiedProfile> => {
         const searchParams = new URLSearchParams();
         if (viewerId) searchParams.append('viewerId', viewerId);
-        searchParams.append('autoCreate', 'true');
+        // autoCreate is only valid for Hunch users — wallet addresses (0x...) are external profiles
+        const isWalletAddress = /^0x[0-9a-fA-F]+$/i.test(identifier);
+        if (!isWalletAddress) searchParams.append('autoCreate', 'true');
 
         const url = `${API_BASE_URL}/api/profiles/${encodeURIComponent(identifier)}?${searchParams.toString()}`;
         const response = await fetch(url);
@@ -640,6 +643,32 @@ export const followApi = {
             throw new Error(error.error || 'Failed to follow user');
         }
         return response.json();
+    },
+
+    // Following feed — trades from Polymarket traders you follow (requires auth)
+    getFollowingExternalFeed: async ({ limit = 50 }: { limit?: number } = {}): Promise<ExternalTrade[]> => {
+        const params = new URLSearchParams({ limit: limit.toString() });
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/feed/external-trades?${params.toString()}`);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            if (isAuthError(error)) throw error;
+            throw new Error((error as any)?.error || 'Failed to load following feed');
+        }
+        const data = (await response.json()) as ExternalTradeFeedResponse;
+        return data.trades || [];
+    },
+
+    // For-You feed — trades from top traders (no auth required, pass userId for isFollowing)
+    getTopTraderFeed: async ({ limit = 50, userId }: { limit?: number; userId?: string } = {}): Promise<ExternalTrade[]> => {
+        const params = new URLSearchParams({ limit: limit.toString() });
+        if (userId) params.append('userId', userId);
+        const response = await fetch(`${API_BASE_URL}/api/feed/top-trader-trades?${params.toString()}`);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to load top trader feed');
+        }
+        const data = (await response.json()) as ExternalTradeFeedResponse;
+        return data.trades || [];
     },
 
     followExternalProfile: async (request: FollowExternalRequest): Promise<ExternalFollowRelationship> => {
@@ -828,6 +857,7 @@ const mapJupiterMarketToMarket = (market: any, eventId?: string): Market => {
             market?.metadata?.colorCode ||
             market?.color_code ||
             undefined,
+        conditionId: market?.conditionId || undefined,
     };
 };
 
@@ -1103,6 +1133,7 @@ export const marketsApi = {
         ticker,
         marketTicker,
         marketId,
+        conditionId,
         seriesTicker,
         startTs,
         endTs,
@@ -1111,18 +1142,24 @@ export const marketsApi = {
         ticker?: string;
         marketTicker?: string;
         marketId?: string;
+        /** Direct conditionId (0x-prefixed 64 hex chars) — preferred over ticker/marketId */
+        conditionId?: string | null;
         /** The series/event ticker (eventTicker) — used as {series} in the Kalshi endpoint */
         seriesTicker?: string | null;
         startTs?: number;
         endTs?: number;
         periodInterval?: number;
     }): Promise<CandleData[]> => {
-        const resolvedMarketId = marketTicker || marketId || ticker;
-        if (!resolvedMarketId) return [];
+        const VALID_CONDITION_ID = /^0x[0-9a-fA-F]{64}$/;
 
-        // Polymarket conditionally appends `_0` (Yes) or `_1` (No) to token identifiers, but the conditionId 
-        // needed for candlesticks is just the base 0x... hex string. Strip any _{number} suffix.
-        const baseConditionId = resolvedMarketId.split('_')[0];
+        // Prefer explicit conditionId, then fall back to ticker/marketId. Strip any _0/_1 suffix.
+        const resolvedRaw = conditionId || marketTicker || marketId || ticker;
+        if (!resolvedRaw) return [];
+        const baseConditionId = resolvedRaw.split('_')[0];
+
+        // Guard: if the resolved id is not a valid 0x-prefixed 64-char hex (e.g. "POLY-559652"),
+        // there is no valid conditionId available — skip the request to avoid a backend 400 error.
+        if (!VALID_CONDITION_ID.test(baseConditionId)) return [];
 
         const nowTs = Math.floor(Date.now() / 1000);
         const effectiveEndTs = typeof endTs === 'number' && Number.isFinite(endTs) ? endTs : nowTs;

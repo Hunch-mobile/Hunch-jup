@@ -6,9 +6,9 @@ import PostComposerSheet from '@/components/PostComposerSheet';
 import { ListFooterSkeleton, SocialFeedSkeleton } from '@/components/skeletons';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
-import { api, getMarketDetails, marketsApi, polymarketApi } from "@/lib/api";
+import { api, followApi, marketsApi, polymarketApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
-import { User as BackendUser, CandleData, Event, EventEvidence, Market, Trade } from "@/lib/types";
+import { User as BackendUser, CandleData, Event, EventEvidence, ExternalTrade, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -20,11 +20,45 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, FlatList, Image, PanResponder, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-interface FeedItem extends Trade {
-    type: 'trade';
+interface ExternalFeedItem {
+    id: string;
+    conditionId: string;
+    marketTitle: string;
+    outcome: string;
+    side: 'yes' | 'no';
+    action: 'BUY' | 'SELL';
+    usdcAmount: number;
+    price: number;
+    size: number;
+    timestamp: string;
+    transactionHash: string | null;
+    trader: {
+        walletAddress: string;
+        displayName: string | null;
+        avatarUrl: string | null;
+        xUsername: string | null;
+        verifiedBadge: boolean;
+        followerCount?: number;
+        cachedPnl?: number | null;
+        isFollowing?: boolean;
+    };
     marketDetails?: Market;
-    quote?: string | null;
 }
+
+const mapExternalTrade = (t: ExternalTrade): ExternalFeedItem => ({
+    id: t.id,
+    conditionId: t.conditionId,
+    marketTitle: t.marketTitle,
+    outcome: t.outcome,
+    side: 'yes', // conditionId IS the specific outcome token; candles always represent its probability
+    action: t.side,
+    usdcAmount: t.usdcAmount,
+    price: t.price,
+    size: t.size,
+    timestamp: t.timestamp,
+    transactionHash: t.transactionHash,
+    trader: t.trader,
+});
 
 type SearchMarketItem =
     | { type: 'event'; event: Event }
@@ -32,7 +66,7 @@ type SearchMarketItem =
 
 // Mixed feed type for trades and news
 type FeedEntry =
-    | { type: 'trade'; data: FeedItem }
+    | { type: 'trade'; data: ExternalFeedItem }
     | { type: 'news'; data: EventEvidence };
 
 // Event tickers to fetch evidence for
@@ -169,27 +203,30 @@ const FeedCard = ({
     onPress,
     onUserPress,
     onChartPress,
+    onFollow,
+    isFollowInProgress,
 }: {
-    item: FeedItem;
+    item: ExternalFeedItem;
     candles?: CandleData[];
     onPress: () => void;
     onUserPress: () => void;
     onChartPress: () => void;
+    onFollow?: () => void;
+    isFollowInProgress?: boolean;
 }) => {
     const isYes = item.side === 'yes';
     const market = item.marketDetails;
     const subtitle = isYes ? market?.yesSubTitle : market?.noSubTitle;
-    const hasQuote = item.quote && item.quote.trim().length > 0;
-    const avatarUrl = item.user?.avatarUrl?.replace('_normal', '');
-    const totalBought = Number.parseFloat(item.amount || '0');
-    const rawName = item.user?.displayName?.trim();
-    const rawHandle = rawName ? rawName.replace(/^@+/, '') : item.user?.walletAddress || 'anonymous';
+    const avatarUrl = item.trader.avatarUrl?.replace('_normal', '');
+    const totalBought = item.usdcAmount;
+    const rawName = item.trader.displayName?.trim();
+    const rawHandle = rawName ? rawName.replace(/^@+/, '') : item.trader.walletAddress || 'anonymous';
     const handle = formatHandle(rawHandle);
     const isSell = item.action === 'SELL';
-    const actionLabel = isSell ? 'Sell' : 'Buy';
+    const isFollowing = item.trader.isFollowing;
 
     // Price change calculation from candles
-    const entryTimestamp = Math.floor(new Date(item.createdAt).getTime() / 1000);
+    const entryTimestamp = Math.floor(new Date(item.timestamp).getTime() / 1000);
     const priceChange = candles ? (getEntryPnl(candles, entryTimestamp, isYes) || getPriceChange(candles)) : null;
     const chartCandles = useMemo(
         () => (isYes ? (candles || []) : invertCandlesForNoSide(candles || [])),
@@ -209,12 +246,8 @@ const FeedCard = ({
             const precision = val >= 10 ? 0 : 1;
             return `${val.toFixed(precision).replace(/\.0$/, '')}${suffix}`;
         };
-        if (value >= 1_000_000) {
-            return formatCompact(value / 1_000_000, 'M');
-        }
-        if (value >= 1_000) {
-            return formatCompact(value / 1_000, 'K');
-        }
+        if (value >= 1_000_000) return formatCompact(value / 1_000_000, 'M');
+        if (value >= 1_000) return formatCompact(value / 1_000, 'K');
         return value.toFixed(1).replace(/\.0$/, '');
     };
 
@@ -232,6 +265,9 @@ const FeedCard = ({
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     };
 
+    const marketLabel = item.marketTitle || market?.title || `0x…${item.conditionId.slice(-6)}`;
+    const eventLabel = market?.subtitle || 'Polymarket';
+
     return (
         <TouchableOpacity
             className="mx-5 mb-5"
@@ -239,7 +275,7 @@ const FeedCard = ({
             activeOpacity={0.9}
         >
             {/* Header */}
-            <View className="flex-row items-start mb-2">
+            <View className="flex-row items-center mb-2">
                 <TouchableOpacity className="mr-3" onPress={(e) => { e.stopPropagation(); onUserPress(); }}>
                     <View className="w-[38px] h-[38px] rounded-full justify-center items-center bg-app-card border border-border overflow-hidden">
                         <Image
@@ -249,44 +285,55 @@ const FeedCard = ({
                     </View>
                 </TouchableOpacity>
                 <View className="flex-1">
-                    <View className="flex-row items-start justify-between">
-                        <Text className="text-txt-primary font-bold text-[14px]" numberOfLines={1}>
-                            {handle}{' '}
-                            <Text style={{ color: isSell ? '#FF10F0' : '#32de12', fontWeight: '800' }}>
+                    <View className="flex-row items-center justify-between">
+                        <View className="flex-row items-center gap-1.5 flex-1 mr-2" style={{ flexWrap: 'wrap' }}>
+                            <Text className="text-txt-primary font-bold text-[14px]" numberOfLines={1}>
+                                {handle}
+                                {item.trader.verifiedBadge ? ' ✓' : ''}
+                            </Text>
+                            <Text style={{ color: isSell ? '#FF10F0' : '#32de12', fontWeight: '800', fontSize: 14 }}>
                                 {isSell ? 'sold' : 'bought'}
                             </Text>
-                        </Text>
-                        <Text className="text-txt-disabled text-[13px] ml-3 pr-2">
-                            {getTimeAgo(item.createdAt)}
-                        </Text>
+                        </View>
+                        <View className="flex-row items-center gap-2">
+                            {onFollow && (
+                                <TouchableOpacity
+                                    className={`py-1 px-3 rounded-full border ${isFollowing ? 'border-txt-primary bg-transparent' : 'bg-txt-primary border-txt-primary'} ${isFollowInProgress ? 'opacity-60' : ''}`}
+                                    onPress={(e) => { e.stopPropagation(); onFollow(); }}
+                                    disabled={isFollowInProgress}
+                                >
+                                    {isFollowInProgress ? (
+                                        <ActivityIndicator size="small" color={isFollowing ? Theme.textPrimary : Theme.bgMain} />
+                                    ) : (
+                                        <Text className={`text-[11px] font-semibold ${isFollowing ? 'text-txt-primary' : 'text-txt-inverse'}`}>
+                                            {isFollowing ? 'Following' : 'Follow'}
+                                        </Text>
+                                    )}
+                                </TouchableOpacity>
+                            )}
+                            <Text className="text-txt-disabled text-[13px]">{getTimeAgo(item.timestamp)}</Text>
+                        </View>
                     </View>
-                    {hasQuote && (
-                        <Text className="text-[18px] text-txt-primary mt-1 px-2 py-1 leading-[26px]">
-                            {item.quote}
-                        </Text>
-                    )}
                 </View>
             </View>
 
-
-
             {/* Market Card */}
-            <View className="bg-white rounded-[24px] p-3.5 border border-[#E8E8E8] shadow-sm relative">
-
+            <View className="bg-white rounded-[24px] p-3.5 border border-[#E8E8E8] shadow-sm">
                 <View className="flex-row items-center gap-3 mb-3.5">
                     <Text
-                        className={`text-[32px] font-black ${isYes ? 'text-[#32de12]' : 'text-[#FF10F0]'}`}
-                        style={{ fontFamily: 'BBHSansHegarty' }}
+                        className={`font-black ${item.outcome === 'No' ? 'text-[#FF10F0]' : 'text-[#32de12]'}`}
+                        style={{ fontFamily: 'BBHSansHegarty', fontSize: item.outcome.length > 6 ? 18 : 32 }}
+                        numberOfLines={2}
                     >
-                        {isYes ? 'YES' : 'NO'}
+                        {item.outcome === 'Yes' ? 'YES' : item.outcome === 'No' ? 'NO' : item.outcome.toUpperCase()}
                     </Text>
                     <Text className="text-[14px] text-txt-disabled">on</Text>
                     <View className="flex-1 border border-[#E6E6E6] rounded-xl px-2.5 py-2">
                         <Text className="text-[15px] font-semibold text-[#111827]" numberOfLines={1}>
-                            {market?.title || item.marketTicker}
+                            {marketLabel}
                         </Text>
                         <Text className="text-[12px] text-[#6b7280]" numberOfLines={1}>
-                            {subtitle || market?.subtitle || 'Market'}
+                            {eventLabel}
                         </Text>
                     </View>
                 </View>
@@ -319,21 +366,15 @@ const FeedCard = ({
                 <View className="flex-row items-center">
                     <View className="flex-1">
                         <Text className="text-[11px] text-[#9ca3af] uppercase">Total Bought</Text>
-                        <Text className="text-[16px] font-semibold text-[#111827]">
-                            ${formatValue(totalBought)}
-                        </Text>
+                        <Text className="text-[16px] font-semibold text-[#111827]">${formatValue(totalBought)}</Text>
                     </View>
                     <View className="flex-1">
                         <Text className="text-[11px] text-[#9ca3af] uppercase">PNL</Text>
-                        <Text className="text-[14px] font-semibold" style={{ color: pnlColor }}>
-                            {pnlText}
-                        </Text>
+                        <Text className="text-[14px] font-semibold" style={{ color: pnlColor }}>{pnlText}</Text>
                     </View>
                     <View className="flex-1">
                         <Text className="text-[11px] text-[#9ca3af] uppercase">Total Value</Text>
-                        <Text className="text-[16px] font-semibold text-[#111827]">
-                            ${formatValue(totalValue)}
-                        </Text>
+                        <Text className="text-[16px] font-semibold text-[#111827]">${formatValue(totalValue)}</Text>
                     </View>
                 </View>
             </View>
@@ -371,7 +412,7 @@ export default function SocialScreen() {
         getProvider();
     }, [solanaWallet]);
 
-    const [feedItemsByMode, setFeedItemsByMode] = useState<{ global: FeedItem[]; following: FeedItem[] }>({
+    const [feedItemsByMode, setFeedItemsByMode] = useState<{ global: ExternalFeedItem[]; following: ExternalFeedItem[] }>({
         global: [],
         following: [],
     });
@@ -398,14 +439,14 @@ export default function SocialScreen() {
     }>({});
     const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
     const [followingInProgress, setFollowingInProgress] = useState<Set<string>>(new Set());
+    const [followingExternalWallets, setFollowingExternalWallets] = useState<Set<string>>(new Set());
+    const [followingExternalInProgress, setFollowingExternalInProgress] = useState<Set<string>>(new Set());
     const [searchAnimation] = useState(new Animated.Value(0));
-    const offsetRef = useRef({ global: 0, following: 0 });
-    const limit = 50;
     const slideAnim = useRef(new Animated.Value(backendUser ? -SCREEN_WIDTH : 0)).current;
     const modeRef = useRef<'following' | 'global'>(backendUser ? 'following' : 'global');
     const hasUserRef = useRef(!!backendUser);
     const [tradeSheetVisible, setTradeSheetVisible] = useState(false);
-    const [tradeSheetItem, setTradeSheetItem] = useState<FeedItem | null>(null);
+    const [tradeSheetItem, setTradeSheetItem] = useState<ExternalFeedItem | null>(null);
     const [selectedSearchMarket, setSelectedSearchMarket] = useState<Market | null>(null);
     const [selectedSearchEvent, setSelectedSearchEvent] = useState<Event | undefined>(undefined);
     const [evidenceItems, setEvidenceItems] = useState<EventEvidence[]>([]);
@@ -487,7 +528,7 @@ export default function SocialScreen() {
         }).start();
     }, [showSearch]);
 
-    const handleOpenTradeSheet = useCallback((item: FeedItem) => {
+    const handleOpenTradeSheet = useCallback((item: ExternalFeedItem) => {
         setTradeSheetItem(item);
         setTradeSheetVisible(true);
     }, []);
@@ -508,6 +549,7 @@ export default function SocialScreen() {
     const loadFollowingList = async () => {
         if (!backendUser) {
             setFollowingIds(new Set());
+            setFollowingExternalWallets(new Set());
             return;
         }
         try {
@@ -517,64 +559,37 @@ export default function SocialScreen() {
                     .filter(f => f.profileType === 'hunch' && f.userId)
                     .map(f => f.userId!)
             ));
+            setFollowingExternalWallets(new Set(
+                followingRes.following
+                    .filter(f => f.profileType === 'external')
+                    .map(f => f.walletAddress)
+            ));
         } catch (error) {
             console.error("Failed to load following list:", error);
         }
     };
 
     const HYDRATE_LIMIT = 8;
-    const hydrateMarketDetails = useCallback((items: FeedItem[], targetMode: 'following' | 'global') => {
+    const hydrateCandles = useCallback((items: ExternalFeedItem[]) => {
         const toHydrate = items.slice(0, HYDRATE_LIMIT);
         if (toHydrate.length === 0) return;
         Promise.all(
             toHydrate.map(async (item) => {
-                const candleKey = item.conditionId || item.marketTicker;
-                const [marketDetails, candles] = await Promise.all([
-                    getMarketDetails(item.marketTicker),
-                    item.conditionId
-                        ? polymarketApi.getCandlesticks({
-                            conditionId: item.conditionId.split('_')[0],
-                            startTime: Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60,
-                            endTime: Math.floor(Date.now() / 1000),
-                            interval: 60,
-                        }).catch(() => [] as CandleData[])
-                        : marketsApi.fetchCandlesticksByMint({
-                            ticker: item.marketTicker,
-                            seriesTicker: item.eventTicker,
-                        }).catch(() => [] as CandleData[]),
-                ]);
-                return { item, candleKey, marketDetails, candles };
+                const candles = await polymarketApi.getCandlesticks({
+                    conditionId: item.conditionId.split('_')[0],
+                    startTime: Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60,
+                    endTime: Math.floor(Date.now() / 1000),
+                    interval: 60,
+                }).catch(() => [] as CandleData[]);
+                return { conditionId: item.conditionId, candles };
             })
         ).then((results) => {
-            // Save candles regardless of whether marketDetails succeeded
-            const candleUpdates: { ticker: string; candles: CandleData[] }[] = [];
-            const marketUpdates: { id: string; marketDetails: Market }[] = [];
-
+            const updates: Record<string, CandleData[]> = {};
             results.forEach((r) => {
-                if (r.candles.length > 0) {
-                    candleUpdates.push({ ticker: r.candleKey, candles: r.candles });
-                }
-                if (r.marketDetails) {
-                    marketUpdates.push({ id: r.item.id, marketDetails: r.marketDetails });
-                }
+                if (r.candles.length > 0) updates[r.conditionId] = r.candles;
             });
-
-            if (marketUpdates.length > 0) {
-                setFeedItemsByMode((prev) => ({
-                    ...prev,
-                    [targetMode]: prev[targetMode].map((existing) => {
-                        const u = marketUpdates.find((x) => x.id === existing.id);
-                        return u ? { ...existing, marketDetails: u.marketDetails } : existing;
-                    }),
-                }));
-            }
-
-            if (candleUpdates.length > 0) {
-                setCandlesMap((prev) => {
-                    const next = { ...prev };
-                    candleUpdates.forEach((u) => { next[u.ticker] = u.candles; });
-                    return next;
-                });
+            if (Object.keys(updates).length > 0) {
+                setCandlesMap((prev) => ({ ...prev, ...updates }));
             }
         });
     }, []);
@@ -590,32 +605,31 @@ export default function SocialScreen() {
             setHasMoreByMode(prev => ({ ...prev, following: false }));
             return;
         }
-        const nextOffset = reset ? 0 : offsetRef.current[targetMode];
         if (reset) {
             setIsLoadingFeedByMode(prev => ({ ...prev, [targetMode]: true }));
             setFeedErrorByMode(prev => ({ ...prev, [targetMode]: null }));
-            offsetRef.current[targetMode] = 0;
-            setHasMoreByMode(prev => ({ ...prev, [targetMode]: true }));
         } else {
             setIsLoadingMoreByMode(prev => ({ ...prev, [targetMode]: true }));
         }
         try {
-            const trades = await api.getFeed({
-                userId: backendUser?.id,
-                mode: targetMode,
-                limit,
-                offset: nextOffset,
-            });
-            const items: FeedItem[] = trades.map(trade => ({ ...trade, type: 'trade' as const }));
+            let rawTrades: ExternalTrade[];
+            if (targetMode === 'following') {
+                rawTrades = await followApi.getFollowingExternalFeed({ limit: 50 });
+            } else {
+                rawTrades = await followApi.getTopTraderFeed({ limit: 50, userId: backendUser?.id });
+            }
+            const items: ExternalFeedItem[] = rawTrades.map(mapExternalTrade);
             setFeedItemsByMode(prev => ({
                 ...prev,
                 [targetMode]: reset ? items : [...prev[targetMode], ...items],
             }));
-            hydrateMarketDetails(items, targetMode);
-            setHasMoreByMode(prev => ({ ...prev, [targetMode]: items.length === limit }));
-            offsetRef.current[targetMode] = nextOffset + items.length;
+            hydrateCandles(items);
+            // No server-side pagination for these endpoints
+            setHasMoreByMode(prev => ({ ...prev, [targetMode]: false }));
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'Failed to load feed';
+            const message = error instanceof Error
+                ? error.message
+                : (error as any)?.error || 'Failed to load feed';
             setFeedErrorByMode(prev => ({ ...prev, [targetMode]: message }));
             console.error("Failed to load feed:", error);
         } finally {
@@ -623,7 +637,7 @@ export default function SocialScreen() {
             setIsLoadingMoreByMode(prev => ({ ...prev, [targetMode]: false }));
             setRefreshingByMode(prev => ({ ...prev, [targetMode]: false }));
         }
-    }, [backendUser, limit, hydrateMarketDetails]);
+    }, [backendUser, hydrateCandles]);
 
     useEffect(() => {
         loadFeed({ targetMode: mode, reset: true });
@@ -722,6 +736,41 @@ export default function SocialScreen() {
             console.error("Failed to follow/unfollow user:", error);
         } finally {
             setFollowingInProgress(prev => { const s = new Set(prev); s.delete(userId); return s; });
+        }
+    };
+
+    const handleFollowExternalTrader = async (walletAddress: string) => {
+        if (!backendUser || followingExternalInProgress.has(walletAddress)) return;
+        setFollowingExternalInProgress(prev => new Set([...prev, walletAddress]));
+        try {
+            if (followingExternalWallets.has(walletAddress)) {
+                await followApi.unfollowExternalProfile(walletAddress);
+                setFollowingExternalWallets(prev => { const s = new Set(prev); s.delete(walletAddress); return s; });
+                // Update isFollowing in feed items
+                setFeedItemsByMode(prev => ({
+                    ...prev,
+                    global: prev.global.map(item =>
+                        item.trader.walletAddress === walletAddress
+                            ? { ...item, trader: { ...item.trader, isFollowing: false } }
+                            : item
+                    ),
+                }));
+            } else {
+                await followApi.followExternalProfile({ walletAddress, source: 'polymarket' });
+                setFollowingExternalWallets(prev => new Set([...prev, walletAddress]));
+                setFeedItemsByMode(prev => ({
+                    ...prev,
+                    global: prev.global.map(item =>
+                        item.trader.walletAddress === walletAddress
+                            ? { ...item, trader: { ...item.trader, isFollowing: true } }
+                            : item
+                    ),
+                }));
+            }
+        } catch (error) {
+            console.error("Failed to follow/unfollow external trader:", error);
+        } finally {
+            setFollowingExternalInProgress(prev => { const s = new Set(prev); s.delete(walletAddress); return s; });
         }
     };
 
@@ -917,7 +966,6 @@ export default function SocialScreen() {
                                 >
                                     <Ionicons name="notifications" size={22} color={Theme.textPrimary} />
                                 </TouchableOpacity>
-                            </View>
                         </>
                     )}
                 </View>
@@ -981,104 +1029,21 @@ export default function SocialScreen() {
             );
         }
 
-        if (followingIds.size === 0) {
-            const cardWidth = (SCREEN_WIDTH - 20 * 2 - 12) / 2;
-
-            if (isLoadingSuggested) {
-                return (
-                    <View className="flex-1 justify-center items-center">
-                        <ActivityIndicator size="large" color={Theme.textSecondary} />
-                    </View>
-                );
-            }
-
-            const rows: BackendUser[][] = [];
-            for (let i = 0; i < suggestedUsers.length; i += 2) {
-                rows.push(suggestedUsers.slice(i, i + 2));
-            }
-
-            return (
-                <FlatList
-                    data={rows}
-                    keyExtractor={(_, idx) => `row-${idx}`}
-                    ListHeaderComponent={() => (
-                        <View className="px-5 pt-6 pb-4">
-                            <Text className="text-[22px] font-bold text-txt-primary">Suggested for you</Text>
-                            <Text className="text-[14px] text-txt-secondary mt-1">Follow traders to see their activity here</Text>
-                        </View>
-                    )}
-                    renderItem={({ item: row }) => (
-                        <View className="flex-row px-5 mb-3" style={{ gap: 12 }}>
-                            {row.map((user) => {
-                                const avatarUrl = user.avatarUrl?.replace('_normal', '');
-                                const isFollowingUser = followingIds.has(user.id);
-                                const inProgress = followingInProgress.has(user.id);
-
-                                return (
-                                    <TouchableOpacity
-                                        key={user.id}
-                                        style={{ width: cardWidth }}
-                                        className="bg-white rounded-2xl border border-[#E8E8E8] items-center py-5 px-3"
-                                        onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: user.id } })}
-                                        activeOpacity={0.8}
-                                    >
-                                        <View className="w-20 h-20 rounded-full overflow-hidden bg-app-card border-2 border-[#E8E8E8] mb-3">
-                                            <Image
-                                                source={avatarUrl ? { uri: avatarUrl } : defaultProfileImage}
-                                                className="w-full h-full"
-                                            />
-                                        </View>
-                                        <Text className="text-[15px] font-bold text-txt-primary text-center" numberOfLines={1}>
-                                            {user.displayName || 'Anonymous'}
-                                        </Text>
-                                        {user.username ? (
-                                            <Text className="text-[12px] text-txt-disabled mt-0.5 text-center" numberOfLines={1}>
-                                                @{user.username}
-                                            </Text>
-                                        ) : null}
-                                        <Text className="text-[11px] text-txt-secondary mt-1.5 text-center">
-                                            {user.followerCount || 0} followers
-                                        </Text>
-                                        <TouchableOpacity
-                                            className={`mt-3 w-full py-2.5 rounded-xl items-center justify-center ${isFollowingUser ? 'bg-white border border-txt-primary' : 'bg-black'} ${inProgress ? 'opacity-60' : ''}`}
-                                            onPress={(e) => { e.stopPropagation(); handleFollowUser(user.id); }}
-                                            disabled={inProgress}
-                                        >
-                                            {inProgress ? (
-                                                <ActivityIndicator size="small" color={isFollowingUser ? Theme.textPrimary : '#fff'} />
-                                            ) : (
-                                                <Text className={`text-[13px] font-bold ${isFollowingUser ? 'text-txt-primary' : 'text-white'}`}>
-                                                    {isFollowingUser ? 'Following' : 'Follow'}
-                                                </Text>
-                                            )}
-                                        </TouchableOpacity>
-                                    </TouchableOpacity>
-                                );
-                            })}
-                            {row.length === 1 && <View style={{ width: cardWidth }} />}
-                        </View>
-                    )}
-                    contentContainerStyle={{ paddingBottom: 100 }}
-                    showsVerticalScrollIndicator={false}
-                />
-            );
-        }
-
         return (
             <View className="flex-1 justify-center items-center px-10">
                 <View className="w-[88px] h-[88px] rounded-full bg-cyan-500/5 justify-center items-center mb-5">
                     <Ionicons name="trending-up-outline" size={46} color={`${Theme.accentSubtle}50`} />
                 </View>
-                <Text className="text-xl font-semibold text-txt-primary mb-2">No recent trades</Text>
+                <Text className="text-xl font-semibold text-txt-primary mb-2">No trades yet</Text>
                 <Text className="text-[15px] text-txt-secondary text-center leading-[22px] mb-6">
-                    No recent trades from people you follow.
+                    Follow Polymarket traders from the For You tab to see their trades here.
                 </Text>
                 <TouchableOpacity
-                    className="flex-row items-center gap-2 bg-app-card px-6 py-3.5 rounded-lg border border-border"
-                    onPress={() => setMode('global')}
+                    className="flex-row items-center gap-2 bg-txt-primary px-6 py-3.5 rounded-lg"
+                    onPress={() => animateToMode('global')}
                 >
-                    <Ionicons name="globe-outline" size={18} color={Theme.textPrimary} />
-                    <Text className="text-[15px] font-semibold text-txt-primary">View Global Feed</Text>
+                    <Ionicons name="flame-outline" size={18} color={Theme.bgMain} />
+                    <Text className="text-[15px] font-semibold text-txt-inverse">Discover Traders</Text>
                 </TouchableOpacity>
             </View>
         );
@@ -1198,7 +1163,7 @@ export default function SocialScreen() {
                                         mixedFeed.sort((a, b) => {
                                             const getTime = (entry: FeedEntry): number => {
                                                 if (entry.type === 'trade') {
-                                                    return new Date(entry.data.createdAt).getTime();
+                                                    return new Date(entry.data.timestamp).getTime();
                                                 } else {
                                                     // News: use sourcePublishedAt or createdAt
                                                     const newsDate = entry.data.sourcePublishedAt || entry.data.createdAt;
@@ -1230,10 +1195,12 @@ export default function SocialScreen() {
                                                         entry.type === 'trade' ? (
                                                             <FeedCard
                                                                 item={entry.data}
-                                                                candles={candlesMap[entry.data.conditionId || entry.data.marketTicker]}
+                                                                candles={candlesMap[entry.data.conditionId]}
                                                                 onPress={() => handleOpenTradeSheet(entry.data)}
-                                                                onUserPress={() => entry.data.user?.id && router.push({ pathname: '/user/[userId]', params: { userId: entry.data.user.id } })}
+                                                                onUserPress={() => router.push({ pathname: '/profile/[identifier]', params: { identifier: entry.data.trader.walletAddress } })}
                                                                 onChartPress={() => handleOpenTradeSheet(entry.data)}
+                                                                onFollow={pageMode === 'global' && backendUser ? () => handleFollowExternalTrader(entry.data.trader.walletAddress) : undefined}
+                                                                isFollowInProgress={followingExternalInProgress.has(entry.data.trader.walletAddress)}
                                                             />
                                                         ) : (
                                                             <NewsCard item={entry.data} />
@@ -1268,7 +1235,7 @@ export default function SocialScreen() {
                 }}
                 onRefreshFeed={() => loadFeed({ targetMode: mode, reset: true })}
                 market={tradeSheetItem?.marketDetails || selectedSearchMarket || null}
-                candles={tradeSheetItem ? candlesMap[tradeSheetItem.conditionId || tradeSheetItem.marketTicker] : undefined}
+                candles={tradeSheetItem ? candlesMap[tradeSheetItem.conditionId] : undefined}
                 conditionId={tradeSheetItem?.conditionId ?? undefined}
                 backendUser={backendUser || null}
                 walletProvider={walletProvider}

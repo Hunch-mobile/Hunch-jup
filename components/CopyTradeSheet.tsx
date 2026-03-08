@@ -147,9 +147,9 @@ export default function CopyTradeSheet({
                                 Per Trade
                             </Text>
                             <View className="flex-row items-center bg-app-elevated rounded-xl px-4 py-3 border border-border">
-                                <Text className="text-lg font-bold text-txt-primary mr-2">$</Text>
+                                <Text style={{ fontSize: 18, fontWeight: '700', color: Theme.textPrimary, marginRight: 4, lineHeight: 24 }}>$</Text>
                                 <TextInput
-                                    className="flex-1 text-lg font-bold text-txt-primary p-0"
+                                    style={{ flex: 1, fontSize: 18, fontWeight: '700', color: Theme.textPrimary, padding: 0, margin: 0, lineHeight: 24, includeFontPadding: false }}
                                     value={perTrade}
                                     onChangeText={setPerTrade}
                                     keyboardType="numeric"
@@ -165,9 +165,9 @@ export default function CopyTradeSheet({
                                 Total Cap
                             </Text>
                             <View className="flex-row items-center bg-app-elevated rounded-xl px-4 py-3 border border-border">
-                                <Text className="text-lg font-bold text-txt-primary mr-2">$</Text>
+                                <Text style={{ fontSize: 18, fontWeight: '700', color: Theme.textPrimary, marginRight: 4, lineHeight: 24 }}>$</Text>
                                 <TextInput
-                                    className="flex-1 text-lg font-bold text-txt-primary p-0"
+                                    style={{ flex: 1, fontSize: 18, fontWeight: '700', color: Theme.textPrimary, padding: 0, margin: 0, lineHeight: 24, includeFontPadding: false }}
                                     value={totalCap}
                                     onChangeText={setTotalCap}
                                     keyboardType="numeric"

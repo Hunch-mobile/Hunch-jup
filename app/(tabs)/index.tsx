@@ -546,6 +546,7 @@ export default function HomeScreen() {
         onClose={handleCloseMarketSheet}
         onTradeSuccess={() => { }}
         market={selectedMarket}
+        conditionId={selectedMarket?.conditionId ?? undefined}
         backendUser={backendUser || null}
         walletProvider={walletProvider}
         connection={connection}

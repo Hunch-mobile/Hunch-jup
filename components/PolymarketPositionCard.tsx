@@ -3,9 +3,6 @@ import { Image } from "expo-image";
 import { Text, View } from "react-native";
 
 const defaultIcon = require("@/assets/default.jpeg");
-const hunchBadge = require("@/assets/icon-blue.png");
-
-const YELLOW = '#FACC15';
 
 const formatCurrency = (value: number | null | undefined, compact = false) => {
     if (value === null || value === undefined || !Number.isFinite(value)) return '—';
@@ -14,11 +11,6 @@ const formatCurrency = (value: number | null | undefined, compact = false) => {
         if (Math.abs(value) >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
     }
     return `$${value.toFixed(2)}`;
-};
-
-const formatPercent = (value: number | null | undefined) => {
-    if (value === null || value === undefined || !Number.isFinite(value)) return '—';
-    return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
 };
 
 const formatDate = (dateString: string): string => {
@@ -40,126 +32,57 @@ export default function PolymarketPositionCard({ position, isClosed = false }: P
     const isActive = isActivePosition(position);
 
     const pnlValue = isActive ? position.cashPnl : position.realizedPnl;
-    const pnlPercent = isActive ? position.percentPnl : null;
     const pnlColor = pnlValue >= 0 ? '#16A34A' : '#DC2626';
-
-    const costBasis = isActive ? position.initialValue : position.totalBought;
-    const currentValue = isActive ? position.currentValue : null;
 
     return (
         <View className="mb-3">
-            <View className="rounded-2xl p-4 overflow-hidden" style={{ backgroundColor: '#F9FAFB' }}>
-                {/* Header Row */}
-                <View className="flex-row justify-between items-start gap-3 mb-2">
-                    <Text className="text-lg font-bold flex-1" numberOfLines={2}>
-                        {formatCurrency(costBasis)}{" "}
-                        <Text
-                            style={{ color: isYes ? '#16A34A' : '#DC2626', fontSize: 18, fontWeight: '800' }}
-                        >
-                            {position.outcome.toUpperCase()}
-                        </Text>
-                    </Text>
-                    {position.endDate && (
-                        <Text className="text-xs text-txt-disabled shrink-0">
-                            {isClosed ? 'Closed' : `Ends ${formatDate(position.endDate)}`}
-                        </Text>
-                    )}
-                </View>
-
-                {/* Market Info Row */}
-                <View className="flex-row items-center gap-3 mb-3">
-                    <View className="relative">
-                        <View className="w-12 h-12 rounded-xl overflow-hidden" style={{ backgroundColor: '#F3F4F6' }}>
-                            <Image
-                                source={position.icon ? { uri: position.icon } : defaultIcon}
-                                style={{ width: '100%', height: '100%' }}
-                                contentFit="cover"
-                            />
-                        </View>
-                        {/* Hunch Badge */}
-                        <View className="absolute -bottom-1 -right-1 w-[18px] h-[18px] rounded-full bg-white items-center justify-center"
-                            style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 }}
-                        >
-                            <Image
-                                source={hunchBadge}
-                                style={{ width: 14, height: 14, borderRadius: 7 }}
-                                contentFit="cover"
-                            />
-                        </View>
+            <View className="rounded-2xl px-5 py-4 overflow-hidden" style={{ backgroundColor: '#F9FAFB' }}>
+                {/* Market row */}
+                <View className="flex-row items-center gap-4">
+                    <View className="w-14 h-14 rounded-2xl overflow-hidden" style={{ backgroundColor: '#F3F4F6' }}>
+                        <Image
+                            source={position.icon ? { uri: position.icon } : defaultIcon}
+                            style={{ width: '100%', height: '100%' }}
+                            contentFit="cover"
+                        />
                     </View>
                     <View className="flex-1">
-                        <Text className="text-base font-medium text-txt-primary" numberOfLines={2}>
+                        <Text className="text-base font-semibold text-txt-primary" numberOfLines={2}>
                             {position.title}
                         </Text>
-                        {position.eventSlug && (
-                            <Text className="text-xs text-txt-disabled mt-0.5" numberOfLines={1}>
-                                {position.eventSlug.replace(/-/g, ' ')}
+                        <View className="flex-row items-center gap-1.5 mt-1">
+                            <Text
+                                className="text-sm font-bold"
+                                style={{ color: isYes ? '#16A34A' : '#DC2626' }}
+                            >
+                                {position.outcome.toUpperCase()}
                             </Text>
-                        )}
-                    </View>
-                </View>
-
-                {/* Stats Row */}
-                <View className="flex-row items-start justify-between">
-                    {/* Current Value (only for active positions) */}
-                    {isActive && !isClosed && (
-                        <View className="flex-1">
-                            <Text className="text-[11px] text-txt-disabled uppercase">Value</Text>
-                            <Text className="text-base font-semibold text-txt-primary">
-                                {formatCurrency(currentValue)}
+                            <Text className="text-sm text-txt-disabled">·</Text>
+                            <Text className="text-sm text-txt-disabled">
+                                {(position.avgPrice * 100).toFixed(0)}¢ avg
                             </Text>
+                            {isActive && !isClosed && (
+                                <>
+                                    <Text className="text-sm text-txt-disabled">→</Text>
+                                    <Text className="text-sm text-txt-disabled">
+                                        {(position.curPrice * 100).toFixed(0)}¢
+                                    </Text>
+                                </>
+                            )}
                         </View>
-                    )}
-
-                    {/* Entry Price */}
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-txt-disabled uppercase">Avg Price</Text>
-                        <Text className="text-base font-semibold text-txt-primary">
-                            {(position.avgPrice * 100).toFixed(0)}¢
-                        </Text>
                     </View>
-
-                    {/* Current Price (only for active) */}
-                    {isActive && !isClosed && (
-                        <View className="flex-1">
-                            <Text className="text-[11px] text-txt-disabled uppercase">Price</Text>
-                            <Text className="text-base font-semibold text-txt-primary">
-                                {(position.curPrice * 100).toFixed(0)}¢
-                            </Text>
-                        </View>
-                    )}
-
                     {/* PnL */}
-                    <View className="flex-1 items-end">
-                        <Text className="text-[11px] text-txt-disabled uppercase">
-                            {isClosed ? 'Realized' : 'PnL'}
+                    <View className="items-end">
+                        <Text className="text-base font-bold" style={{ color: pnlColor }}>
+                            {pnlValue >= 0 ? '+' : ''}{formatCurrency(pnlValue, true)}
                         </Text>
-                        <Text className="text-base font-semibold" style={{ color: pnlColor }}>
-                            {pnlValue >= 0 ? '+' : ''}{formatCurrency(pnlValue)}
-                        </Text>
-                        {pnlPercent !== null && (
-                            <Text className="text-[11px] font-medium" style={{ color: pnlColor }}>
-                                {formatPercent(pnlPercent)}
+                        {isClosed && position.endDate && (
+                            <Text className="text-xs text-txt-disabled mt-0.5">
+                                {formatDate(position.endDate)}
                             </Text>
                         )}
                     </View>
                 </View>
-
-                {/* Redeemable/Mergeable badges for active positions */}
-                {isActive && (position.redeemable || position.mergeable) && (
-                    <View className="flex-row gap-2 mt-3">
-                        {position.redeemable && (
-                            <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: `${YELLOW}25` }}>
-                                <Text className="text-xs font-medium" style={{ color: '#A16207' }}>Redeemable</Text>
-                            </View>
-                        )}
-                        {position.mergeable && (
-                            <View className="px-2.5 py-1 rounded-full" style={{ backgroundColor: `${YELLOW}25` }}>
-                                <Text className="text-xs font-medium" style={{ color: '#A16207' }}>Mergeable</Text>
-                            </View>
-                        )}
-                    </View>
-                )}
             </View>
         </View>
     );

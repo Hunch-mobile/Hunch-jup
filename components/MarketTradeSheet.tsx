@@ -392,15 +392,22 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                         ? Math.max(0, endTs - 365 * 24 * 60 * 60)
                         : Math.max(0, endTs - (selectedFilter?.seconds || 7 * 24 * 60 * 60));
                 const periodInterval = TIME_FILTER_INTERVALS[timeFilter];
-                const candles = conditionId
+                const VALID_CONDITION_ID = /^0x[0-9a-fA-F]{64}$/;
+                const validConditionId = conditionId && VALID_CONDITION_ID.test(conditionId.split('_')[0])
+                    ? conditionId.split('_')[0]
+                    : (market?.conditionId && VALID_CONDITION_ID.test(market.conditionId.split('_')[0])
+                        ? market.conditionId.split('_')[0]
+                        : null);
+                const candles = validConditionId
                     ? await polymarketApi.getCandlesticks({
-                        conditionId,
+                        conditionId: validConditionId,
                         startTime: startTs,
                         endTime: endTs,
                         interval: periodInterval,
                     })
                     : await marketsApi.fetchCandlesticksByMint({
                         marketTicker: market!.ticker,
+                        conditionId: market?.conditionId,
                         seriesTicker: market!.eventTicker,
                         startTs,
                         endTs,

@@ -226,6 +226,7 @@ export interface Market {
     yesMint?: string;
     noMint?: string;
     colorCode?: string;
+    conditionId?: string;
     accounts?: {
         [key: string]: {
             marketLedger?: string;
@@ -706,4 +707,38 @@ export interface FollowersResponse {
     profileType?: string;
     walletAddress?: string;
     count: number;
+}
+
+// ============================================
+// External Trade Feed Types
+// ============================================
+
+export interface ExternalTradeTrader {
+    walletAddress: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    xUsername: string | null;
+    verifiedBadge: boolean;
+    followerCount?: number;
+    cachedPnl?: number | null;
+    isFollowing?: boolean;
+}
+
+export interface ExternalTrade {
+    id: string;
+    trader: ExternalTradeTrader;
+    conditionId: string;
+    marketTitle: string;
+    outcome: string;
+    side: 'BUY' | 'SELL';
+    size: number;
+    price: number;
+    usdcAmount: number;
+    timestamp: string;
+    transactionHash: string | null;
+}
+
+export interface ExternalTradeFeedResponse {
+    trades: ExternalTrade[];
+    total: number;
 }

@@ -943,6 +943,7 @@ export default function ProfileScreen() {
                     loadTrades();
                 }}
                 market={selectedMarket}
+                conditionId={selectedMarket?.conditionId ?? undefined}
                 backendUser={backendUser || null}
                 walletProvider={walletProvider}
                 connection={connection}

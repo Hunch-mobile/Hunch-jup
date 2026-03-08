@@ -5,13 +5,10 @@ import { polymarketApi } from "@/lib/api";
 import { LeaderboardCategory, LeaderboardOrderBy, LeaderboardTimePeriod, PolymarketTrader } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, RefreshControl, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-const hunchBadge = require("@/assets/icon-blue.png");
 
 const CATEGORIES: { value: LeaderboardCategory; label: string }[] = [
     { value: 'OVERALL', label: 'All' },
@@ -149,23 +146,8 @@ export default function LeaderboardScreen() {
             <SafeAreaView className="flex-1" edges={['top']}>
                 {/* Header */}
                 <View className="px-5 pt-2 pb-3">
-                    <View className="flex-row items-center justify-between mb-5">
-                        <TouchableOpacity
-                            onPress={() => router.back()}
-                            className="w-10 h-10 rounded-full items-center justify-center"
-                            style={{ backgroundColor: '#F3F4F6' }}
-                        >
-                            <Ionicons name="chevron-back" size={20} color={Theme.textPrimary} />
-                        </TouchableOpacity>
-                        <View className="flex-row items-center gap-2">
-                            <Image
-                                source={hunchBadge}
-                                style={{ width: 26, height: 26, borderRadius: 13 }}
-                                contentFit="cover"
-                            />
-                            <Text className="text-xl font-bold text-txt-primary">Leaderboard</Text>
-                        </View>
-                        <View className="w-10" />
+                    <View className="flex-row items-center mb-5">
+                        <Text className="text-xl font-bold text-txt-primary">Leaderboard</Text>
                     </View>
 
                     {/* Category Pills */}
