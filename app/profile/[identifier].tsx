@@ -19,6 +19,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const defaultProfileImage = require("@/assets/default.jpeg");
 const hunchBadge = require("@/assets/icon-blue.png");
+const xLogo = require("../../../xlogo.png");
 
 const YELLOW = '#FACC15';
 const YELLOW_DARK = '#EAB308';
@@ -287,12 +288,21 @@ export default function UnifiedProfileScreen() {
 
                             {username && (
                                 <TouchableOpacity
+                                    className="flex-row items-center gap-1.5 mb-2"
                                     onPress={() => isExternal && externalProfile.xUsername ? handleOpenX(externalProfile.xUsername) : null}
                                     disabled={!isExternal || !externalProfile.xUsername}
+                                    activeOpacity={isExternal && externalProfile.xUsername ? 0.7 : 1}
                                 >
-                                    <Text className="text-base text-txt-secondary mb-2">
+                                    <Text className="text-base text-txt-secondary">
                                         {username}
                                     </Text>
+                                    {isExternal && externalProfile.xUsername && (
+                                        <Image
+                                            source={xLogo}
+                                            style={{ width: 18, height: 18 }}
+                                            contentFit="contain"
+                                        />
+                                    )}
                                 </TouchableOpacity>
                             )}
 

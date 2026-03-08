@@ -129,7 +129,7 @@ export default function CopyTradeSheet({
                         <View className="flex-row items-center gap-3">
                             <View className="items-end">
                                 <Text className="text-xs text-txt-disabled tracking-wide">Your balance</Text>
-                                <Text className="text-lg font-bold text-txt-primary">${balance.toFixed(2)}</Text>
+                                <Text className="text-lg font-bold text-txt-primary">${balance.toFixed(0)}</Text>
                             </View>
                             <TouchableOpacity
                                 onPress={handleClose}

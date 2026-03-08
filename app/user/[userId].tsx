@@ -10,7 +10,7 @@ import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
 import { api, getEventDetails, getMarketDetails, marketsApi } from "@/lib/api";
-import { executeTrade, sendUSDC, toRawAmount } from "@/lib/tradeService";
+import { executeTrade, sendUSDC, toRawAmount, isDemoTrading, DEMO_BALANCE_USD } from "@/lib/tradeService";
 import { AggregatedPosition, CandleData, Event, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
@@ -20,7 +20,7 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -298,7 +298,6 @@ export default function UserProfileScreen() {
     const [isLoadingPositions, setIsLoadingPositions] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isFollowing, setIsFollowing] = useState(false);
-    const [followLoading, setFollowLoading] = useState(false);
     const [activeTab, setActiveTab] = useState<TabType>('active');
     const [eventDetailsByTicker, setEventDetailsByTicker] = useState<Record<string, Event | null>>({});
     const [candlesByTicker, setCandlesByTicker] = useState<Record<string, CandleData[]>>({});
@@ -333,15 +332,17 @@ export default function UserProfileScreen() {
     const tradeStats = useMemo(() => {
         if (!trades || trades.length === 0) {
             return {
-                totalPnl: 0,
-                totalBets: 0,
                 winRate: null as number | null,
+                wins: 0,
+                losses: 0,
+                avgWin: null as number | null,
             };
         }
 
-        let realizedPnl = 0;
         let betsWithPnl = 0;
         let wins = 0;
+        let losses = 0;
+        let totalWinnings = 0;
 
         for (const trade of trades) {
             const amountValue = Number(trade.amount);
@@ -375,20 +376,23 @@ export default function UserProfileScreen() {
                 continue;
             }
 
-            realizedPnl += pnlDollar;
             betsWithPnl += 1;
             if (pnlDollar > 0) {
                 wins += 1;
+                totalWinnings += pnlDollar;
+            } else {
+                losses += 1;
             }
         }
 
-        const winRate =
-            betsWithPnl > 0 ? (wins / betsWithPnl) * 100 : null;
+        const winRate = betsWithPnl > 0 ? (wins / betsWithPnl) * 100 : null;
+        const avgWin = wins > 0 ? totalWinnings / wins : null;
 
         return {
-            totalPnl: realizedPnl,
-            totalBets: trades.length,
             winRate,
+            wins,
+            losses,
+            avgWin,
         };
     }, [trades]);
 
@@ -490,7 +494,7 @@ export default function UserProfileScreen() {
 
     const loadUsdcBalance = useCallback(async () => {
         if (!currentUser?.walletAddress) {
-            setUsdcBalance(0);
+            setUsdcBalance(isDemoTrading ? DEMO_BALANCE_USD : 0);
             return;
         }
         try {
@@ -505,10 +509,10 @@ export default function UserProfileScreen() {
                 const amount = accountInfo.account.data?.parsed?.info?.tokenAmount?.uiAmount;
                 return sum + (typeof amount === 'number' ? amount : 0);
             }, 0);
-            setUsdcBalance(totalBalance);
+            setUsdcBalance(isDemoTrading ? DEMO_BALANCE_USD : totalBalance);
         } catch (error) {
             console.error("Failed to load USDC balance:", error);
-            setUsdcBalance(0);
+            setUsdcBalance(isDemoTrading ? DEMO_BALANCE_USD : 0);
         }
     }, [currentUser?.walletAddress]);
 
@@ -622,10 +626,9 @@ export default function UserProfileScreen() {
     };
 
     const handleFollow = async () => {
-        if (!currentUser || isOwnProfile || followLoading) return;
+        if (!currentUser || isOwnProfile) return;
         const wasFollowing = isFollowing;
         setIsFollowing(!wasFollowing);
-        setFollowLoading(true);
         try {
             if (wasFollowing) {
                 await api.unfollowUser(userId as string);
@@ -637,8 +640,6 @@ export default function UserProfileScreen() {
         } catch (error) {
             console.error("Failed to follow/unfollow:", error);
             setIsFollowing(wasFollowing);
-        } finally {
-            setFollowLoading(false);
         }
     };
 
@@ -935,13 +936,8 @@ export default function UserProfileScreen() {
                                         <TouchableOpacity
                                             className="flex-1 flex-row justify-center items-center gap-1.5 px-3 py-2.5 rounded-xl bg-black"
                                             onPress={handleFollow}
-                                            disabled={followLoading}
                                         >
-                                            {followLoading ? (
-                                                <ActivityIndicator size="small" color="white" />
-                                            ) : (
-                                                <Text className="text-sm font-semibold text-white">Follow</Text>
-                                            )}
+                                            <Text className="text-sm font-semibold text-white">Follow</Text>
                                         </TouchableOpacity>
                                     )}
 
@@ -964,35 +960,27 @@ export default function UserProfileScreen() {
 
                             <View className="flex-row mt-3 bg-app-card rounded-2xl px-3 py-2 border border-border/40">
                                 <View className="flex-1">
-                                    <Text className="text-[11px] text-txt-secondary mb-0.5">Total PnL</Text>
-                                    <Text
-                                        className={`text-[15px] font-semibold ${
-                                            tradeStats.totalPnl > 0
-                                                ? 'text-green-500'
-                                                : tradeStats.totalPnl < 0
-                                                ? 'text-[#FF10F0]'
-                                                : 'text-txt-primary'
-                                        }`}
-                                    >
-                                        {tradeStats.totalPnl === 0
-                                            ? '$0'
-                                            : `${tradeStats.totalPnl > 0 ? '+' : '-'}$${Math.abs(tradeStats.totalPnl).toFixed(0)}`}
-                                    </Text>
-                                </View>
-                                <View className="w-px bg-border/40 mx-2" />
-                                <View className="flex-1">
-                                    <Text className="text-[11px] text-txt-secondary mb-0.5">Total Bets</Text>
-                                    <Text className="text-[15px] font-semibold text-txt-primary">
-                                        {tradeStats.totalBets}
-                                    </Text>
-                                </View>
-                                <View className="w-px bg-border/40 mx-2" />
-                                <View className="flex-1">
                                     <Text className="text-[11px] text-txt-secondary mb-0.5">Win Rate</Text>
                                     <Text className="text-[15px] font-semibold text-txt-primary">
                                         {tradeStats.winRate === null
                                             ? '—'
                                             : `${tradeStats.winRate.toFixed(0)}%`}
+                                    </Text>
+                                </View>
+                                <View className="w-px bg-border/40 mx-2" />
+                                <View className="flex-1">
+                                    <Text className="text-[11px] text-txt-secondary mb-0.5">W/L</Text>
+                                    <Text className="text-[15px] font-semibold text-txt-primary">
+                                        {tradeStats.wins}W / {tradeStats.losses}L
+                                    </Text>
+                                </View>
+                                <View className="w-px bg-border/40 mx-2" />
+                                <View className="flex-1">
+                                    <Text className="text-[11px] text-txt-secondary mb-0.5">Avg Win</Text>
+                                    <Text className="text-[15px] font-semibold text-txt-primary">
+                                        {tradeStats.avgWin === null
+                                            ? '—'
+                                            : `$${tradeStats.avgWin.toFixed(0)}`}
                                     </Text>
                                 </View>
                             </View>

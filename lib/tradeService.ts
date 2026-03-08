@@ -8,6 +8,49 @@ import { authenticatedFetch } from './api';
 export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 export const DECIMALS = 1_000_000; // 6 decimals for USDC and outcome tokens
 
+/** When true, trades skip blockchain and create backend-only records for demos. */
+export const isDemoTrading = process.env.EXPO_PUBLIC_DEMO_TRADING === 'true';
+
+/** Fake USDC balance shown when demo mode is on (for recording demos). */
+export const DEMO_BALANCE_USD = 500;
+
+/**
+ * Returns fake signature and order for demo mode (no on-chain execution).
+ * price: 0–1 outcome price for buy (yesAsk); for sell, same for conversion.
+ */
+export function createDemoTradeResult(params: {
+    rawAmount: string;
+    isBuy: boolean;
+    price?: number;
+}): { signature: string; order: DFlowOrderResponse } {
+    const { rawAmount, isBuy, price = 0.5 } = params;
+    const raw = Math.floor(Number(rawAmount));
+    if (!Number.isFinite(raw) || raw <= 0) {
+        return createDemoTradeResult({ rawAmount: String(DECIMALS), isBuy, price });
+    }
+    const signature = `demo_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    let inAmount: string;
+    let outAmount: string;
+    if (isBuy) {
+        inAmount = String(raw);
+        const outcomeTokens = price > 0 ? raw / price : raw * 2;
+        outAmount = String(Math.floor(outcomeTokens));
+    } else {
+        inAmount = String(raw);
+        const usdcReceived = price > 0 ? raw * price : raw * 0.5;
+        outAmount = String(Math.floor(usdcReceived));
+    }
+    return {
+        signature,
+        order: {
+            transaction: '',
+            executionMode: 'sync',
+            inAmount,
+            outAmount,
+        } as DFlowOrderResponse,
+    };
+}
+
 // Default send options - mirror web behavior
 export const DEFAULT_SEND_OPTIONS = {
     skipPreflight: true,
@@ -399,6 +442,11 @@ export async function executeTrade(params: {
         slippageBps = 100,
         maxRetries = 2
     } = params;
+
+    if (isDemoTrading) {
+        console.log('[TradeService] Demo mode: skipping on-chain execution');
+        return Promise.resolve(createDemoTradeResult({ rawAmount: amount, isBuy }));
+    }
 
     let lastError: TradeError | Error | null = null;
 

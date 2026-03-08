@@ -10,7 +10,7 @@ import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
 import { api, getEventDetails, marketsApi } from "@/lib/api";
-import { executeTrade, toRawAmount } from "@/lib/tradeService";
+import { executeTrade, isDemoTrading, DEMO_BALANCE_USD, toRawAmount } from "@/lib/tradeService";
 import { AggregatedPosition, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet, usePrivy } from "@privy-io/expo";
@@ -335,10 +335,10 @@ export default function ProfileScreen() {
                 const amount = accountInfo.account.data?.parsed?.info?.tokenAmount?.uiAmount;
                 return sum + (typeof amount === 'number' ? amount : 0);
             }, 0);
-            setUsdcBalance(totalBalance);
+            setUsdcBalance(isDemoTrading ? DEMO_BALANCE_USD : totalBalance);
         } catch (error) {
             console.error("Failed to load USDC balance:", error);
-            setUsdcBalance(null);
+            setUsdcBalance(isDemoTrading ? DEMO_BALANCE_USD : null);
         }
     }, [walletAddress]);
 

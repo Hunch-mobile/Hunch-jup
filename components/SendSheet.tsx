@@ -211,7 +211,7 @@ export default function SendSheet({
                         <View style={{ alignSelf: "flex-end", marginRight: 24 }}>
                             <View style={styles.balancePill}>
                                 <Ionicons name="wallet-outline" size={20} color={TEXT_DIM} />
-                                <Text style={styles.balanceText}>{balance.toFixed(1)} USDC</Text>
+                                <Text style={styles.balanceText}>{balance.toFixed(0)} USDC</Text>
                             </View>
                         </View>
 

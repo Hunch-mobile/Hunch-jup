@@ -52,6 +52,7 @@ export default function CopySettingsModal({
     const [existingSettings, setExistingSettings] = useState<CopySettings | null>(null);
     const [localError, setLocalError] = useState<string | null>(null);
     const [fetching, setFetching] = useState(false);
+    const [focusedInput, setFocusedInput] = useState<'perTrade' | 'totalCap' | null>(null);
 
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -245,35 +246,47 @@ export default function CopySettingsModal({
                                 <View className="flex-row gap-4">
                                     <View className="flex-1">
                                         <Text className="text-xs font-medium text-txt-secondary mb-2 uppercase tracking-wide">Per Trade</Text>
-                                        <View className="flex-row items-center bg-app-elevated rounded-xl px-4 py-3.5 border border-border">
-                                            <Text className="text-lg font-bold text-txt-primary mr-1" style={{ includeFontPadding: false, textAlignVertical: 'center' }}>$</Text>
+                                        <View
+                                            style={[
+                                                styles.inputRow,
+                                                focusedInput === 'perTrade' && styles.inputRowFocused,
+                                            ]}
+                                        >
+                                            <Text style={styles.inputPrefix}>$</Text>
                                             <TextInput
                                                 value={amountPerTrade}
                                                 onChangeText={setAmountPerTrade}
                                                 placeholder="10"
+                                                placeholderTextColor={Theme.textDisabled}
                                                 keyboardType="numeric"
                                                 returnKeyType="done"
                                                 onSubmitEditing={Keyboard.dismiss}
-                                                placeholderTextColor={Theme.textDisabled}
-                                                className="flex-1 text-lg font-bold text-txt-primary p-0"
-                                                style={{ includeFontPadding: false, textAlignVertical: 'center' }}
+                                                onFocus={() => setFocusedInput('perTrade')}
+                                                onBlur={() => setFocusedInput(null)}
+                                                style={styles.input}
                                             />
                                         </View>
                                     </View>
                                     <View className="flex-1">
                                         <Text className="text-xs font-medium text-txt-secondary mb-2 uppercase tracking-wide">Total Cap</Text>
-                                        <View className="flex-row items-center bg-app-elevated rounded-xl px-4 py-3.5 border border-border">
-                                            <Text className="text-lg font-bold text-txt-primary mr-1" style={{ includeFontPadding: false, textAlignVertical: 'center' }}>$</Text>
+                                        <View
+                                            style={[
+                                                styles.inputRow,
+                                                focusedInput === 'totalCap' && styles.inputRowFocused,
+                                            ]}
+                                        >
+                                            <Text style={styles.inputPrefix}>$</Text>
                                             <TextInput
                                                 value={maxTotalAmount}
                                                 onChangeText={setMaxTotalAmount}
                                                 placeholder="100"
+                                                placeholderTextColor={Theme.textDisabled}
                                                 keyboardType="numeric"
                                                 returnKeyType="done"
                                                 onSubmitEditing={Keyboard.dismiss}
-                                                placeholderTextColor={Theme.textDisabled}
-                                                className="flex-1 text-lg font-bold text-txt-primary p-0"
-                                                style={{ includeFontPadding: false, textAlignVertical: 'center' }}
+                                                onFocus={() => setFocusedInput('totalCap')}
+                                                onBlur={() => setFocusedInput(null)}
+                                                style={styles.input}
                                             />
                                         </View>
                                     </View>
@@ -345,5 +358,37 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.15,
         shadowRadius: 12,
         elevation: 10,
+    },
+    inputRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: Theme.bgElevated,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderWidth: 1.5,
+        borderColor: Theme.border,
+        minHeight: 52,
+    },
+    inputRowFocused: {
+        borderColor: Theme.textPrimary,
+        backgroundColor: Theme.bgCard,
+    },
+    inputPrefix: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: Theme.textPrimary,
+        marginRight: 4,
+        includeFontPadding: false,
+    },
+    input: {
+        flex: 1,
+        fontSize: 18,
+        fontWeight: '600',
+        color: Theme.textPrimary,
+        paddingVertical: 0,
+        paddingHorizontal: 0,
+        includeFontPadding: false,
+        minHeight: 24,
     },
 });

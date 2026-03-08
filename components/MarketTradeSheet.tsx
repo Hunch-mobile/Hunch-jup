@@ -5,7 +5,7 @@ import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
 import { api, getEventDetails, marketsApi, polymarketApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
-import { executeTrade, fromRawAmount, requestOrder, toRawAmount, USDC_MINT } from "@/lib/tradeService";
+import { executeTrade, fromRawAmount, requestOrder, toRawAmount, USDC_MINT, isDemoTrading, DEMO_BALANCE_USD } from "@/lib/tradeService";
 import { User as BackendUser, CandleData, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { Connection, PublicKey } from "@solana/web3.js";
@@ -341,9 +341,10 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                 );
                 const total = tokenAccounts.value.reduce((sum, acc) =>
                     sum + (acc.account.data.parsed.info.tokenAmount.uiAmount || 0), 0);
-                setUsdcBalance(total);
+                setUsdcBalance(isDemoTrading ? DEMO_BALANCE_USD : total);
             } catch (e) {
                 console.error("Failed to load USDC balance", e);
+                if (isDemoTrading) setUsdcBalance(DEMO_BALANCE_USD);
             }
         };
         fetchBalance();
