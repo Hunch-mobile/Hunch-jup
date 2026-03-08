@@ -1,3 +1,4 @@
+
 import CopySettingsModal from "@/components/CopySettingsModal";
 import PolymarketPositionCard from "@/components/PolymarketPositionCard";
 import { Skeleton } from "@/components/Skeleton";
@@ -19,8 +20,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const defaultProfileImage = require("@/assets/default.jpeg");
 const hunchBadge = require("@/assets/icon-blue.png");
-const xLogo = require("../../../xlogo.png");
-
+const hunchIcon = require("@/assets/xlogo.png");
 const YELLOW = '#FACC15';
 const YELLOW_DARK = '#EAB308';
 
@@ -298,8 +298,8 @@ export default function UnifiedProfileScreen() {
                                     </Text>
                                     {isExternal && externalProfile.xUsername && (
                                         <Image
-                                            source={xLogo}
-                                            style={{ width: 18, height: 18 }}
+                                            source={hunchIcon}
+                                            style={{ width: 18, height: 18, marginLeft: 2 }}
                                             contentFit="contain"
                                         />
                                     )}

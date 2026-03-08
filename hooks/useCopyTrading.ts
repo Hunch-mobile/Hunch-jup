@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import { isDemoTrading } from '@/lib/tradeService';
 import { AuthError, CopySettings, DelegationStatus } from '@/lib/types';
 import { useEmbeddedSolanaWallet, usePrivy, useSessionSigners } from '@privy-io/expo';
 import { useCallback, useState } from 'react';
@@ -224,11 +225,7 @@ export function useCopyTrading(): UseCopyTradingReturn {
                     maxTotalAmount: settings.maxTotalAmount,
                 });
             } else {
-                // FULL FLOW - Need signature
-                console.log('[CopyTrading] Full flow - requesting signature');
-                setIsSigningDelegation(true);
-
-                // Generate and sign delegation message
+                // FULL FLOW - Need signature (or dummy in demo mode)
                 const message = generateDelegationMessage(
                     leaderName,
                     leaderId,
@@ -236,15 +233,21 @@ export function useCopyTrading(): UseCopyTradingReturn {
                     settings.maxTotalAmount
                 );
 
-                const signature = await signDelegationMessage(message);
-
-                // Add session signer if missing
-                if (!walletHasSigner) {
-                    console.log('[CopyTrading] Adding session signer');
-                    await addSessionSigner();
+                let signature: string;
+                if (isDemoTrading) {
+                    console.log('[CopyTrading] Demo mode - using dummy signature');
+                    signature = Buffer.from(`demo_${Date.now()}_${leaderId}`).toString('base64');
+                } else {
+                    console.log('[CopyTrading] Full flow - requesting signature');
+                    setIsSigningDelegation(true);
+                    signature = await signDelegationMessage(message);
+                    if (!walletHasSigner) {
+                        console.log('[CopyTrading] Adding session signer');
+                        await addSessionSigner();
+                    }
+                    setIsSigningDelegation(false);
                 }
 
-                // Save with signature
                 await api.createCopySettings({
                     leaderId,
                     amountPerTrade: settings.amountPerTrade,
@@ -252,8 +255,6 @@ export function useCopyTrading(): UseCopyTradingReturn {
                     delegationSignature: signature,
                     signedMessage: message,
                 });
-
-                setIsSigningDelegation(false);
             }
 
             // Refresh copy settings
@@ -263,6 +264,26 @@ export function useCopyTrading(): UseCopyTradingReturn {
         } catch (err: any) {
             console.error('[CopyTrading] Failed to enable copy trading:', err);
             setIsSigningDelegation(false);
+
+            // Demo mode: bypass error and show success so the demo flow completes
+            if (isDemoTrading) {
+                console.log('[CopyTrading] Demo mode - bypassing error, updating local state');
+                setCopySettings(prev => {
+                    if (prev.some(s => s.leaderId === leaderId)) return prev;
+                    return [...prev, {
+                        id: `demo_${leaderId}`,
+                        followerId: '',
+                        leaderId,
+                        amountPerTrade: settings.amountPerTrade,
+                        maxTotalAmount: settings.maxTotalAmount,
+                        spentAmount: 0,
+                        isActive: true,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                    } as CopySettings];
+                });
+                return;
+            }
 
             // Handle specific error codes
             if ((err as AuthError)?.code === 'DELEGATION_REQUIRED') {
