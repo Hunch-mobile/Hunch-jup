@@ -1,4 +1,4 @@
-import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse, UserPositionsResponse } from './types';
+import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, ExternalFollowRelationship, Follow, FollowersResponse, FollowExternalRequest, FollowingResponse, LeaderboardParams, LeaderboardResponse, Market, OnboardingStep, PolymarketClosedPositionsParams, PolymarketClosedPositionsResponse, PolymarketPositionsParams, PolymarketPositionsResponse, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, UnifiedProfile, UnifiedProfileResponse, User, UsernameCheckResponse, UserPositionsResponse } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunchdotrun-roan.vercel.app';
 const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
@@ -236,8 +236,8 @@ export const api = {
         return response.json();
     },
 
-    getFollowing: async (userId: string): Promise<Follow[]> => {
-        const response = await fetch(`${API_BASE_URL}/api/follow/following?userId=${userId}`);
+    getFollowing: async (userId: string, includeExternal = true): Promise<FollowingResponse> => {
+        const response = await fetch(`${API_BASE_URL}/api/follow/following?userId=${userId}&includeExternal=${includeExternal}`);
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.error || 'Failed to get following');
@@ -245,8 +245,11 @@ export const api = {
         return response.json();
     },
 
-    getFollowers: async (userId: string): Promise<Follow[]> => {
-        const response = await fetch(`${API_BASE_URL}/api/follow/followers?userId=${userId}`);
+    getFollowers: async (userId?: string, walletAddress?: string): Promise<FollowersResponse> => {
+        const params = new URLSearchParams();
+        if (userId) params.set('userId', userId);
+        if (walletAddress) params.set('walletAddress', walletAddress);
+        const response = await fetch(`${API_BASE_URL}/api/follow/followers?${params.toString()}`);
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.error || 'Failed to get followers');
@@ -476,6 +479,206 @@ export const api = {
             const error = await safeJsonParse(response);
             throw new Error((error as any)?.error || 'Failed to delete post');
         }
+    },
+};
+
+// ============================================
+// Polymarket API
+// ============================================
+
+export const polymarketApi = {
+    getLeaderboard: async (params: LeaderboardParams = {}): Promise<LeaderboardResponse> => {
+        const searchParams = new URLSearchParams();
+        if (params.category) searchParams.append('category', params.category);
+        if (params.timePeriod) searchParams.append('timePeriod', params.timePeriod);
+        if (params.orderBy) searchParams.append('orderBy', params.orderBy);
+        if (params.limit) searchParams.append('limit', params.limit.toString());
+        if (params.offset) searchParams.append('offset', params.offset.toString());
+        if (params.user) searchParams.append('user', params.user);
+        if (params.userName) searchParams.append('userName', params.userName);
+
+        const url = `${API_BASE_URL}/api/polymarket/leaderboard?${searchParams.toString()}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to fetch leaderboard');
+        }
+        return response.json();
+    },
+
+    getPositions: async (params: PolymarketPositionsParams): Promise<PolymarketPositionsResponse> => {
+        const searchParams = new URLSearchParams();
+        searchParams.append('user', params.user);
+        if (params.market) searchParams.append('market', params.market);
+        if (params.eventId) searchParams.append('eventId', params.eventId);
+        if (params.sizeThreshold !== undefined) searchParams.append('sizeThreshold', params.sizeThreshold.toString());
+        if (params.redeemable !== undefined) searchParams.append('redeemable', params.redeemable.toString());
+        if (params.mergeable !== undefined) searchParams.append('mergeable', params.mergeable.toString());
+        if (params.limit) searchParams.append('limit', params.limit.toString());
+        if (params.offset) searchParams.append('offset', params.offset.toString());
+        if (params.sortBy) searchParams.append('sortBy', params.sortBy);
+        if (params.sortDirection) searchParams.append('sortDirection', params.sortDirection);
+
+        const url = `${API_BASE_URL}/api/polymarket/positions?${searchParams.toString()}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to fetch positions');
+        }
+        return response.json();
+    },
+
+    getClosedPositions: async (params: PolymarketClosedPositionsParams): Promise<PolymarketClosedPositionsResponse> => {
+        const searchParams = new URLSearchParams();
+        searchParams.append('user', params.user);
+        if (params.market) searchParams.append('market', params.market);
+        if (params.eventId) searchParams.append('eventId', params.eventId);
+        if (params.title) searchParams.append('title', params.title);
+        if (params.limit) searchParams.append('limit', params.limit.toString());
+        if (params.offset) searchParams.append('offset', params.offset.toString());
+        if (params.sortBy) searchParams.append('sortBy', params.sortBy);
+        if (params.sortDirection) searchParams.append('sortDirection', params.sortDirection);
+
+        const url = `${API_BASE_URL}/api/polymarket/closed-positions?${searchParams.toString()}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to fetch closed positions');
+        }
+        return response.json();
+    },
+
+    getCandlesticks: async ({
+        conditionId,
+        startTime,
+        endTime,
+        interval = 60,
+    }: {
+        conditionId: string;
+        startTime: number;
+        endTime: number;
+        interval?: 1 | 60 | 1440;
+    }): Promise<CandleData[]> => {
+        const params = new URLSearchParams({
+            start_time: startTime.toString(),
+            end_time: endTime.toString(),
+            interval: interval.toString(),
+        });
+        const url = `${API_BASE_URL}/api/polymarket/candlesticks/${encodeURIComponent(conditionId)}?${params.toString()}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to fetch Polymarket candlesticks');
+        }
+        const data = await response.json();
+        const candles: CandleData[] = [];
+        if (!data.candlesticks || !Array.isArray(data.candlesticks)) return candles;
+        // Find the Yes-side candle array first, fall back to first entry
+        let candleArray: any[] | null = null;
+        for (const pair of data.candlesticks) {
+            const [arr, meta] = pair as [any[], { side: string; token_id: string }];
+            if (meta?.side === 'Yes') { candleArray = arr; break; }
+        }
+        if (!candleArray && data.candlesticks.length > 0) {
+            candleArray = data.candlesticks[0][0] as any[];
+        }
+        if (candleArray) {
+            for (const c of candleArray) {
+                if (!c.yes_ask) continue;
+                candles.push({
+                    timestamp: c.end_period_ts,
+                    open: c.yes_ask.open,
+                    high: c.yes_ask.high,
+                    low: c.yes_ask.low,
+                    close: c.yes_ask.close,
+                    volume: c.volume || 0,
+                });
+            }
+        }
+        candles.sort((a, b) => a.timestamp - b.timestamp);
+        return candles;
+    },
+};
+
+// ============================================
+// Unified Profile API
+// ============================================
+
+export const profilesApi = {
+    getProfile: async (identifier: string, viewerId?: string): Promise<UnifiedProfile> => {
+        const searchParams = new URLSearchParams();
+        if (viewerId) searchParams.append('viewerId', viewerId);
+        searchParams.append('autoCreate', 'true');
+
+        const url = `${API_BASE_URL}/api/profiles/${encodeURIComponent(identifier)}?${searchParams.toString()}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error(error?.error || 'Failed to fetch profile');
+        }
+        const data: UnifiedProfileResponse = await response.json();
+        return data.profile;
+    },
+};
+
+// ============================================
+// Extended Follow API (for external profiles)
+// ============================================
+
+export const followApi = {
+    followHunchUser: async (followingId: string): Promise<Follow> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/follow`, {
+            method: 'POST',
+            body: JSON.stringify({ followingId }),
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to follow user');
+        }
+        return response.json();
+    },
+
+    followExternalProfile: async (request: FollowExternalRequest): Promise<ExternalFollowRelationship> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/follow`, {
+            method: 'POST',
+            body: JSON.stringify({
+                walletAddress: request.walletAddress,
+                source: request.source || 'polymarket',
+            }),
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to follow external profile');
+        }
+        return response.json();
+    },
+
+    unfollowHunchUser: async (followingId: string): Promise<{ success: boolean; profileType: 'hunch' }> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/follow`, {
+            method: 'DELETE',
+            body: JSON.stringify({ followingId }),
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to unfollow user');
+        }
+        return response.json();
+    },
+
+    unfollowExternalProfile: async (walletAddress: string): Promise<{ success: boolean; profileType: 'external' }> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/follow`, {
+            method: 'DELETE',
+            body: JSON.stringify({ walletAddress }),
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to unfollow external profile');
+        }
+        return response.json();
     },
 };
 

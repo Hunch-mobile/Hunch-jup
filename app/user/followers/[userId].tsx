@@ -3,18 +3,25 @@ import { FollowersSkeleton } from '@/components/skeletons';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from '@/hooks/useCopyTrading';
-import { api } from "@/lib/api";
-import { Follow, User } from "@/lib/types";
+import { api, followApi } from "@/lib/api";
+import { FollowingItem, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, FlatList, Image, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, FlatList, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const defaultProfileImage = require("@/assets/default.jpeg");
+const hunchBadge = require("@/assets/icon-blue.png");
+
+const YELLOW = '#FACC15';
+const YELLOW_DARK = '#EAB308';
 
 type TabType = 'followers' | 'following';
+
+type ProfileType = 'hunch' | 'external';
 
 interface UserItem {
     id: string;
@@ -23,6 +30,10 @@ interface UserItem {
     walletAddress: string;
     followerCount?: number;
     followingCount?: number;
+    profileType: ProfileType;
+    xUsername?: string | null;
+    verifiedBadge?: boolean;
+    source?: string;
 }
 
 // User row component
@@ -46,7 +57,7 @@ const UserRow = ({
     onPress: () => void;
 }) => {
     const displayName = item.displayName || `${item.walletAddress.slice(0, 6)}...${item.walletAddress.slice(-4)}`;
-    const username = `@${displayName.toLowerCase().replace(/\s/g, '')}`;
+    const isExternal = item.profileType === 'external';
 
     return (
         <TouchableOpacity
@@ -54,20 +65,44 @@ const UserRow = ({
             onPress={onPress}
             activeOpacity={0.7}
         >
-            <View className="w-12 h-12 rounded-full bg-app-elevated justify-center items-center mr-3 overflow-hidden">
-                <Image
-                    source={item.avatarUrl ? { uri: item.avatarUrl } : defaultProfileImage}
-                    className="w-full h-full rounded-full"
-                />
+            {/* Avatar with badge on bottom-left for external profiles */}
+            <View className="relative mr-3">
+                <View className="w-12 h-12 rounded-full bg-app-elevated justify-center items-center overflow-hidden">
+                    <Image
+                        source={item.avatarUrl ? { uri: item.avatarUrl } : defaultProfileImage}
+                        style={{ width: '100%', height: '100%', borderRadius: 24 }}
+                        contentFit="cover"
+                    />
+                </View>
+                {isExternal && (
+                    <View
+                        className="absolute -bottom-0.5 -right-0.5 w-[18px] h-[18px] rounded-full bg-white items-center justify-center"
+                        style={{ shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 }}
+                    >
+                        <Image
+                            source={hunchBadge}
+                            style={{ width: 14, height: 14, borderRadius: 7 }}
+                            contentFit="cover"
+                        />
+                    </View>
+                )}
             </View>
+
             <View className="flex-1">
-                <Text className="text-[15px] font-semibold  mb-0.5">{displayName}</Text>
+                <View className="flex-row items-center gap-1.5">
+                    <Text className="text-[15px] font-semibold" numberOfLines={1}>{displayName}</Text>
+                    {isExternal && item.verifiedBadge && (
+                        <Ionicons name="checkmark-circle" size={14} color={YELLOW_DARK} />
+                    )}
+                </View>
+                {isExternal && item.xUsername && (
+                    <Text className="text-xs text-txt-secondary">@{item.xUsername}</Text>
+                )}
             </View>
             {!isSelf && (
                 <View className="flex-row gap-2">
-                    {/* Follow Button */}
                     <TouchableOpacity
-                        className={`py-2 px-5 rounded-xl min-w-[100px] items-center justify-center ${isFollowing ? 'bg-slate-200  ' : 'bg-txt-primary'
+                        className={`py-2 px-5 rounded-xl min-w-[100px] items-center justify-center ${isFollowing ? 'bg-slate-200' : 'bg-txt-primary'
                             } ${inProgress ? 'opacity-60' : ''}`}
                         onPress={(e) => { e.stopPropagation(); onFollow(); }}
                         disabled={inProgress}
@@ -76,7 +111,7 @@ const UserRow = ({
                             <ActivityIndicator size="small" color={Theme.textPrimary} />
                         ) : (
                             <Text
-                                className={`text-[13px] ${isFollowing ? 'font-lg text-txt-primary ' : 'font-semibold text-txt-inverse'}`}
+                                className={`text-[13px] ${isFollowing ? 'text-txt-primary' : 'font-semibold text-txt-inverse'}`}
                             >
                                 {isFollowing ? "Following" : "Follow"}
                             </Text>
@@ -99,6 +134,7 @@ export default function FollowersFollowingScreen() {
     const [loadingFollowers, setLoadingFollowers] = useState(true);
     const [loadingFollowing, setLoadingFollowing] = useState(true);
     const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+    const [followingWallets, setFollowingWallets] = useState<Set<string>>(new Set());
     const [followingInProgress, setFollowingInProgress] = useState<Set<string>>(new Set());
 
     // Copy trading state
@@ -202,11 +238,12 @@ export default function FollowersFollowingScreen() {
         try {
             setLoadingFollowers(true);
             const data = await api.getFollowers(userId as string);
-            setFollowers(data.map((f: Follow) => ({
-                id: f.follower.id,
-                displayName: f.follower.displayName,
-                avatarUrl: f.follower.avatarUrl,
-                walletAddress: f.follower.walletAddress,
+            setFollowers(data.followers.map((f) => ({
+                id: f.id,
+                displayName: f.displayName,
+                avatarUrl: f.avatarUrl,
+                walletAddress: f.walletAddress,
+                profileType: 'hunch' as ProfileType,
             })));
         } catch (err) {
             console.error("Failed to fetch followers:", err);
@@ -219,12 +256,19 @@ export default function FollowersFollowingScreen() {
         try {
             setLoadingFollowing(true);
             const data = await api.getFollowing(userId as string);
-            setFollowing(data.map((f: Follow) => ({
-                id: f.following.id,
-                displayName: f.following.displayName,
-                avatarUrl: f.following.avatarUrl,
-                walletAddress: f.following.walletAddress,
-            })));
+
+            const combined: UserItem[] = data.following.map((f: FollowingItem) => ({
+                id: f.userId || f.externalProfileId || f.id,
+                displayName: f.displayName,
+                avatarUrl: f.avatarUrl,
+                walletAddress: f.walletAddress,
+                profileType: f.profileType as ProfileType,
+                xUsername: f.xUsername,
+                verifiedBadge: f.verifiedBadge,
+                source: f.source,
+            }));
+
+            setFollowing(combined);
         } catch (err) {
             console.error("Failed to fetch following:", err);
         } finally {
@@ -236,27 +280,63 @@ export default function FollowersFollowingScreen() {
         if (!backendUser) return;
         try {
             const data = await api.getFollowing(backendUser.id);
-            setFollowingIds(new Set(data.map(f => f.followingId)));
+            const ids = new Set<string>();
+            const wallets = new Set<string>();
+            
+            for (const f of data.following) {
+                if (f.profileType === 'hunch' && f.userId) {
+                    ids.add(f.userId);
+                }
+                if (f.profileType === 'external') {
+                    wallets.add(f.walletAddress.toLowerCase());
+                }
+            }
+            
+            setFollowingIds(ids);
+            setFollowingWallets(wallets);
         } catch (error) {
             console.error("Failed to load following list:", error);
         }
     };
 
-    const handleFollowUser = async (targetUserId: string) => {
-        if (!backendUser || followingInProgress.has(targetUserId)) return;
-        setFollowingInProgress(prev => new Set([...prev, targetUserId]));
+    const isFollowingUser = (item: UserItem): boolean => {
+        if (item.profileType === 'hunch') {
+            return followingIds.has(item.id);
+        } else {
+            return followingWallets.has(item.walletAddress.toLowerCase());
+        }
+    };
+
+    const handleFollowUser = async (item: UserItem) => {
+        const key = item.profileType === 'hunch' ? item.id : item.walletAddress.toLowerCase();
+        if (!backendUser || followingInProgress.has(key)) return;
+        
+        setFollowingInProgress(prev => new Set([...prev, key]));
+        
         try {
-            if (followingIds.has(targetUserId)) {
-                await api.unfollowUser(targetUserId);
-                setFollowingIds(prev => { const s = new Set(prev); s.delete(targetUserId); return s; });
+            const isCurrentlyFollowing = isFollowingUser(item);
+            
+            if (item.profileType === 'hunch') {
+                if (isCurrentlyFollowing) {
+                    await followApi.unfollowHunchUser(item.id);
+                    setFollowingIds(prev => { const s = new Set(prev); s.delete(item.id); return s; });
+                } else {
+                    await followApi.followHunchUser(item.id);
+                    setFollowingIds(prev => new Set([...prev, item.id]));
+                }
             } else {
-                await api.followUser(targetUserId);
-                setFollowingIds(prev => new Set([...prev, targetUserId]));
+                if (isCurrentlyFollowing) {
+                    await followApi.unfollowExternalProfile(item.walletAddress);
+                    setFollowingWallets(prev => { const s = new Set(prev); s.delete(item.walletAddress.toLowerCase()); return s; });
+                } else {
+                    await followApi.followExternalProfile({ walletAddress: item.walletAddress });
+                    setFollowingWallets(prev => new Set([...prev, item.walletAddress.toLowerCase()]));
+                }
             }
         } catch (error) {
             console.error("Failed to follow/unfollow user:", error);
         } finally {
-            setFollowingInProgress(prev => { const s = new Set(prev); s.delete(targetUserId); return s; });
+            setFollowingInProgress(prev => { const s = new Set(prev); s.delete(key); return s; });
         }
     };
 
@@ -307,20 +387,28 @@ export default function FollowersFollowingScreen() {
                             ) : (
                                 <FlatList
                                     data={followers}
-                                    keyExtractor={(item) => item.id}
+                                    keyExtractor={(item) => item.profileType === 'hunch' ? item.id : item.walletAddress}
                                     renderItem={({ item }) => (
                                         <UserRow
                                             item={item}
-                                            isFollowing={followingIds.has(item.id)}
-                                            inProgress={followingInProgress.has(item.id)}
+                                            isFollowing={isFollowingUser(item)}
+                                            inProgress={followingInProgress.has(item.profileType === 'hunch' ? item.id : item.walletAddress.toLowerCase())}
                                             isSelf={backendUser?.id === item.id}
-                                            isCopying={copyingLeaderIds.has(item.id)}
-                                            onFollow={() => handleFollowUser(item.id)}
+                                            isCopying={item.profileType === 'hunch' && copyingLeaderIds.has(item.id)}
+                                            onFollow={() => handleFollowUser(item)}
                                             onCopyClick={() => {
-                                                setSelectedLeaderForCopy(item);
-                                                setCopyModalVisible(true);
+                                                if (item.profileType === 'hunch') {
+                                                    setSelectedLeaderForCopy(item);
+                                                    setCopyModalVisible(true);
+                                                }
                                             }}
-                                            onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: item.id } })}
+                                            onPress={() => {
+                                                if (item.profileType === 'hunch') {
+                                                    router.push({ pathname: '/user/[userId]', params: { userId: item.id } });
+                                                } else {
+                                                    router.push({ pathname: '/profile/[identifier]', params: { identifier: item.walletAddress } });
+                                                }
+                                            }}
                                         />
                                     )}
                                     showsVerticalScrollIndicator={false}
@@ -341,20 +429,28 @@ export default function FollowersFollowingScreen() {
                             ) : (
                                 <FlatList
                                     data={following}
-                                    keyExtractor={(item) => item.id}
+                                    keyExtractor={(item) => item.profileType === 'hunch' ? item.id : item.walletAddress}
                                     renderItem={({ item }) => (
                                         <UserRow
                                             item={item}
-                                            isFollowing={followingIds.has(item.id)}
-                                            inProgress={followingInProgress.has(item.id)}
+                                            isFollowing={isFollowingUser(item)}
+                                            inProgress={followingInProgress.has(item.profileType === 'hunch' ? item.id : item.walletAddress.toLowerCase())}
                                             isSelf={backendUser?.id === item.id}
-                                            isCopying={copyingLeaderIds.has(item.id)}
-                                            onFollow={() => handleFollowUser(item.id)}
+                                            isCopying={item.profileType === 'hunch' && copyingLeaderIds.has(item.id)}
+                                            onFollow={() => handleFollowUser(item)}
                                             onCopyClick={() => {
-                                                setSelectedLeaderForCopy(item);
-                                                setCopyModalVisible(true);
+                                                if (item.profileType === 'hunch') {
+                                                    setSelectedLeaderForCopy(item);
+                                                    setCopyModalVisible(true);
+                                                }
                                             }}
-                                            onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: item.id } })}
+                                            onPress={() => {
+                                                if (item.profileType === 'hunch') {
+                                                    router.push({ pathname: '/user/[userId]', params: { userId: item.id } });
+                                                } else {
+                                                    router.push({ pathname: '/profile/[identifier]', params: { identifier: item.walletAddress } });
+                                                }
+                                            }}
                                         />
                                     )}
                                     showsVerticalScrollIndicator={false}

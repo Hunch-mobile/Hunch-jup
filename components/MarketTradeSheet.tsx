@@ -3,7 +3,7 @@ import LightChart from '@/components/LightChart';
 import { Toast } from '@/components/Toast';
 import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
-import { api, getEventDetails, marketsApi } from "@/lib/api";
+import { api, getEventDetails, marketsApi, polymarketApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
 import { executeTrade, fromRawAmount, requestOrder, toRawAmount, USDC_MINT } from "@/lib/tradeService";
 import { User as BackendUser, CandleData, Market } from "@/lib/types";
@@ -11,7 +11,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, Image, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -179,6 +178,7 @@ export interface MarketTradeSheetProps {
     onRefreshFeed?: () => void;
     market: Market | null;
     candles?: CandleData[];
+    conditionId?: string;
     backendUser: BackendUser | null;
     walletProvider: any;
     connection: Connection;
@@ -193,6 +193,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
     onRefreshFeed,
     market,
     candles: initialCandles,
+    conditionId,
     backendUser,
     walletProvider,
     connection,
@@ -379,7 +380,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
 
     // Fetch candles based on time filter
     useEffect(() => {
-        if (!visible || !market) return;
+        if (!visible || (!market && !conditionId)) return;
 
         const fetchFilteredCandles = async () => {
             setIsLoadingCandles(true);
@@ -391,13 +392,20 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                         ? Math.max(0, endTs - 365 * 24 * 60 * 60)
                         : Math.max(0, endTs - (selectedFilter?.seconds || 7 * 24 * 60 * 60));
                 const periodInterval = TIME_FILTER_INTERVALS[timeFilter];
-                const candles = await marketsApi.fetchCandlesticksByMint({
-                    marketTicker: market.ticker,
-                    seriesTicker: market.eventTicker,
-                    startTs,
-                    endTs,
-                    periodInterval,
-                });
+                const candles = conditionId
+                    ? await polymarketApi.getCandlesticks({
+                        conditionId,
+                        startTime: startTs,
+                        endTime: endTs,
+                        interval: periodInterval,
+                    })
+                    : await marketsApi.fetchCandlesticksByMint({
+                        marketTicker: market!.ticker,
+                        seriesTicker: market!.eventTicker,
+                        startTs,
+                        endTs,
+                        periodInterval,
+                    });
                 setFilteredCandles(candles);
             } catch (error) {
                 console.error('Failed to fetch filtered candles:', error);
@@ -408,7 +416,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
         };
 
         fetchFilteredCandles();
-    }, [visible, market, timeFilter, initialCandles]);
+    }, [visible, market, conditionId, timeFilter, initialCandles]);
 
     useEffect(() => {
         if (visible) {

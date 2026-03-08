@@ -6,7 +6,7 @@ import PostComposerSheet from '@/components/PostComposerSheet';
 import { ListFooterSkeleton, SocialFeedSkeleton } from '@/components/skeletons';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
-import { api, getMarketDetails, marketsApi } from "@/lib/api";
+import { api, getMarketDetails, marketsApi, polymarketApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
 import { User as BackendUser, CandleData, Event, EventEvidence, Market, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
@@ -499,8 +499,12 @@ export default function SocialScreen() {
             return;
         }
         try {
-            const following = await api.getFollowing(backendUser.id);
-            setFollowingIds(new Set(following.map(f => f.followingId)));
+            const followingRes = await api.getFollowing(backendUser.id);
+            setFollowingIds(new Set(
+                followingRes.following
+                    .filter(f => f.profileType === 'hunch' && f.userId)
+                    .map(f => f.userId!)
+            ));
         } catch (error) {
             console.error("Failed to load following list:", error);
         }
@@ -512,14 +516,22 @@ export default function SocialScreen() {
         if (toHydrate.length === 0) return;
         Promise.all(
             toHydrate.map(async (item) => {
+                const candleKey = item.conditionId || item.marketTicker;
                 const [marketDetails, candles] = await Promise.all([
                     getMarketDetails(item.marketTicker),
-                    marketsApi.fetchCandlesticksByMint({
-                        ticker: item.marketTicker,
-                        seriesTicker: item.eventTicker,
-                    }).catch(() => [] as CandleData[]),
+                    item.conditionId
+                        ? polymarketApi.getCandlesticks({
+                            conditionId: item.conditionId,
+                            startTime: Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60,
+                            endTime: Math.floor(Date.now() / 1000),
+                            interval: 60,
+                        }).catch(() => [] as CandleData[])
+                        : marketsApi.fetchCandlesticksByMint({
+                            ticker: item.marketTicker,
+                            seriesTicker: item.eventTicker,
+                        }).catch(() => [] as CandleData[]),
                 ]);
-                return { item, marketDetails, candles };
+                return { item, candleKey, marketDetails, candles };
             })
         ).then((results) => {
             // Save candles regardless of whether marketDetails succeeded
@@ -528,7 +540,7 @@ export default function SocialScreen() {
 
             results.forEach((r) => {
                 if (r.candles.length > 0) {
-                    candleUpdates.push({ ticker: r.item.marketTicker, candles: r.candles });
+                    candleUpdates.push({ ticker: r.candleKey, candles: r.candles });
                 }
                 if (r.marketDetails) {
                     marketUpdates.push({ id: r.item.id, marketDetails: r.marketDetails });
@@ -877,8 +889,17 @@ export default function SocialScreen() {
 
                             <View className="flex-1" />
 
-                            {/* Search + Bell */}
+                            {/* Leaderboard + Search + Bell */}
                             <View className="flex-row items-center gap-1">
+                                <TouchableOpacity
+                                    className="w-10 h-10 rounded-full justify-center items-center"
+                                    onPress={() => {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        router.push('/leaderboard');
+                                    }}
+                                >
+                                    <Ionicons name="trophy-outline" size={22} color={Theme.textPrimary} />
+                                </TouchableOpacity>
                                 <TouchableOpacity
                                     className="w-10 h-10 rounded-full justify-center items-center"
                                     onPress={() => setShowSearch(true)}
@@ -1207,7 +1228,7 @@ export default function SocialScreen() {
                                                         entry.type === 'trade' ? (
                                                             <FeedCard
                                                                 item={entry.data}
-                                                                candles={candlesMap[entry.data.marketTicker]}
+                                                                candles={candlesMap[entry.data.conditionId || entry.data.marketTicker]}
                                                                 onPress={() => handleOpenTradeSheet(entry.data)}
                                                                 onUserPress={() => entry.data.user?.id && router.push({ pathname: '/user/[userId]', params: { userId: entry.data.user.id } })}
                                                                 onChartPress={() => handleOpenTradeSheet(entry.data)}
@@ -1245,7 +1266,8 @@ export default function SocialScreen() {
                 }}
                 onRefreshFeed={() => loadFeed({ targetMode: mode, reset: true })}
                 market={tradeSheetItem?.marketDetails || selectedSearchMarket || null}
-                candles={tradeSheetItem ? candlesMap[tradeSheetItem.marketTicker] : undefined}
+                candles={tradeSheetItem ? candlesMap[tradeSheetItem.conditionId || tradeSheetItem.marketTicker] : undefined}
+                conditionId={tradeSheetItem?.conditionId ?? undefined}
                 backendUser={backendUser || null}
                 walletProvider={walletProvider}
                 connection={connection}

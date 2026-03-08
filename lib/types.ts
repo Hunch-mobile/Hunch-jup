@@ -53,6 +53,7 @@ export interface Trade {
     userId: string;
     marketTicker: string;
     eventTicker?: string | null;
+    conditionId?: string | null;
     side: 'yes' | 'no';
     action?: 'BUY' | 'SELL';
     amount: string;
@@ -436,4 +437,273 @@ export interface JupiterPredictionOrderResponse {
         orderCostUsd?: string;
         newSizeUsd?: string;
     };
+}
+
+// ============================================
+// Polymarket Leaderboard Types
+// ============================================
+
+export type LeaderboardCategory =
+    | 'OVERALL'
+    | 'POLITICS'
+    | 'SPORTS'
+    | 'CRYPTO'
+    | 'CULTURE'
+    | 'MENTIONS'
+    | 'WEATHER'
+    | 'ECONOMICS'
+    | 'TECH'
+    | 'FINANCE';
+
+export type LeaderboardTimePeriod = 'DAY' | 'WEEK' | 'MONTH' | 'ALL';
+
+export type LeaderboardOrderBy = 'PNL' | 'VOL';
+
+export interface PolymarketTrader {
+    rank: string;
+    proxyWallet: string;
+    userName: string;
+    vol: number;
+    pnl: number;
+    profileImage: string | null;
+    xUsername: string | null;
+    verifiedBadge: boolean;
+}
+
+export interface LeaderboardResponse {
+    traders: PolymarketTrader[];
+    category: LeaderboardCategory;
+    timePeriod: LeaderboardTimePeriod;
+    orderBy: LeaderboardOrderBy;
+}
+
+export interface LeaderboardParams {
+    category?: LeaderboardCategory;
+    timePeriod?: LeaderboardTimePeriod;
+    orderBy?: LeaderboardOrderBy;
+    limit?: number;
+    offset?: number;
+    user?: string;
+    userName?: string;
+}
+
+// ============================================
+// Unified Profile Types
+// ============================================
+
+export type ProfileType = 'hunch' | 'external';
+
+export interface HunchProfile {
+    profileType: 'hunch';
+    id: string;
+    walletAddress: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    username: string | null;
+    hasCompletedOnboarding: boolean;
+    privyId: string;
+    followerCount: number;
+    followingCount: number;
+    isFollowing: boolean;
+    isOwnProfile: boolean;
+}
+
+export interface ExternalProfile {
+    profileType: 'external';
+    id: string;
+    walletAddress: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    source: string;
+    xUsername: string | null;
+    verifiedBadge: boolean;
+    bio: string | null;
+    cachedPnl: number | null;
+    cachedVolume: number | null;
+    followerCount: number;
+    followingCount: number;
+    isFollowing: boolean;
+    isOwnProfile: boolean;
+}
+
+export type UnifiedProfile = HunchProfile | ExternalProfile;
+
+export interface UnifiedProfileResponse {
+    profile: UnifiedProfile;
+}
+
+// ============================================
+// Polymarket Positions Types
+// ============================================
+
+export interface PolymarketPosition {
+    proxyWallet: string;
+    asset: string;
+    conditionId: string;
+    size: number;
+    avgPrice: number;
+    initialValue: number;
+    currentValue: number;
+    cashPnl: number;
+    percentPnl: number;
+    totalBought: number;
+    realizedPnl: number;
+    percentRealizedPnl: number;
+    curPrice: number;
+    redeemable: boolean;
+    mergeable: boolean;
+    title: string;
+    slug: string;
+    icon: string;
+    eventSlug: string;
+    outcome: string;
+    outcomeIndex: number;
+    oppositeOutcome: string;
+    oppositeAsset: string;
+    endDate: string;
+    negativeRisk: boolean;
+}
+
+export interface PolymarketPositionsResponse {
+    positions: PolymarketPosition[];
+    user: string;
+    pagination: {
+        limit: number;
+        offset: number;
+        total: number;
+    };
+}
+
+export interface PolymarketPositionsParams {
+    user: string;
+    market?: string;
+    eventId?: string;
+    sizeThreshold?: number;
+    redeemable?: boolean;
+    mergeable?: boolean;
+    limit?: number;
+    offset?: number;
+    sortBy?: 'CURRENT' | 'INITIAL' | 'TOKENS' | 'CASHPNL' | 'PERCENTPNL' | 'TITLE' | 'RESOLVING' | 'PRICE' | 'AVGPRICE';
+    sortDirection?: 'ASC' | 'DESC';
+}
+
+export interface PolymarketClosedPosition {
+    proxyWallet: string;
+    asset: string;
+    conditionId: string;
+    avgPrice: number;
+    totalBought: number;
+    realizedPnl: number;
+    curPrice: number;
+    timestamp: number;
+    title: string;
+    slug: string;
+    icon: string;
+    eventSlug: string;
+    outcome: string;
+    outcomeIndex: number;
+    oppositeOutcome: string;
+    oppositeAsset: string;
+    endDate: string;
+}
+
+export interface PolymarketClosedPositionsResponse {
+    positions: PolymarketClosedPosition[];
+    user: string;
+    pagination: {
+        limit: number;
+        offset: number;
+        total: number;
+    };
+}
+
+export interface PolymarketClosedPositionsParams {
+    user: string;
+    market?: string;
+    eventId?: string;
+    title?: string;
+    limit?: number;
+    offset?: number;
+    sortBy?: 'REALIZEDPNL' | 'TITLE' | 'PRICE' | 'AVGPRICE' | 'TIMESTAMP';
+    sortDirection?: 'ASC' | 'DESC';
+}
+
+// ============================================
+// Extended Follow Types for External Profiles
+// ============================================
+
+export interface ExternalFollowRelationship {
+    id: string;
+    followerId: string;
+    externalProfileId: string;
+    createdAt: string;
+    profileType: 'external';
+    follower: {
+        id: string;
+        displayName: string | null;
+        avatarUrl: string | null;
+        walletAddress: string;
+    };
+    externalProfile: {
+        id: string;
+        walletAddress: string;
+        displayName: string | null;
+        avatarUrl: string | null;
+        source: string;
+        xUsername: string | null;
+        verifiedBadge: boolean;
+    };
+}
+
+export interface HunchFollowRelationship extends Follow {
+    profileType: 'hunch';
+}
+
+export type UnifiedFollowRelationship = HunchFollowRelationship | ExternalFollowRelationship;
+
+export interface FollowExternalRequest {
+    walletAddress: string;
+    source?: string;
+}
+
+export interface UnfollowExternalRequest {
+    walletAddress: string;
+}
+
+// New unified following/followers API response types
+export interface FollowingItem {
+    id: string;
+    profileType: 'hunch' | 'external';
+    walletAddress: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    createdAt: string;
+    userId?: string;
+    externalProfileId?: string;
+    source?: string;
+    xUsername?: string | null;
+    verifiedBadge?: boolean;
+}
+
+export interface FollowingResponse {
+    following: FollowingItem[];
+    counts: {
+        total: number;
+        hunchUsers: number;
+        externalProfiles: number;
+    };
+}
+
+export interface FollowerItem {
+    id: string;
+    walletAddress: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+}
+
+export interface FollowersResponse {
+    followers: FollowerItem[];
+    profileType?: string;
+    walletAddress?: string;
+    count: number;
 }

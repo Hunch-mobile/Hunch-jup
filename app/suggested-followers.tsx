@@ -26,7 +26,7 @@ export default function SuggestedFollowersScreen() {
             // Fetch top users and current user's following list in parallel
             const [users, currentFollowing] = await Promise.all([
                 api.getTopUsers('followers', 4),
-                backendUser?.id ? api.getFollowing(backendUser.id) : Promise.resolve([])
+                backendUser?.id ? api.getFollowing(backendUser.id) : Promise.resolve({ following: [], counts: { total: 0, hunchUsers: 0, externalProfiles: 0 } })
             ]);
 
             // Filter out current user
@@ -34,7 +34,11 @@ export default function SuggestedFollowersScreen() {
             setTopUsers(filteredUsers.slice(0, 4));
 
             // Set initial following state based on who user already follows
-            const followingSet = new Set(currentFollowing.map(f => f.followingId));
+            const followingSet = new Set(
+                currentFollowing.following
+                    .filter(f => f.profileType === 'hunch' && f.userId)
+                    .map(f => f.userId!)
+            );
             setFollowingIds(followingSet);
         } catch (error) {
             console.error("Failed to load top users:", error);

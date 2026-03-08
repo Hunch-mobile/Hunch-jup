@@ -112,14 +112,34 @@ export default function NotificationSidebar({
         if (!backendUser) return;
         setLoading(true);
         try {
-            const [trades, followers] = await Promise.all([
+            const [trades, followersRes] = await Promise.all([
                 api.getUserTrades(backendUser.id, 30, 0),
                 api.getFollowers(backendUser.id),
             ]);
 
             const items: ActivityItem[] = [
                 ...trades.map((t): ActivityItem => ({ type: 'trade', data: t })),
-                ...followers.map((f): ActivityItem => ({ type: 'follow', data: f })),
+                ...followersRes.followers.map((f): ActivityItem => ({
+                    type: 'follow',
+                    data: {
+                        id: f.id,
+                        followerId: f.id,
+                        followingId: backendUser.id,
+                        createdAt: new Date().toISOString(),
+                        follower: {
+                            id: f.id,
+                            displayName: f.displayName,
+                            avatarUrl: f.avatarUrl,
+                            walletAddress: f.walletAddress,
+                        },
+                        following: {
+                            id: backendUser.id,
+                            displayName: null,
+                            avatarUrl: null,
+                            walletAddress: backendUser.walletAddress || '',
+                        },
+                    },
+                })),
             ];
 
             items.sort((a, b) => {

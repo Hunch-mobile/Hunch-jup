@@ -614,8 +614,8 @@ export default function UserProfileScreen() {
     const checkFollowStatus = async () => {
         if (!currentUser) return;
         try {
-            const following = await api.getFollowing(currentUser.id);
-            setIsFollowing(following.some(f => f.followingId === userId));
+            const followingRes = await api.getFollowing(currentUser.id);
+            setIsFollowing(followingRes.following.some(f => f.profileType === 'hunch' && f.userId === userId));
         } catch (err) {
             console.error("Failed to check follow status:", err);
         }
