@@ -1,6 +1,6 @@
 import { PolymarketClosedPosition, PolymarketPosition } from "@/lib/types";
 import { Image } from "expo-image";
-import { Text, View } from "react-native";
+import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 
 const defaultIcon = require("@/assets/default.jpeg");
 
@@ -21,13 +21,20 @@ const formatDate = (dateString: string): string => {
 interface PolymarketPositionCardProps {
     position: PolymarketPosition | PolymarketClosedPosition;
     isClosed?: boolean;
+    onPress?: () => void;
+    loading?: boolean;
 }
 
 function isActivePosition(position: PolymarketPosition | PolymarketClosedPosition): position is PolymarketPosition {
     return 'currentValue' in position;
 }
 
-export default function PolymarketPositionCard({ position, isClosed = false }: PolymarketPositionCardProps) {
+export default function PolymarketPositionCard({
+    position,
+    isClosed = false,
+    onPress,
+    loading = false,
+}: PolymarketPositionCardProps) {
     const isYes = position.outcome.toLowerCase() === 'yes' || position.outcomeIndex === 0;
     const isActive = isActivePosition(position);
 
@@ -35,7 +42,7 @@ export default function PolymarketPositionCard({ position, isClosed = false }: P
     const pnlColor = pnlValue >= 0 ? '#16A34A' : '#DC2626';
 
     return (
-        <View className="mb-3">
+        <TouchableOpacity className="mb-3" onPress={onPress} activeOpacity={0.85} disabled={!onPress || loading}>
             <View className="rounded-2xl px-5 py-4 overflow-hidden" style={{ backgroundColor: '#F9FAFB' }}>
                 {/* Market row */}
                 <View className="flex-row items-center gap-4">
@@ -73,9 +80,13 @@ export default function PolymarketPositionCard({ position, isClosed = false }: P
                     </View>
                     {/* PnL */}
                     <View className="items-end">
-                        <Text className="text-base font-bold" style={{ color: pnlColor }}>
-                            {pnlValue >= 0 ? '+' : ''}{formatCurrency(pnlValue, true)}
-                        </Text>
+                        {loading ? (
+                            <ActivityIndicator size="small" color="#9CA3AF" />
+                        ) : (
+                            <Text className="text-base font-bold" style={{ color: pnlColor }}>
+                                {pnlValue >= 0 ? '+' : ''}{formatCurrency(pnlValue, true)}
+                            </Text>
+                        )}
                         {isClosed && position.endDate && (
                             <Text className="text-xs text-txt-disabled mt-0.5">
                                 {formatDate(position.endDate)}
@@ -84,6 +95,6 @@ export default function PolymarketPositionCard({ position, isClosed = false }: P
                     </View>
                 </View>
             </View>
-        </View>
+        </TouchableOpacity>
     );
 }

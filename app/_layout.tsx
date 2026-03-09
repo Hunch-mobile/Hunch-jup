@@ -76,7 +76,7 @@ function AuthFlowGate() {
   const router = useRouter();
   const segments = useSegments();
   const { isReady, user } = usePrivy();
-  const { backendUser, isLoading: isBackendUserLoading, isDevMode } = useUser();
+  const { backendUser, setBackendUser, isLoading: isBackendUserLoading, isDevMode } = useUser();
 
   useEffect(() => {
     if (!isReady || isBackendUserLoading) return;
@@ -100,6 +100,10 @@ function AuthFlowGate() {
     // RULE 1: Not authenticated → must be on login (unless still loading)
     // ─────────────────────────────────────────────────────────────────────────
     if (!user) {
+      // Clear stale backend user session when Privy auth is gone.
+      if (backendUser && !isDevMode) {
+        void setBackendUser(null);
+      }
       if (!inLogin) {
         router.replace('/login');
       }
@@ -216,7 +220,8 @@ export default function RootLayout() {
       config={{
         embedded: {
           solana: {
-            createOnLogin: 'all-users'
+            // Avoid creating/migrating wallets on every login; reduces timeout risk during OAuth.
+            createOnLogin: 'users-without-wallets'
           }
         }
       }}

@@ -304,9 +304,38 @@ export default function ProfileScreen() {
     }, [walletAddress]);
 
     const loadUsdcBalance = useCallback(async () => {
-        // Balance lives in UserContext (shared across screens)
-        setUsdcBalance(1000);
-    }, [walletAddress]);
+        if (!walletAddress) {
+            setUsdcBalance(0);
+            return;
+        }
+        try {
+            const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
+            const conn = new Connection(rpcUrl, 'confirmed');
+            const usdcMint = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+            const tokenAccounts = await conn.getParsedTokenAccountsByOwner(
+                new PublicKey(walletAddress),
+                { mint: usdcMint }
+            );
+            const totalBalance = tokenAccounts.value.reduce((sum, accountInfo) => {
+                const amount = (accountInfo.account.data as any)?.parsed?.info?.tokenAmount?.uiAmount;
+                return sum + (typeof amount === 'number' ? amount : 0);
+            }, 0);
+            setUsdcBalance(totalBalance);
+        } catch (error) {
+            console.error("Failed to load USDC balance:", error);
+            setUsdcBalance(0);
+        }
+    }, [walletAddress, setUsdcBalance]);
+
+    const refreshUsdcBalanceAfterFunding = useCallback(async () => {
+        const delaysMs = [0, 1000, 2500, 5000];
+        for (const delayMs of delaysMs) {
+            if (delayMs > 0) {
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+            await loadUsdcBalance();
+        }
+    }, [loadUsdcBalance]);
 
     const activePositions = positions.active;
     const previousPositions = positions.previous;
@@ -1023,11 +1052,12 @@ export default function ProfileScreen() {
                 visible={addCashVisible}
                 onClose={() => setAddCashVisible(false)}
                 walletAddress={backendUser?.walletAddress || ""}
-                onPrivyFund={() => {
+                onPrivyFund={async () => {
                     if (backendUser?.walletAddress) {
-                        fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
+                        await fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
                     }
                 }}
+                onFundsAdded={refreshUsdcBalanceAfterFunding}
             />
         </View >
     );

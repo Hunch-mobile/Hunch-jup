@@ -5,7 +5,7 @@ import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
 import { api, getEventDetails, marketsApi, polymarketApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
-import { createDemoTradeResult, fromRawAmount, toRawAmount } from "@/lib/tradeService";
+import { executeTrade, fromRawAmount, toRawAmount } from "@/lib/tradeService";
 import { User as BackendUser, CandleData, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { Connection } from "@solana/web3.js";
@@ -438,15 +438,15 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
             const rawAmount = toRawAmount(Number(amount), 6);
-
-            // Use dummy trade execution — no real on-chain transaction
-            const price = selectedSide === 'yes'
-                ? (market.yesAsk ? parseFloat(market.yesAsk) : market.yesBid ? parseFloat(market.yesBid) : 0.5)
-                : (market.noAsk ? parseFloat(market.noAsk) : market.noBid ? parseFloat(market.noBid) : 0.5);
-            const { signature, order } = createDemoTradeResult({
-                rawAmount: String(rawAmount),
+            const { signature, order } = await executeTrade({
+                provider: walletProvider,
+                connection,
+                userPublicKey: backendUser.walletAddress,
+                amount: rawAmount,
+                marketId: market.ticker,
+                isYes: selectedSide === 'yes',
                 isBuy: true,
-                price,
+                slippageBps: 100,
             });
 
             const estimatedSpendUsdc = fromRawAmount(order.inAmount, 6).toFixed(2);

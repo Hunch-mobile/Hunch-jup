@@ -34,7 +34,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
     const [preferences, setPreferences] = useState<UserPreferences | null>(null);
     const [isDevMode, setIsDevModeState] = useState(false);
-    const [usdcBalance, setUsdcBalanceState] = useState<number>(1000);
+    const [usdcBalance, setUsdcBalanceState] = useState<number>(0);
     const [positions, setPositions] = useState<{ active: AggregatedPosition[]; previous: AggregatedPosition[] }>({ active: [], previous: [] });
     const [isLoadingPositions, setIsLoadingPositions] = useState(false);
 

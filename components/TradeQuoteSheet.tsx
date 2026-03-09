@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface TradeQuoteSheetProps {
@@ -38,7 +38,7 @@ export default function TradeQuoteSheet({
 
     return (
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-            <Pressable className="flex-1 justify-center items-center p-5" onPress={onClose} style={StyleSheet.absoluteFill}>
+            <Pressable className="flex-1 justify-center items-center p-5" onPress={() => Keyboard.dismiss()} style={StyleSheet.absoluteFill}>
                 <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
                 <View style={styles.backdropTint} />
                 <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.kav}>
@@ -92,6 +92,8 @@ export default function TradeQuoteSheet({
                                 maxLength={280}
                                 textAlignVertical="top"
                                 autoFocus
+                                returnKeyType="done"
+                                blurOnSubmit={true}
                             />
                             {quote.length > 0 && (
                                 <Text className="text-xs text-txt-disabled text-right mt-2 font-medium">{quote.length}/280</Text>

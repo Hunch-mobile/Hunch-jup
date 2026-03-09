@@ -13,6 +13,8 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+const ANDROID_NOTIFICATION_CHANNEL_ID = 'hunch-default';
+
 // Notification data types from backend
 export interface TradeNotificationData {
   type: 'TRADE';
@@ -84,6 +86,21 @@ export async function requestNotificationPermissions(): Promise<Notifications.Pe
 }
 
 /**
+ * Configure Android notification channel.
+ * Must exist before receiving/displaying remote notifications on Android.
+ */
+export async function configureAndroidNotificationChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  await Notifications.setNotificationChannelAsync(ANDROID_NOTIFICATION_CHANNEL_ID, {
+    name: 'General',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#FFE500',
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
+}
+
+/**
  * Get current permission status without prompting
  */
 export async function getPermissionStatus(): Promise<Notifications.PermissionStatus> {
@@ -104,6 +121,7 @@ export async function getExpoPushToken(): Promise<string | null> {
   }
 
   try {
+    await configureAndroidNotificationChannel();
     const token = await Notifications.getExpoPushTokenAsync({
       projectId: projectId ?? undefined,
     });
@@ -123,5 +141,12 @@ export async function registerForPushNotifications(): Promise<string | null> {
   if (status !== Notifications.PermissionStatus.GRANTED) {
     return null;
   }
-  return getExpoPushToken();
+
+  // Android token retrieval can be briefly delayed on fresh installs.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const token = await getExpoPushToken();
+    if (token) return token;
+    await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+  }
+  return null;
 }

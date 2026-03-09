@@ -105,7 +105,6 @@ export default function MarketDetailScreen() {
         transactionSig: signature,
         executedInAmount: order.inAmount,
         executedOutAmount: order.outAmount,
-        isDummy: true,
       });
 
       setLastTradeId(trade.id);

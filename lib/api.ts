@@ -1042,19 +1042,23 @@ export const marketsApi = {
     },
 
     fetchMarketByConditionId: async (conditionId: string): Promise<Market> => {
-        const url = `${API_BASE_URL}/api/markets/by-condition-id?conditionId=${encodeURIComponent(conditionId)}`;
+        const baseConditionId = conditionId.split('_')[0];
+        const url = `${API_BASE_URL}/api/markets/by-condition-id?condition_id=${encodeURIComponent(baseConditionId)}`;
         const response = await fetch(url);
-        if (!response.ok) {
-            const error = await safeJsonParse(response);
-            throw new Error(error?.error || 'Market not found for conditionId');
-        }
         const data = await safeJsonParse(response);
+        if (!response.ok) {
+            throw new Error(data?.error || `Market not found for conditionId (${response.status})`);
+        }
         const raw = data?.market;
+        if (!raw) {
+            throw new Error('Invalid market payload for conditionId');
+        }
         return {
             ...mapJupiterMarketToMarket(raw),
+            ticker: String(raw?.marketId || ''),
             yesMint: raw?.yesMint || undefined,
             noMint: raw?.noMint || undefined,
-            conditionId: conditionId,
+            conditionId: raw?.conditionId || raw?.condition_id || baseConditionId,
         };
     },
 

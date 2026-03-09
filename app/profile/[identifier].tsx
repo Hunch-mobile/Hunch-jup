@@ -1,20 +1,23 @@
 
 import CopySettingsModal from "@/components/CopySettingsModal";
+import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import PolymarketPositionCard from "@/components/PolymarketPositionCard";
 import { Skeleton } from "@/components/Skeleton";
 import { PositionsSkeleton } from "@/components/skeletons";
 import { Theme } from "@/constants/theme";
 import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
-import { followApi, polymarketApi, profilesApi } from "@/lib/api";
-import { ExternalProfile, HunchProfile, PolymarketClosedPosition, PolymarketPosition, UnifiedProfile } from "@/lib/types";
+import { followApi, marketsApi, polymarketApi, profilesApi } from "@/lib/api";
+import { ExternalProfile, HunchProfile, Market, PolymarketClosedPosition, PolymarketPosition, UnifiedProfile } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
+import { useEmbeddedSolanaWallet } from "@privy-io/expo";
+import { clusterApiUrl, Connection } from "@solana/web3.js";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import * as Linking from "expo-linking";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, Easing, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Animated, Dimensions, Easing, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -38,7 +41,9 @@ const formatCurrency = (value: number | null | undefined, compact = false) => {
 export default function UnifiedProfileScreen() {
     const { identifier } = useLocalSearchParams<{ identifier: string }>();
     const { backendUser } = useUser();
+    const { wallets } = useEmbeddedSolanaWallet();
     const insets = useSafeAreaInsets();
+    const solanaWallet = wallets?.[0];
 
     const [profile, setProfile] = useState<UnifiedProfile | null>(null);
     const [loading, setLoading] = useState(true);
@@ -55,11 +60,36 @@ export default function UnifiedProfileScreen() {
     const { allLeaders, fetchAllLeaders } = useCopyTrading();
     const [isCopying, setIsCopying] = useState(false);
     const [copyModalVisible, setCopyModalVisible] = useState(false);
+    const [walletProvider, setWalletProvider] = useState<any>(null);
+    const [tradeSheetVisible, setTradeSheetVisible] = useState(false);
+    const [selectedTradeMarket, setSelectedTradeMarket] = useState<Market | null>(null);
+    const [selectedConditionId, setSelectedConditionId] = useState<string | undefined>(undefined);
+    const [selectedSide, setSelectedSide] = useState<'yes' | 'no'>('yes');
+    const [selectedEventTitle, setSelectedEventTitle] = useState<string | undefined>(undefined);
+    const [loadingTradeConditionId, setLoadingTradeConditionId] = useState<string | null>(null);
 
     const slideAnim = useRef(new Animated.Value(0)).current;
     const indicatorAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const tabWidth = (SCREEN_WIDTH - 40) / 2;
+    const connection = useMemo(() => {
+        const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
+        return new Connection(rpcUrl, 'confirmed');
+    }, []);
+
+    useEffect(() => {
+        const getProvider = async () => {
+            if (solanaWallet) {
+                try {
+                    const provider = await solanaWallet.getProvider();
+                    setWalletProvider(provider);
+                } catch (e) {
+                    console.error('Failed to get wallet provider:', e);
+                }
+            }
+        };
+        getProvider();
+    }, [solanaWallet]);
 
     useEffect(() => {
         const pulse = Animated.loop(
@@ -195,6 +225,29 @@ export default function UnifiedProfileScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         Linking.openURL(`https://x.com/${xUsername}`);
     };
+
+    const handleOpenTradeSheet = useCallback(async (position: PolymarketPosition | PolymarketClosedPosition) => {
+        const baseConditionId = position.conditionId?.split('_')[0];
+        if (!baseConditionId) {
+            Alert.alert('Market unavailable', 'Missing condition id for this position.');
+            return;
+        }
+
+        setLoadingTradeConditionId(position.conditionId);
+        try {
+            const market = await marketsApi.fetchMarketByConditionId(baseConditionId);
+            setSelectedTradeMarket(market);
+            setSelectedConditionId(baseConditionId);
+            setSelectedSide(position.outcome.toLowerCase() === 'yes' || position.outcomeIndex === 0 ? 'yes' : 'no');
+            setSelectedEventTitle(position.title);
+            setTradeSheetVisible(true);
+        } catch (err) {
+            console.error('Failed to fetch market by conditionId:', err);
+            Alert.alert('Market unavailable', 'Could not load this market right now.');
+        } finally {
+            setLoadingTradeConditionId(null);
+        }
+    }, []);
 
     if (error || (!loading && !profile)) {
         return (
@@ -524,6 +577,8 @@ export default function UnifiedProfileScreen() {
                                                     <PolymarketPositionCard
                                                         key={`${position.conditionId}-${position.outcomeIndex}`}
                                                         position={position}
+                                                        onPress={() => handleOpenTradeSheet(position)}
+                                                        loading={loadingTradeConditionId === position.conditionId}
                                                     />
                                                 ))}
                                             </View>
@@ -546,6 +601,8 @@ export default function UnifiedProfileScreen() {
                                                         key={`${position.conditionId}-${position.outcomeIndex}`}
                                                         position={position}
                                                         isClosed
+                                                        onPress={() => handleOpenTradeSheet(position)}
+                                                        loading={loadingTradeConditionId === position.conditionId}
                                                     />
                                                 ))}
                                             </View>
@@ -609,6 +666,23 @@ export default function UnifiedProfileScreen() {
                     fetchAllLeaders();
                     setCopyModalVisible(false);
                 }}
+            />
+
+            <MarketTradeSheet
+                visible={tradeSheetVisible}
+                onClose={() => {
+                    setTradeSheetVisible(false);
+                    setSelectedTradeMarket(null);
+                    setSelectedConditionId(undefined);
+                    setSelectedEventTitle(undefined);
+                }}
+                market={selectedTradeMarket}
+                conditionId={selectedConditionId}
+                backendUser={backendUser || null}
+                walletProvider={walletProvider}
+                connection={connection}
+                initialSide={selectedSide}
+                eventTitle={selectedEventTitle}
             />
         </View>
     );

@@ -41,8 +41,6 @@ const TAGS_CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
 
 // News event tickers for evidence
 const NEWS_EVENT_TICKERS = ['KXFEDDECISION-26JAN', 'KXFEDCHAIRNOM-29'];
-const DUMMY_PORTFOLIO_VALUE = 1250.75;
-const DUMMY_PORTFOLIO_PNL = 48.2;
 
 // Feed item types for mixed list
 type FeedItem =
@@ -166,8 +164,8 @@ export default function HomeScreen() {
   // Load portfolio value
   const loadPortfolioValue = useCallback(async () => {
     if (!backendUser) {
-      setPortfolioValue(DUMMY_PORTFOLIO_VALUE);
-      setPortfolioPnl(DUMMY_PORTFOLIO_PNL);
+      setPortfolioValue(null);
+      setPortfolioPnl(null);
       return;
     }
     try {
@@ -184,8 +182,8 @@ export default function HomeScreen() {
       setPortfolioValue(totalPositionValue);
       setPortfolioPnl(totalPnl);
     } catch (error) {
-      setPortfolioValue(DUMMY_PORTFOLIO_VALUE);
-      setPortfolioPnl(DUMMY_PORTFOLIO_PNL);
+      setPortfolioValue(null);
+      setPortfolioPnl(null);
     }
   }, [backendUser]);
 

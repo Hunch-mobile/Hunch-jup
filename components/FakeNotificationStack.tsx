@@ -26,8 +26,8 @@ const FAKE_NOTIFICATIONS: FakeNotif[] = [
 const DISPLAY_DURATION = 2200;
 const ANIM_DURATION = 280;
 const STACK_MAX = 4;
-const STACK_OFFSET_Y = 14;
-const STACK_SCALE_STEP = 0.04;
+const STACK_OFFSET_Y = 10;
+const STACK_SCALE_STEP = 0.05;
 
 let idCounter = 0;
 
@@ -125,7 +125,7 @@ export default function FakeNotificationStack() {
   const renderNotification = (notif: FakeNotif) => {
     if (Platform.OS === "ios") {
       return (
-        <BlurView intensity={25} tint="light" style={styles.notification}>
+        <BlurView intensity={60} tint="dark" style={styles.notification}>
           <View style={styles.glassOverlay}>
             {notifContent(notif)}
           </View>
@@ -161,7 +161,7 @@ export default function FakeNotificationStack() {
                       { scale },
                     ]
                   : [{ translateY }, { scale }],
-                opacity: entryAnim ? entryAnim.opacity : 1,
+                opacity: entryAnim ? entryAnim.opacity : 1 - index * 0.3,
               },
             ]}
           >
@@ -185,67 +185,67 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(0, 0, 0, 0.15)",
+    borderColor: "rgba(255,255,255,0.12)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
   },
   stackedNotification: {
     position: "absolute",
-    zIndex: -1,
   },
   notification: {
     borderRadius: 20,
     overflow: "hidden",
   },
   glassOverlay: {
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: 0.5,
-    borderColor: "rgba(255, 255, 255, 0.15)",
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderRadius: 20,
   },
   androidFallback: {
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: 0.5,
-    borderColor: "rgba(255, 255, 255, 0.15)",
+    backgroundColor: "rgba(20, 20, 20, 0.82)",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
   notifInner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
   },
   avatarContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.2)",
   },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
   },
   textContainer: {
     flex: 1,
   },
   nameText: {
-    color: "#000",
+    color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 15,
   },
   notifText: {
     fontSize: 15,
     fontWeight: "500",
-    color: "rgba(0, 0, 0, 0.6)",
+    color: "rgba(255,255,255,0.85)",
     lineHeight: 20,
   },
   timeText: {
     fontSize: 12,
-    color: "rgba(0, 0, 0, 0.4)",
+    color: "rgba(255,255,255,0.45)",
     fontWeight: "500",
   },
 });

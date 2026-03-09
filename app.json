@@ -4,7 +4,7 @@
     "slug": "hunch-inc",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/hunch.jpg",
     "scheme": "hunch",
     "userInterfaceStyle": "automatic",
     "deepLinking": {
@@ -12,7 +12,7 @@
       "scheme": "hunch"
     },
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./assets/hunch.jpg",
       "resizeMode": "contain",
       "backgroundColor": "#FFE500"
     },
@@ -42,7 +42,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "foregroundImage": "./assets/hunch.jpg",
         "backgroundColor": "#FFE500"
       },
       "package": "com.hunch.run"
@@ -53,7 +53,7 @@
       "passkeyAssociatedDomain": "https://hunch.run",
       "router": {},
       "eas": {
-        "projectId": "15a1e77b-4e67-4077-84d7-e63e3c91ba27"
+        "projectId": "c86e43bc-c659-47ec-8505-1868167e1fbf"
       }
     },
     "plugins": [
@@ -73,7 +73,13 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-notifications"
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "hunch-default",
+          "color": "#FFE500"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

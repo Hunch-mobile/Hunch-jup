@@ -1,6 +1,5 @@
 import LightChart from '@/components/LightChart';
 import { MarketTradeSheet } from '@/components/MarketTradeSheet';
-import NewsCard from '@/components/NewsCard';
 import NotificationSidebar from '@/components/NotificationSidebar';
 import PostComposerSheet from '@/components/PostComposerSheet';
 import { ListFooterSkeleton, SocialFeedSkeleton } from '@/components/skeletons';
@@ -8,7 +7,7 @@ import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, followApi, marketsApi, polymarketApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
-import { User as BackendUser, CandleData, Event, EventEvidence, ExternalTrade, Market } from "@/lib/types";
+import { User as BackendUser, CandleData, Event, ExternalTrade, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -64,13 +63,6 @@ type SearchMarketItem =
     | { type: 'event'; event: Event }
     | { type: 'market'; market: Market; event?: Event };
 
-// Mixed feed type for trades and news
-type FeedEntry =
-    | { type: 'trade'; data: ExternalFeedItem }
-    | { type: 'news'; data: EventEvidence };
-
-// Event tickers to fetch evidence for
-const EVIDENCE_TICKERS = ['KXFEDCHAIRNOM-29'];
 
 const defaultProfileImage = require("@/assets/default.jpeg");
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -456,28 +448,10 @@ export default function SocialScreen() {
     const [tradeSheetItem, setTradeSheetItem] = useState<ExternalFeedItem | null>(null);
     const [selectedSearchMarket, setSelectedSearchMarket] = useState<Market | null>(null);
     const [selectedSearchEvent, setSelectedSearchEvent] = useState<Event | undefined>(undefined);
-    const [evidenceItems, setEvidenceItems] = useState<EventEvidence[]>([]);
-    const [isLoadingEvidence, setIsLoadingEvidence] = useState(false);
     const [suggestedUsers, setSuggestedUsers] = useState<BackendUser[]>([]);
     const [isLoadingSuggested, setIsLoadingSuggested] = useState(false);
     const [composerVisible, setComposerVisible] = useState(false);
     const [notifSidebarVisible, setNotifSidebarVisible] = useState(false);
-
-    // Load evidence on mount
-    useEffect(() => {
-        const loadEvidence = async () => {
-            setIsLoadingEvidence(true);
-            try {
-                const evidence = await api.fetchEvidence(EVIDENCE_TICKERS);
-                setEvidenceItems(evidence);
-            } catch (error) {
-                console.error('Failed to load evidence:', error);
-            } finally {
-                setIsLoadingEvidence(false);
-            }
-        };
-        loadEvidence();
-    }, []);
 
     // Load suggested users when following tab is empty
     useEffect(() => {
@@ -1166,36 +1140,7 @@ export default function SocialScreen() {
                                     const isLoadingMore = isLoadingMoreByMode[pageMode];
                                     const refreshing = refreshingByMode[pageMode];
 
-                                    // Create mixed feed: combine news and trades, sorted by time (most recent first)
-                                    const mixedFeed: FeedEntry[] = [];
-                                    if (pageMode === 'global') {
-                                        // Add all news items
-                                        evidenceItems.forEach(news => {
-                                            mixedFeed.push({ type: 'news', data: news });
-                                        });
-                                        // Add all trades
-                                        tradeItems.forEach(trade => {
-                                            mixedFeed.push({ type: 'trade', data: trade });
-                                        });
-                                        // Sort by time (most recent first)
-                                        mixedFeed.sort((a, b) => {
-                                            const getTime = (entry: FeedEntry): number => {
-                                                if (entry.type === 'trade') {
-                                                    return new Date(entry.data.timestamp).getTime();
-                                                } else {
-                                                    // News: use sourcePublishedAt or createdAt
-                                                    const newsDate = entry.data.sourcePublishedAt || entry.data.createdAt;
-                                                    return new Date(newsDate).getTime();
-                                                }
-                                            };
-                                            return getTime(b) - getTime(a); // Descending (newest first)
-                                        });
-                                    } else {
-                                        // Following feed: just trades (already sorted by API)
-                                        tradeItems.forEach(trade => {
-                                            mixedFeed.push({ type: 'trade', data: trade });
-                                        });
-                                    }
+                                    const mixedFeed = tradeItems;
 
                                     return (
                                         <View key={pageMode} style={styles.listPane}>
@@ -1204,27 +1149,19 @@ export default function SocialScreen() {
                                             ) : (
                                                 <FlatList
                                                     data={mixedFeed}
-                                                    keyExtractor={(entry) =>
-                                                        entry.type === 'trade'
-                                                            ? `trade-${entry.data.id}`
-                                                            : `news-${entry.data.id}`
-                                                    }
-                                                    renderItem={({ item: entry }) =>
-                                                        entry.type === 'trade' ? (
-                                                            <FeedCard
-                                                                item={entry.data}
-                                                                candles={candlesMap[entry.data.conditionId]}
-                                                                onPress={() => handleOpenTradeSheet(entry.data)}
-                                                                onUserPress={() => router.push({ pathname: '/profile/[identifier]', params: { identifier: entry.data.trader.walletAddress } })}
-                                                                onChartPress={() => handleOpenTradeSheet(entry.data)}
-                                                                onFollow={pageMode === 'global' && backendUser ? () => handleFollowExternalTrader(entry.data.trader.walletAddress) : undefined}
-                                                                isFollowInProgress={followingExternalInProgress.has(entry.data.trader.walletAddress)}
-                                                                isLoadingTrade={loadingTradeForId === entry.data.id}
-                                                            />
-                                                        ) : (
-                                                            <NewsCard item={entry.data} />
-                                                        )
-                                                    }
+                                                    keyExtractor={(entry) => `trade-${entry.id}`}
+                                                    renderItem={({ item: entry }) => (
+                                                        <FeedCard
+                                                            item={entry}
+                                                            candles={candlesMap[entry.conditionId]}
+                                                            onPress={() => handleOpenTradeSheet(entry)}
+                                                            onUserPress={() => router.push({ pathname: '/profile/[identifier]', params: { identifier: entry.trader.walletAddress } })}
+                                                            onChartPress={() => handleOpenTradeSheet(entry)}
+                                                            onFollow={pageMode === 'global' && backendUser ? () => handleFollowExternalTrader(entry.trader.walletAddress) : undefined}
+                                                            isFollowInProgress={followingExternalInProgress.has(entry.trader.walletAddress)}
+                                                            isLoadingTrade={loadingTradeForId === entry.id}
+                                                        />
+                                                    )}
                                                     contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
                                                     showsVerticalScrollIndicator={false}
                                                     refreshing={refreshing}
