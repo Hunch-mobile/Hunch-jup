@@ -1,3 +1,4 @@
+import AddCashSheet from "@/components/AddCashSheet";
 import { EventCarousel } from "@/components/EventCarousel";
 import { EventMarketImageCarousel } from "@/components/EventMarketImageCarousel";
 import { FilterPills } from "@/components/FilterPills";
@@ -73,6 +74,7 @@ export default function HomeScreen() {
   const [walletProvider, setWalletProvider] = useState<any>(null);
   const [selectedMarketEventTitle, setSelectedMarketEventTitle] = useState<string | undefined>(undefined);
   const [notifSidebarVisible, setNotifSidebarVisible] = useState(false);
+  const [addCashVisible, setAddCashVisible] = useState(false);
   const [popoutVisible, setPopoutVisible] = useState(false);
   const [popoutMarket, setPopoutMarket] = useState<Market | null>(null);
   const [popoutEventTitle, setPopoutEventTitle] = useState<string | undefined>(undefined);
@@ -443,7 +445,7 @@ export default function HomeScreen() {
               className="flex-row items-center gap-1.5 px-3.5 py-2 rounded-md bg-slate-200"
               onPress={() => {
                 if (backendUser?.walletAddress) {
-                  fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
+                  setAddCashVisible(true);
                 }
               }}
               activeOpacity={0.7}
@@ -597,6 +599,16 @@ export default function HomeScreen() {
         onGoToEvent={(market) => {
           if (market.eventTicker) {
             router.push({ pathname: '/event/[ticker]', params: { ticker: market.eventTicker } });
+          }
+        }}
+      />
+      <AddCashSheet
+        visible={addCashVisible}
+        onClose={() => setAddCashVisible(false)}
+        walletAddress={backendUser?.walletAddress || ""}
+        onPrivyFund={() => {
+          if (backendUser?.walletAddress) {
+            fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
           }
         }}
       />

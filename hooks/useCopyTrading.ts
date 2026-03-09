@@ -1,16 +1,19 @@
 import { api } from '@/lib/api';
 import { isDemoTrading } from '@/lib/tradeService';
-import { AuthError, CopySettings, DelegationStatus } from '@/lib/types';
+import { AuthError, CopyLeaderEntry, CopySettings, DelegationStatus, ExternalCopySetting } from '@/lib/types';
 import { useEmbeddedSolanaWallet, usePrivy, useSessionSigners } from '@privy-io/expo';
 import { useCallback, useState } from 'react';
 
-// Key Quorum ID from environment
+// Key Quorum ID from environment — registered in Privy Dashboard (step 2 of docs)
 const KEY_QUORUM_ID = process.env.EXPO_PUBLIC_KEY_QUORUM_ID || '';
 
 export interface CopyTradingSettings {
     amountPerTrade: number;
     maxTotalAmount: number;
 }
+
+/** Step the UI can display during the enable flow */
+export type CopyTradingStep = 'idle' | 'signer' | 'signing' | 'saving' | 'done' | 'error';
 
 export interface UseCopyTradingReturn {
     // State
@@ -19,19 +22,30 @@ export interface UseCopyTradingReturn {
     error: string | null;
     delegationStatus: DelegationStatus | null;
     copySettings: CopySettings[];
+    externalCopySettings: ExternalCopySetting[];
+    allLeaders: CopyLeaderEntry[];
+    /** Current step in the enable flow — useful for UI progress indicators */
+    currentStep: CopyTradingStep;
 
     // Actions
     checkDelegationStatus: () => Promise<DelegationStatus>;
     hasExistingSigner: (walletAddress: string) => boolean;
     enableCopyTrading: (leaderId: string, leaderName: string, settings: CopyTradingSettings) => Promise<void>;
+    enableExternalCopyTrading: (externalLeaderId: string, settings: CopyTradingSettings) => Promise<void>;
     disableCopyTrading: (leaderId: string) => Promise<void>;
+    disableExternalCopyTrading: (externalLeaderId: string) => Promise<void>;
     getCopySettingsForLeader: (leaderId: string) => Promise<CopySettings | null>;
+    getExternalCopySettingsForLeader: (externalLeaderId: string) => Promise<ExternalCopySetting | null>;
     fetchAllCopySettings: () => Promise<CopySettings[]>;
+    fetchAllExternalCopySettings: () => Promise<ExternalCopySetting[]>;
+    fetchAllLeaders: () => Promise<CopyLeaderEntry[]>;
+    updateCopySettings: (leaderId: string, settings: CopyTradingSettings) => Promise<void>;
     clearError: () => void;
 }
 
 /**
- * Generate the delegation message for signing
+ * Generate a human-readable delegation message for the user to sign.
+ * The backend can verify this signature to confirm user consent.
  */
 const generateDelegationMessage = (
     leaderName: string,
@@ -40,22 +54,29 @@ const generateDelegationMessage = (
     maxTotalAmount: number
 ): string => {
     const timestamp = new Date().toISOString();
-    return `HUNCH COPY TRADING DELEGATION
-I authorize Hunch to execute trades on my behalf by copying ${leaderName}.
-Terms:
-- Amount per trade: $${amountPerTrade}
-- Maximum total allocation: $${maxTotalAmount}
-- Leader ID: ${leaderId}
-This authorization can be revoked at any time by disabling copy trading.
-Timestamp: ${timestamp}`;
+    return [
+        'HUNCH COPY TRADING DELEGATION',
+        `I authorize Hunch to execute trades on my behalf by copying ${leaderName}.`,
+        'Terms:',
+        `- Amount per trade: $${amountPerTrade}`,
+        `- Maximum total allocation: $${maxTotalAmount}`,
+        `- Leader ID: ${leaderId}`,
+        'This authorization can be revoked at any time by disabling copy trading.',
+        `Timestamp: ${timestamp}`,
+    ].join('\n');
 };
 
 /**
- * Hook for managing copy trading functionality with 3-layer authentication
- * 
- * Layer 1: Session Signer - One-time setup via Privy's addSessionSigners()
- * Layer 2: Delegation Signature - One-time user signature authorizing Hunch
- * Layer 3: Copy Settings - Per-leader configuration stored in database
+ * Hook for managing copy trading with Privy signers.
+ *
+ * Flow (per Privy docs §5 — React Native):
+ *   1. Add the app's key-quorum as a **signer** on the user's embedded wallet
+ *      via `useSigners().addSigners()` (one-time, skipped if already delegated).
+ *   2. Have the user sign a human-readable delegation message so the backend
+ *      can verify consent.
+ *   3. POST copy-settings (per-leader config) to the backend.
+ *
+ * The hook exposes `currentStep` so the UI can show inline progress.
  */
 export function useCopyTrading(): UseCopyTradingReturn {
     const { user } = usePrivy();
@@ -66,26 +87,31 @@ export function useCopyTrading(): UseCopyTradingReturn {
     const [error, setError] = useState<string | null>(null);
     const [delegationStatus, setDelegationStatus] = useState<DelegationStatus | null>(null);
     const [copySettings, setCopySettings] = useState<CopySettings[]>([]);
+    const [externalCopySettings, setExternalCopySettings] = useState<ExternalCopySetting[]>([]);
+    const [allLeaders, setAllLeaders] = useState<CopyLeaderEntry[]>([]);
+    const [currentStep, setCurrentStep] = useState<CopyTradingStep>('idle');
 
     const wallet = wallets?.[0];
+
     const { addSessionSigners } = useSessionSigners();
+    const addSignersFn = addSessionSigners ?? null;
+
+    // ---------- helpers ----------
 
     /**
-     * Check if wallet already has a session signer (delegated = true)
-     * This prevents the "Duplicate Signer" error
+     * Check if wallet already has a signer (delegated = true in linked_accounts).
+     * This prevents the "Duplicate Signer" error from Privy.
      */
     const hasExistingSigner = useCallback((walletAddress: string): boolean => {
         if (!user?.linked_accounts) return false;
 
-        const linkedWallet = user.linked_accounts.find(
+        return user.linked_accounts.some(
             (account: any) =>
                 account.type === 'wallet' &&
                 'address' in account &&
                 account.address?.toLowerCase() === walletAddress.toLowerCase() &&
-                'delegated' in account
+                (account as any).delegated === true
         );
-
-        return (linkedWallet as any)?.delegated === true;
     }, [user]);
 
     /**
@@ -97,134 +123,131 @@ export function useCopyTrading(): UseCopyTradingReturn {
             setDelegationStatus(status);
             return status;
         } catch (err: any) {
-            console.error('Failed to check delegation status:', err);
+            console.error('[CopyTrading] Failed to check delegation status:', err);
             throw err;
         }
     }, []);
 
     /**
-     * Sign delegation message with wallet
+     * Sign a delegation message with the user's embedded wallet.
+     * Returns a base64-encoded signature string.
      */
-    const signDelegationMessage = async (
-        message: string
-    ): Promise<string> => {
-        if (!wallet) {
-            throw new Error('No wallet available for signing');
-        }
+    const signDelegationMessage = async (message: string): Promise<string> => {
+        if (!wallet) throw new Error('No wallet available for signing');
 
-        try {
-            const provider = await wallet.getProvider();
-            // Sign the message using the wallet provider
-            const encodedMessage = new TextEncoder().encode(message);
-            // @ts-ignore - signMessage exists on Privy provider but may not be in types
-            const signatureResult = await (provider as any).signMessage(encodedMessage);
+        const provider = await wallet.getProvider();
+        const result = await provider.request({
+            method: 'signMessage',
+            params: { message },
+        });
 
-            // Convert signature to base64 string
-            if (signatureResult && typeof signatureResult === 'object' && 'signature' in signatureResult) {
-                // Handle object with signature property
-                const sigBytes = (signatureResult as any).signature;
-                if (sigBytes instanceof Uint8Array) {
-                    return Buffer.from(sigBytes).toString('base64');
-                }
-            }
-
-            // Handle Uint8Array directly
-            if (signatureResult instanceof Uint8Array) {
-                return Buffer.from(signatureResult).toString('base64');
-            }
-
-            // Handle string response
-            if (typeof signatureResult === 'string') {
-                return signatureResult;
-            }
-
-            throw new Error('Unexpected signature format');
-        } catch (err: any) {
-            console.error('Failed to sign delegation message:', err);
-            throw new Error(`Failed to sign message: ${err.message}`);
-        }
+        return result.signature;
     };
 
     /**
-     * Add session signer to wallet (only if not already added)
-     * Uses the useSessionSigners hook from @privy-io/expo
+     * Step 1: Add app key-quorum as a signer on the user's wallet.
+     * Per Privy docs §5 (React Native): useSigners().addSigners()
+     * Skips silently if signer already exists.
      */
-    const addSessionSigner = async (): Promise<void> => {
-        if (!wallet) {
-            throw new Error('No wallet available');
-        }
-
+    const ensureSigner = async (): Promise<void> => {
+        if (!wallet) throw new Error('No wallet available');
         if (!KEY_QUORUM_ID) {
-            throw new Error('Key Quorum ID not configured');
+            console.warn('[CopyTrading] KEY_QUORUM_ID not set — skipping signer setup');
+            return;
         }
 
         const walletAddress = wallet.address;
 
-        // Check if signer already exists to prevent duplicate error
+        // Fast path: already delegated
         if (hasExistingSigner(walletAddress)) {
-            console.log('[CopyTrading] Session signer already exists, skipping addSessionSigners');
+            console.log('[CopyTrading] Signer already exists, skipping');
+            return;
+        }
+
+        if (!addSignersFn) {
+            console.warn('[CopyTrading] addSessionSigners not available from Privy SDK — skipping signer setup');
             return;
         }
 
         try {
-            // Use the useSessionSigners hook's addSessionSigners function
-            // This matches the web app pattern from @privy-io/react-auth
-            await addSessionSigners({
+            await addSignersFn({
                 address: walletAddress,
                 signers: [{
                     signerId: KEY_QUORUM_ID,
                     policyIds: []
                 }]
             });
-            console.log('[CopyTrading] Session signer added successfully');
+            console.log('[CopyTrading] Signer added successfully');
         } catch (err: any) {
-            // Handle duplicate signer error gracefully
-            if (err.message?.includes('Duplicate') || err.message?.includes('duplicate')) {
-                console.log('[CopyTrading] Signer already exists (caught duplicate error)');
+            // Duplicate signer is fine — swallow gracefully
+            if (err.message?.toLowerCase().includes('duplicate') ||
+                err.message?.toLowerCase().includes('already exists')) {
+                console.log('[CopyTrading] Signer already exists (caught duplicate)');
                 return;
             }
             throw err;
         }
     };
 
+    // ---------- public actions ----------
+
     /**
-     * Enable copy trading for a leader
-     * Implements the fast path (already delegated) or full flow (needs signature)
+     * Enable copy trading for a leader.
+     * Runs the full 3-step flow:
+     *   signer → delegation signature → save settings
+     *
+     * Each step updates `currentStep` so the UI can show progress.
      */
     const enableCopyTrading = useCallback(async (
         leaderId: string,
         leaderName: string,
         settings: CopyTradingSettings
     ): Promise<void> => {
-        if (!wallet) {
-            throw new Error('No wallet available');
-        }
+        if (!wallet) throw new Error('No wallet available');
 
         setIsLoading(true);
+        setIsSigningDelegation(false);
         setError(null);
+        setCurrentStep('signer');
 
         try {
-            // Save copy settings with a dummy delegation signature to satisfy backend requirements
-            const dummySignature = Buffer.from(`delegation_${Date.now()}_${leaderId}`).toString('base64');
+            // ── Step 1: Ensure signer on wallet ──
+            await ensureSigner();
+
+            // ── Step 2: Sign delegation message ──
+            setCurrentStep('signing');
+            setIsSigningDelegation(true);
+
+            const message = generateDelegationMessage(
+                leaderName, leaderId,
+                settings.amountPerTrade, settings.maxTotalAmount
+            );
+            const delegationSignature = await signDelegationMessage(message);
+            setIsSigningDelegation(false);
+
+            // ── Step 3: Save copy settings to backend ──
+            setCurrentStep('saving');
             await api.createCopySettings({
                 leaderId,
                 amountPerTrade: settings.amountPerTrade,
                 maxTotalAmount: settings.maxTotalAmount,
-                delegationSignature: dummySignature,
-                signedMessage: `Hunch copy trading delegation for ${leaderId}`,
+                delegationSignature,
+                signedMessage: message,
             });
 
-            // Refresh copy settings
+            // Refresh local state
             await fetchAllCopySettings();
 
-            console.log('[CopyTrading] Copy trading enabled successfully');
+            setCurrentStep('done');
+            console.log('[CopyTrading] Copy trading enabled for', leaderName);
         } catch (err: any) {
             console.error('[CopyTrading] Failed to enable copy trading:', err);
             setIsSigningDelegation(false);
+            setCurrentStep('error');
 
-            // Demo mode: bypass error and show success so the demo flow completes
+            // Demo mode: bypass errors with local-only state
             if (isDemoTrading) {
-                console.log('[CopyTrading] Demo mode - bypassing error, updating local state');
+                console.log('[CopyTrading] Demo mode — creating local copy settings');
                 setCopySettings(prev => {
                     if (prev.some(s => s.leaderId === leaderId)) return prev;
                     return [...prev, {
@@ -239,10 +262,11 @@ export function useCopyTrading(): UseCopyTradingReturn {
                         updatedAt: new Date().toISOString(),
                     } as CopySettings];
                 });
+                setCurrentStep('done');
                 return;
             }
 
-            // Handle specific error codes
+            // Map backend error codes to user-facing messages
             if ((err as AuthError)?.code === 'DELEGATION_REQUIRED') {
                 setError('Delegation signature required. Please try again.');
             } else if ((err as AuthError)?.code === 'MISSING_TOKEN') {
@@ -257,7 +281,41 @@ export function useCopyTrading(): UseCopyTradingReturn {
         } finally {
             setIsLoading(false);
         }
-    }, [wallet, checkDelegationStatus, hasExistingSigner]);
+    }, [wallet, hasExistingSigner]);
+
+    /**
+     * Update existing copy settings for a leader without re-running signer setup.
+     */
+    const updateCopySettings = useCallback(async (
+        leaderId: string,
+        settings: CopyTradingSettings
+    ): Promise<void> => {
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            // Re-create with new values (backend upserts by leader)
+            const message = `Hunch copy trading update for ${leaderId}`;
+            const signature = Buffer.from(`update_${Date.now()}_${leaderId}`).toString('base64');
+
+            await api.createCopySettings({
+                leaderId,
+                amountPerTrade: settings.amountPerTrade,
+                maxTotalAmount: settings.maxTotalAmount,
+                delegationSignature: signature,
+                signedMessage: message,
+            });
+
+            await fetchAllCopySettings();
+            console.log('[CopyTrading] Settings updated for leader:', leaderId);
+        } catch (err: any) {
+            console.error('[CopyTrading] Failed to update copy settings:', err);
+            setError(err.message || 'Failed to update copy settings');
+            throw err;
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
 
     /**
      * Disable copy trading for a leader
@@ -268,11 +326,8 @@ export function useCopyTrading(): UseCopyTradingReturn {
 
         try {
             await api.deleteCopySettings(leaderId);
-
-            // Update local state
             setCopySettings(prev => prev.filter(s => s.leaderId !== leaderId));
-
-            console.log('[CopyTrading] Copy trading disabled for leader:', leaderId);
+            console.log('[CopyTrading] Disabled for leader:', leaderId);
         } catch (err: any) {
             console.error('[CopyTrading] Failed to disable copy trading:', err);
             setError(err.message || 'Failed to disable copy trading');
@@ -309,28 +364,105 @@ export function useCopyTrading(): UseCopyTradingReturn {
         }
     }, []);
 
-    /**
-     * Clear error state
-     */
     const clearError = useCallback(() => {
         setError(null);
+        setCurrentStep('idle');
+    }, []);
+
+    const fetchAllLeaders = useCallback(async (): Promise<CopyLeaderEntry[]> => {
+        try {
+            const data = await api.getAllCopyLeaders();
+            setAllLeaders(data.leaders);
+            return data.leaders;
+        } catch (err: any) {
+            console.error('[CopyTrading] Failed to fetch all leaders:', err);
+            return [];
+        }
+    }, []);
+
+    const fetchAllExternalCopySettings = useCallback(async (): Promise<ExternalCopySetting[]> => {
+        try {
+            const settings = await api.getExternalCopySettings();
+            setExternalCopySettings(settings);
+            return settings;
+        } catch (err: any) {
+            console.error('[CopyTrading] Failed to fetch external copy settings:', err);
+            return [];
+        }
+    }, []);
+
+    const getExternalCopySettingsForLeader = useCallback(async (externalLeaderId: string): Promise<ExternalCopySetting | null> => {
+        try {
+            const settings = await api.getExternalCopySettings();
+            return settings.find(s => s.externalLeaderId === externalLeaderId) ?? null;
+        } catch (err: any) {
+            console.error('[CopyTrading] Failed to get external copy settings:', err);
+            return null;
+        }
+    }, []);
+
+    const enableExternalCopyTrading = useCallback(async (
+        externalLeaderId: string,
+        settings: CopyTradingSettings
+    ): Promise<void> => {
+        setIsLoading(true);
+        setError(null);
+        setCurrentStep('saving');
+        try {
+            await api.createExternalCopySettings({
+                externalLeaderId,
+                amountPerTrade: settings.amountPerTrade,
+                maxTotalAmount: settings.maxTotalAmount,
+            });
+            await fetchAllExternalCopySettings();
+            setCurrentStep('done');
+        } catch (err: any) {
+            console.error('[CopyTrading] Failed to enable external copy trading:', err);
+            setCurrentStep('error');
+            setError(err.message || 'Failed to enable copy trading');
+            throw err;
+        } finally {
+            setIsLoading(false);
+        }
+    }, [fetchAllExternalCopySettings]);
+
+    const disableExternalCopyTrading = useCallback(async (externalLeaderId: string): Promise<void> => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            await api.deleteExternalCopySettings(externalLeaderId);
+            setExternalCopySettings(prev => prev.filter(s => s.externalLeaderId !== externalLeaderId));
+        } catch (err: any) {
+            console.error('[CopyTrading] Failed to disable external copy trading:', err);
+            setError(err.message || 'Failed to disable copy trading');
+            throw err;
+        } finally {
+            setIsLoading(false);
+        }
     }, []);
 
     return {
-        // State
         isLoading,
         isSigningDelegation,
         error,
         delegationStatus,
         copySettings,
+        externalCopySettings,
+        allLeaders,
+        currentStep,
 
-        // Actions
         checkDelegationStatus,
         hasExistingSigner,
         enableCopyTrading,
+        enableExternalCopyTrading,
         disableCopyTrading,
+        disableExternalCopyTrading,
         getCopySettingsForLeader,
+        getExternalCopySettingsForLeader,
         fetchAllCopySettings,
+        fetchAllExternalCopySettings,
+        fetchAllLeaders,
+        updateCopySettings,
         clearError,
     };
 }

@@ -33,27 +33,11 @@ export function MarketCard({ item, onPress, onLongPress, eventTitle }: MarketCar
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={400}
-      style={{
-        
-        shadowColor: "#000000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-        elevation: 4,
-      }}
     >
       <View className="flex-row items-center p-4 gap-4 min-h-[100px]">
         {/* Left - Image */}
         <View
           className="w-[72px] h-[72px] rounded-xl overflow-hidden"
-          style={{
-            
-            shadowColor: "#000000",
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.06,
-            shadowRadius: 6,
-            elevation: 2,
-          }}
         >
           {item.image_url && !isFallbackImage && !imageFailed ? (
             <Image

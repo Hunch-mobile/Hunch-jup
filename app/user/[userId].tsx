@@ -315,7 +315,7 @@ export default function UserProfileScreen() {
     const [usdcBalance, setUsdcBalance] = useState<number>(0);
 
     // Copy trading hook
-    const { enableCopyTrading, isLoading: copyTradingLoading, isSigningDelegation, fetchAllCopySettings, copySettings } = useCopyTrading();
+    const { enableCopyTrading, isLoading: copyTradingLoading, isSigningDelegation, fetchAllCopySettings, copySettings, currentStep: copyStep, error: copyError, clearError: clearCopyError } = useCopyTrading();
     const [copyModalVisible, setCopyModalVisible] = useState(false);
     const [isCopying, setIsCopying] = useState(false);
 
@@ -1137,10 +1137,15 @@ export default function UserProfileScreen() {
 
             <CopyTradeSheet
                 visible={copySheetVisible}
-                onClose={() => setCopySheetVisible(false)}
+                onClose={() => {
+                    setCopySheetVisible(false);
+                    clearCopyError();
+                }}
                 username={username}
                 balance={usdcBalance}
                 loading={copyTradingLoading || isSigningDelegation}
+                step={copyStep}
+                error={copyError}
                 onConfirm={async (perTrade, totalCap) => {
                     try {
                         await enableCopyTrading(
@@ -1151,7 +1156,6 @@ export default function UserProfileScreen() {
                                 maxTotalAmount: parseFloat(totalCap),
                             }
                         );
-                        setCopySheetVisible(false);
                         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     } catch (error: any) {
                         console.error('Failed to enable copy trading:', error);

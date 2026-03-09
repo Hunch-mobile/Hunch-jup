@@ -173,6 +173,33 @@ export interface CopySettings {
     leader?: User;
 }
 
+export interface ExternalCopySetting {
+    id: string;
+    followerId: string;
+    externalLeaderId: string;
+    amountPerTrade: number;
+    maxTotalAmount: number;
+    spentAmount?: number;
+    enabled: boolean;
+    expiresAt?: string;
+    createdAt: string;
+    updatedAt: string;
+    externalLeader?: {
+        id: string;
+        walletAddress: string;
+        displayName: string | null;
+        avatarUrl: string | null;
+        source: string;
+        cachedPnl: number | null;
+    };
+}
+
+export interface CreateExternalCopySettingsRequest {
+    externalLeaderId: string;
+    amountPerTrade: number;
+    maxTotalAmount: number;
+}
+
 export interface CreateCopySettingsRequest {
     leaderId: string;
     amountPerTrade: number;
@@ -180,6 +207,42 @@ export interface CreateCopySettingsRequest {
     expiresAt?: string;
     delegationSignature?: string;
     signedMessage?: string;
+}
+
+// Unified copy-leader entry (returned by /api/copy/all-leaders)
+interface CopyLeaderBase {
+    settingsId: string;
+    leaderId: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    walletAddress: string;
+    amountPerTrade: number;
+    maxTotalAmount: number;
+    usedAmount: number;
+    enabled: boolean;
+    expiresAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface InternalCopyLeader extends CopyLeaderBase {
+    type: 'internal';
+}
+
+export interface ExternalCopyLeader extends CopyLeaderBase {
+    type: 'external';
+    source: string;
+    cachedPnl: number | null;
+    cachedVolume: number | null;
+    autoExecuteOpens: boolean;
+    autoExecuteCloses: boolean;
+    partialSellThreshold: number;
+}
+
+export type CopyLeaderEntry = InternalCopyLeader | ExternalCopyLeader;
+
+export interface AllLeadersResponse {
+    leaders: CopyLeaderEntry[];
 }
 
 // Auth Error Types

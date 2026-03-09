@@ -1,6 +1,5 @@
 import { sendUSDC } from "@/lib/tradeService";
 import { Ionicons } from "@expo/vector-icons";
-import { useFundSolanaWallet } from '@privy-io/expo/ui';
 import { Connection } from "@solana/web3.js";
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from "expo-linear-gradient";
@@ -30,15 +29,16 @@ interface CreditCardProps {
     connection?: Connection;
     /** Called with the withdrawn amount immediately after tx confirms */
     onWithdrawSuccess?: (amount: number) => void;
+    /** Called when user taps Deposit — parent should open AddCashSheet */
+    onDeposit?: () => void;
 }
 
-export default function CreditCard({ tradesCount, balance = 0, walletAddress, wallet, walletProvider, connection, onWithdrawSuccess }: CreditCardProps) {
+export default function CreditCard({ tradesCount, balance = 0, walletAddress, wallet, walletProvider, connection, onWithdrawSuccess, onDeposit }: CreditCardProps) {
     const [isFlipped, setIsFlipped] = useState(false);
     const [copied, setCopied] = useState(false);
     const [withdrawOpen, setWithdrawOpen] = useState(false);
     const [withdrawSubmitting, setWithdrawSubmitting] = useState(false);
     const flipAnimation = useRef(new Animated.Value(0)).current;
-    const { fundWallet } = useFundSolanaWallet();
 
     const toggleFlip = () => {
         Animated.spring(flipAnimation, {
@@ -205,12 +205,7 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress, wa
                                             onPress={(e) => {
                                                 e.stopPropagation();
                                                 if (!isFlipped) return;
-                                                if (!walletAddress) return;
-                                                fundWallet({
-                                                    asset: 'USDC',
-                                                    address: walletAddress,
-                                                    amount: "10", // SOL
-                                                });
+                                                onDeposit?.();
                                             }}
                                         >
                                             <Ionicons name="arrow-down" size={18} color="#FFF" />
@@ -290,12 +285,6 @@ const styles = StyleSheet.create({
         position: 'absolute',
         backfaceVisibility: 'hidden',
         overflow: 'hidden',
-        // Shadow for "dark theme"
-        shadowColor: '#000000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.5,
-        shadowRadius: 20,
-        elevation: 10,
     },
     cardBack: {
         transform: [{ rotateY: '180deg' }],

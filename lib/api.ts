@@ -1,4 +1,4 @@
-import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, ExternalFollowRelationship, ExternalTrade, ExternalTradeFeedResponse, Follow, FollowersResponse, FollowExternalRequest, FollowingResponse, LeaderboardParams, LeaderboardResponse, Market, OnboardingStep, PolymarketClosedPositionsParams, PolymarketClosedPositionsResponse, PolymarketPositionsParams, PolymarketPositionsResponse, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, UnifiedProfile, UnifiedProfileResponse, User, UsernameCheckResponse, UserPositionsResponse } from './types';
+import { AllLeadersResponse, AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreateExternalCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, ExternalCopySetting, ExternalFollowRelationship, ExternalTrade, ExternalTradeFeedResponse, Follow, FollowersResponse, FollowExternalRequest, FollowingResponse, LeaderboardParams, LeaderboardResponse, Market, OnboardingStep, PolymarketClosedPositionsParams, PolymarketClosedPositionsResponse, PolymarketPositionsParams, PolymarketPositionsResponse, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, UnifiedProfile, UnifiedProfileResponse, User, UsernameCheckResponse, UserPositionsResponse } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunchdotrun-roan.vercel.app';
 const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
@@ -445,6 +445,59 @@ export const api = {
         return response.json();
     },
 
+    // External Copy Trading Settings (for Polymarket/external profiles)
+    createExternalCopySettings: async (settings: CreateExternalCopySettingsRequest): Promise<ExternalCopySetting> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/copy/settings`, {
+            method: 'POST',
+            body: JSON.stringify(settings),
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to create external copy settings');
+        }
+        const data = await response.json();
+        return data.settings;
+    },
+
+    getExternalCopySettings: async (): Promise<ExternalCopySetting[]> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/copy/settings`, {
+            method: 'GET',
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to get external copy settings');
+        }
+        const data = await response.json();
+        return data.settings ?? [];
+    },
+
+    getAllCopyLeaders: async (): Promise<AllLeadersResponse> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/copy/all-leaders`, {
+            method: 'GET',
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to fetch all copy leaders');
+        }
+        return response.json();
+    },
+
+    deleteExternalCopySettings: async (externalLeaderId: string): Promise<{ status: string }> => {
+        const response = await authenticatedFetch(
+            `${API_BASE_URL}/api/copy/settings?externalLeaderId=${encodeURIComponent(externalLeaderId)}`,
+            { method: 'DELETE' }
+        );
+        if (!response.ok) {
+            const error = await response.json();
+            if (isAuthError(error)) throw error;
+            throw new Error(error.error || 'Failed to delete external copy settings');
+        }
+        return response.json();
+    },
+
     // User positions via /api/users/:userId/positions (no auth required)
     getUserPositions: async (userId: string): Promise<UserPositionsResponse> => {
         const response = await fetch(`${API_BASE_URL}/api/users/${userId}/positions`);
@@ -849,22 +902,28 @@ const mapJupiterMarketToMarket = (market: any, eventId?: string): Market => {
         noAsk: buyNo !== null ? String(buyNo) : null,
         image_url:
             market?.image_url ||
+            market?.icon ||
+            market?.imageUrl ||
             market?.eventImageUrl ||
             market?.featured_image_url ||
+            market?.metadata?.imageUrl ||
+            market?.metadata?.image_url ||
             undefined,
         colorCode:
             market?.colorCode ||
             market?.metadata?.colorCode ||
             market?.color_code ||
             undefined,
-        conditionId: market?.conditionId || undefined,
+        conditionId: market?.conditionId || market?.condition_id || undefined,
     };
 };
 
 const mapJupiterEventToEvent = (event: any): Event => {
     const eventImage =
         event?.metadata?.imageUrl ||
+        event?.imageUrl ||
         event?.image_url ||
+        event?.icon ||
         event?.featured_image_url ||
         undefined;
 

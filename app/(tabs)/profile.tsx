@@ -1,3 +1,4 @@
+import AddCashSheet from "@/components/AddCashSheet";
 import CreditCard from "@/components/CreditCard";
 import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import PositionActionSheet from "@/components/PositionActionSheet";
@@ -24,6 +25,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const defaultProfileImage = require("@/assets/default.jpeg");
+const hunchBadge = require("@/assets/icon-blue.png");
 
 type TradeTab = 'positions' | 'copying';
 type PositionFilter = 'active' | 'previous';
@@ -55,6 +57,7 @@ export default function ProfileScreen() {
     const [positionFilter, setPositionFilter] = useState<PositionFilter>('active');
     const [sortDirection, setSortDirection] = useState<SortDirection | null>(null);
     const [settingsVisible, setSettingsVisible] = useState(false);
+    const [addCashVisible, setAddCashVisible] = useState(false);
     const [solBalance, setSolBalance] = useState<number | null>(null);
     const [solUsdPrice, setSolUsdPrice] = useState<number | null>(null);
     const [eventTitleByTicker, setEventTitleByTicker] = useState<Record<string, string>>({});
@@ -92,7 +95,7 @@ export default function ProfileScreen() {
     }, [solanaWallet]);
 
     // Copy trading data
-    const { copySettings, fetchAllCopySettings, disableCopyTrading, isLoading: copySettingsLoading } = useCopyTrading();
+    const { allLeaders, fetchAllLeaders, disableCopyTrading, disableExternalCopyTrading, isLoading: copySettingsLoading } = useCopyTrading();
 
     // Market Sheet state
     const [marketSheetVisible, setMarketSheetVisible] = useState(false);
@@ -221,7 +224,7 @@ export default function ProfileScreen() {
                 if (!cancelled) {
                     loadSolBalance();
                     loadUsdcBalance();
-                    fetchAllCopySettings();
+                    fetchAllLeaders();
                 }
             }
         };
@@ -540,7 +543,7 @@ export default function ProfileScreen() {
                                         className="flex-row ml-20 items-center gap-1.5 px-3.5 py-[7px]  rounded-md  bg-slate-200 "
                                         onPress={() => {
                                             if (backendUser?.walletAddress) {
-                                                fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
+                                                setAddCashVisible(true);
                                             }
                                         }}
                                     >
@@ -595,6 +598,7 @@ export default function ProfileScreen() {
                                 wallet={solanaWallet}
                                 walletProvider={walletProvider}
                                 connection={connection}
+                                onDeposit={() => setAddCashVisible(true)}
                                 onWithdrawSuccess={(amount) => {
                                     // Optimistic update — instant balance feedback
                                     setUsdcBalance(prev => Math.max(0, (prev ?? 1000) - amount));
@@ -656,7 +660,7 @@ export default function ProfileScreen() {
                                         className="text-base font-bold"
                                         style={{ color: activeTab === 'copying' ? Theme.textPrimary : Theme.textSecondary }}
                                     >
-                                        COPYING{activeTab === 'copying' ? ` (${copySettings.length})` : ''}
+                                        COPYING{activeTab === 'copying' ? ` (${allLeaders.length})` : ''}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
@@ -784,61 +788,130 @@ export default function ProfileScreen() {
                                 {/* Copying */}
                                 <View style={styles.listPane}>
                                     <View className="pb-10">
-                                        {copySettings.length > 0 ? (
+                                        {allLeaders.length > 0 ? (
                                             <View className="gap-3 p-4">
-                                                {copySettings.map((setting) => (
-                                                    <View
-                                                        key={setting.id}
-                                                        className="bg-app-card rounded-xl p-4 border border-border"
-                                                    >
-                                                        <View className="flex-row items-center justify-between mb-3">
-                                                            <View className="flex-row items-center gap-3">
-                                                                <View className="w-10 h-10 rounded-full bg-app-elevated items-center justify-center">
-                                                                    <Ionicons name="person" size={20} color={Theme.textSecondary} />
+                                                {allLeaders.map((leader) => {
+                                                    const usedAmount = leader.usedAmount ?? 0;
+                                                    const maxTotal = leader.maxTotalAmount || 1;
+                                                    const budgetPct = Math.min((usedAmount / maxTotal) * 100, 100);
+                                                    const isExternal = leader.type === 'external';
+                                                    return (
+                                                        <TouchableOpacity
+                                                            key={leader.settingsId}
+                                                            className="bg-app-card rounded-xl p-4 border border-border"
+                                                            activeOpacity={0.7}
+                                                            onPress={() => {
+                                                                if (isExternal) {
+                                                                    router.push({ pathname: '/profile/[identifier]', params: { identifier: leader.walletAddress } });
+                                                                } else {
+                                                                    router.push({ pathname: '/user/[userId]', params: { userId: leader.leaderId } });
+                                                                }
+                                                            }}
+                                                        >
+                                                            <View className="flex-row items-center justify-between mb-3">
+                                                                <View className="flex-row items-center gap-3">
+                                                                    <View style={{ width: 40, height: 40, position: 'relative' }}>
+                                                                        <View className="w-10 h-10 rounded-full bg-app-elevated items-center justify-center overflow-hidden">
+                                                                            {leader.avatarUrl ? (
+                                                                                <Image
+                                                                                    source={{ uri: leader.avatarUrl }}
+                                                                                    className="w-full h-full rounded-full"
+                                                                                />
+                                                                            ) : (
+                                                                                <Ionicons name="person" size={20} color={Theme.textSecondary} />
+                                                                            )}
+                                                                        </View>
+                                                                        {isExternal && (
+                                                                            <View style={{
+                                                                                position: 'absolute', bottom: -2, right: -2,
+                                                                                width: 16, height: 16, borderRadius: 8,
+                                                                                backgroundColor: 'white',
+                                                                                alignItems: 'center', justifyContent: 'center',
+                                                                                shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+                                                                                shadowOpacity: 0.15, shadowRadius: 3, elevation: 3,
+                                                                            }}>
+                                                                                <Image
+                                                                                    source={hunchBadge}
+                                                                                    style={{ width: 12, height: 12, borderRadius: 6 }}
+                                                                                    resizeMode="cover"
+                                                                                />
+                                                                            </View>
+                                                                        )}
+                                                                    </View>
+                                                                    <View>
+                                                                        <Text className="text-base font-semibold text-txt-primary">
+                                                                            {leader.displayName || (isExternal
+                                                                                ? `${leader.walletAddress.slice(0, 6)}...${leader.walletAddress.slice(-4)}`
+                                                                                : `User ${leader.leaderId.slice(0, 8)}...`
+                                                                            )}
+                                                                        </Text>
+                                                                        <Text className="text-xs text-txt-secondary">
+                                                                            {leader.enabled ? (isExternal ? 'Copying Polymarket' : 'Copying trades') : 'Paused'}
+                                                                        </Text>
+                                                                    </View>
                                                                 </View>
-                                                                <View>
-                                                                    <Text className="text-base font-semibold text-txt-primary">
-                                                                        {setting.leader?.displayName || `User ${setting.leaderId.slice(0, 8)}...`}
+                                                                <TouchableOpacity
+                                                                    onPress={async () => {
+                                                                        try {
+                                                                            if (isExternal) {
+                                                                                await disableExternalCopyTrading(leader.leaderId);
+                                                                            } else {
+                                                                                await disableCopyTrading(leader.leaderId);
+                                                                            }
+                                                                            fetchAllLeaders();
+                                                                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                                                                        } catch (error) {
+                                                                            console.error('Failed to stop copy trading:', error);
+                                                                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                                                                        }
+                                                                    }}
+                                                                    className="px-3 py-1.5 bg-red-500/20 rounded-lg"
+                                                                >
+                                                                    <Text className="text-xs font-medium text-red-500">Stop</Text>
+                                                                </TouchableOpacity>
+                                                            </View>
+                                                            {/* Budget progress bar */}
+                                                            <View className="mb-3">
+                                                                <View className="flex-row justify-between mb-1">
+                                                                    <Text className="text-[10px] text-txt-disabled uppercase tracking-wide">Budget</Text>
+                                                                    <Text className="text-[10px] text-txt-disabled">
+                                                                        ${usedAmount.toFixed(0)} / ${leader.maxTotalAmount.toFixed(0)}
                                                                     </Text>
-                                                                    <Text className="text-xs text-txt-secondary">Copying trades</Text>
+                                                                </View>
+                                                                <View className="h-1.5 bg-app-elevated rounded-full overflow-hidden">
+                                                                    <View
+                                                                        className="h-full rounded-full"
+                                                                        style={{
+                                                                            width: `${budgetPct}%`,
+                                                                            backgroundColor: budgetPct > 80 ? '#FF10F0' : '#00e003',
+                                                                        }}
+                                                                    />
                                                                 </View>
                                                             </View>
-                                                            <TouchableOpacity
-                                                                onPress={async () => {
-                                                                    try {
-                                                                        await disableCopyTrading(setting.leaderId);
-                                                                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                                                                    } catch (error) {
-                                                                        console.error('Failed to stop copy trading:', error);
-                                                                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                                                                    }
-                                                                }}
-                                                                className="px-3 py-1.5 bg-red-500/20 rounded-lg"
-                                                            >
-                                                                <Text className="text-xs font-medium text-red-500">Stop</Text>
-                                                            </TouchableOpacity>
-                                                        </View>
-                                                        <View className="flex-row gap-4">
-                                                            <View className="flex-1 bg-app-elevated rounded-lg p-3">
-                                                                <Text className="text-xs text-txt-disabled mb-1">Per Trade</Text>
-                                                                <Text className="text-lg font-bold text-txt-primary">
-                                                                    ${setting.amountPerTrade.toFixed(2)}
-                                                                </Text>
+                                                            <View className="flex-row gap-4">
+                                                                <View className="flex-1 bg-app-elevated rounded-lg p-3">
+                                                                    <Text className="text-xs text-txt-disabled mb-1">Per Trade</Text>
+                                                                    <Text className="text-lg font-bold text-txt-primary">
+                                                                        ${leader.amountPerTrade.toFixed(2)}
+                                                                    </Text>
+                                                                </View>
+                                                                <View className="flex-1 bg-app-elevated rounded-lg p-3">
+                                                                    <Text className="text-xs text-txt-disabled mb-1">Total Cap</Text>
+                                                                    <Text className="text-lg font-bold text-txt-primary">
+                                                                        ${leader.maxTotalAmount.toFixed(2)}
+                                                                    </Text>
+                                                                </View>
                                                             </View>
-                                                            <View className="flex-1 bg-app-elevated rounded-lg p-3">
-                                                                <Text className="text-xs text-txt-disabled mb-1">Total Cap</Text>
-                                                                <Text className="text-lg font-bold text-txt-primary">
-                                                                    ${setting.maxTotalAmount.toFixed(2)}
-                                                                </Text>
-                                                            </View>
-                                                        </View>
-                                                    </View>
-                                                ))}
+                                                        </TouchableOpacity>
+                                                    );
+                                                })}
                                             </View>
                                         ) : (
                                             <View className="p-10 items-center gap-3">
                                                 <Ionicons name="copy-outline" size={32} color={Theme.textDisabled} />
-                                                <Text className="text-sm text-txt-disabled">Copy trades will appear here</Text>
+                                                <Text className="text-sm text-txt-disabled text-center">
+                                                    Copy trades will appear here.{'\n'}Follow a trader and tap "Copy" to start.
+                                                </Text>
                                             </View>
                                         )}
                                     </View>
@@ -945,6 +1018,16 @@ export default function ProfileScreen() {
                 walletProvider={walletProvider}
                 connection={connection}
                 eventTitle={selectedMarketEventTitle}
+            />
+            <AddCashSheet
+                visible={addCashVisible}
+                onClose={() => setAddCashVisible(false)}
+                walletAddress={backendUser?.walletAddress || ""}
+                onPrivyFund={() => {
+                    if (backendUser?.walletAddress) {
+                        fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
+                    }
+                }}
             />
         </View >
     );

@@ -52,7 +52,7 @@ export default function UnifiedProfileScreen() {
     const [positionsLoading, setPositionsLoading] = useState(true);
 
     // Copy trading
-    const { copySettings, fetchAllCopySettings } = useCopyTrading();
+    const { allLeaders, fetchAllLeaders } = useCopyTrading();
     const [isCopying, setIsCopying] = useState(false);
     const [copyModalVisible, setCopyModalVisible] = useState(false);
 
@@ -128,10 +128,18 @@ export default function UnifiedProfileScreen() {
     }, [loadProfile]);
 
     useEffect(() => {
-        if (copySettings && profile?.id) {
-            setIsCopying(copySettings.some(s => s.leaderId === profile.id));
+        if (!profile) return;
+        if (profile.profileType === 'external') {
+            setIsCopying(allLeaders.some(l => l.type === 'external' && l.leaderId === profile.id && l.enabled !== false));
+        } else {
+            setIsCopying(allLeaders.some(l => l.type === 'internal' && l.leaderId === profile.id));
         }
-    }, [copySettings, profile?.id]);
+    }, [allLeaders, profile]);
+
+    // Fetch the current user's copy leaders so isCopying is accurate on mount
+    useEffect(() => {
+        if (backendUser) fetchAllLeaders();
+    }, [backendUser]);
 
     const animateToTab = useCallback((tab: TabType) => {
         Animated.spring(slideAnim, {
@@ -325,7 +333,7 @@ export default function UnifiedProfileScreen() {
                                 <TouchableOpacity
                                     onPress={handleFollow}
                                     disabled={followLoading}
-                                    className="flex-row items-center justify-center gap-2 px-4 py-2.5 rounded-xl"
+                                    className="flex-row items-center justify-center gap-2 px-6 py-3 rounded-xl w-full"
                                     style={{
                                         backgroundColor: profile?.isFollowing ? '#F3F4F6' : '#000',
                                     }}
@@ -596,8 +604,9 @@ export default function UnifiedProfileScreen() {
                 onClose={() => setCopyModalVisible(false)}
                 leaderId={profile?.id ?? ''}
                 leaderName={profile?.displayName || 'User'}
+                isExternal={profile?.profileType === 'external'}
                 onSave={() => {
-                    fetchAllCopySettings();
+                    fetchAllLeaders();
                     setCopyModalVisible(false);
                 }}
             />

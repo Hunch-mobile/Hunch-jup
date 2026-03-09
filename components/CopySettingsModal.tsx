@@ -1,6 +1,5 @@
 import { Theme } from '@/constants/theme';
 import { useCopyTrading } from '@/hooks/useCopyTrading';
-import { CopySettings } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useEffect, useRef, useState } from 'react';
@@ -29,6 +28,8 @@ interface CopySettingsModalProps {
     leaderId: string;
     leaderName: string;
     onSave?: () => void;
+    /** Pass true when leaderId is an ExternalProfile.id (Polymarket trader). */
+    isExternal?: boolean;
 }
 
 export default function CopySettingsModal({
@@ -37,19 +38,25 @@ export default function CopySettingsModal({
     leaderId,
     leaderName,
     onSave,
+    isExternal = false,
 }: CopySettingsModalProps) {
     const {
         enableCopyTrading,
+        enableExternalCopyTrading,
+        updateCopySettings,
         disableCopyTrading,
+        disableExternalCopyTrading,
         getCopySettingsForLeader,
+        getExternalCopySettingsForLeader,
         isLoading,
         error,
         clearError,
+        currentStep,
     } = useCopyTrading();
 
     const [amountPerTrade, setAmountPerTrade] = useState<string>('');
     const [maxTotalAmount, setMaxTotalAmount] = useState<string>('');
-    const [existingSettings, setExistingSettings] = useState<CopySettings | null>(null);
+    const [existingSettings, setExistingSettings] = useState<{ amountPerTrade: number; maxTotalAmount: number; spentAmount?: number } | null>(null);
     const [localError, setLocalError] = useState<string | null>(null);
     const [fetching, setFetching] = useState(false);
     const [focusedInput, setFocusedInput] = useState<'perTrade' | 'totalCap' | null>(null);
@@ -105,8 +112,10 @@ export default function CopySettingsModal({
     const fetchExistingSettings = async () => {
         setFetching(true);
         try {
-            const settings = await getCopySettingsForLeader(leaderId);
-            if (settings) {
+            const settings = isExternal
+                ? await getExternalCopySettingsForLeader(leaderId)
+                : await getCopySettingsForLeader(leaderId);
+            if (settings && (isExternal ? (settings as any).enabled !== false : true)) {
                 setExistingSettings(settings);
                 setAmountPerTrade(settings.amountPerTrade.toString());
                 setMaxTotalAmount(settings.maxTotalAmount.toString());
@@ -146,10 +155,25 @@ export default function CopySettingsModal({
         }
 
         try {
-            await enableCopyTrading(leaderId, leaderName, {
-                amountPerTrade: amountNum,
-                maxTotalAmount: maxNum,
-            });
+            if (isExternal) {
+                // External (Polymarket) traders — always upsert, no signer/delegation needed
+                await enableExternalCopyTrading(leaderId, {
+                    amountPerTrade: amountNum,
+                    maxTotalAmount: maxNum,
+                });
+            } else if (existingSettings) {
+                // Update existing internal settings — no re-run of signer/delegation flow
+                await updateCopySettings(leaderId, {
+                    amountPerTrade: amountNum,
+                    maxTotalAmount: maxNum,
+                });
+            } else {
+                // New internal setup — runs full signer + delegation + save flow
+                await enableCopyTrading(leaderId, leaderName, {
+                    amountPerTrade: amountNum,
+                    maxTotalAmount: maxNum,
+                });
+            }
             onSave?.();
             onClose();
         } catch (err: any) {
@@ -159,7 +183,11 @@ export default function CopySettingsModal({
 
     const handleRemove = async () => {
         try {
-            await disableCopyTrading(leaderId);
+            if (isExternal) {
+                await disableExternalCopyTrading(leaderId);
+            } else {
+                await disableCopyTrading(leaderId);
+            }
             onSave?.();
             onClose();
         } catch (err: any) {
@@ -216,6 +244,32 @@ export default function CopySettingsModal({
                             <Ionicons name="close" size={20} color={Theme.textSecondary} />
                         </TouchableOpacity>
                     </View>
+
+                    {/* Step progress for new setup */}
+                    {!existingSettings && currentStep !== 'idle' && (
+                        <View className="flex-row items-center justify-center gap-2 mb-4">
+                            {(currentStep === 'signer' || currentStep === 'signing' || currentStep === 'saving') && (
+                                <ActivityIndicator size="small" color={Theme.textPrimary} />
+                            )}
+                            {currentStep === 'done' && (
+                                <Ionicons name="checkmark-circle" size={16} color="#00e003" />
+                            )}
+                            {currentStep === 'error' && (
+                                <Ionicons name="close-circle" size={16} color="#FF10F0" />
+                            )}
+                            <Text className="text-xs font-medium" style={{
+                                color: currentStep === 'done' ? '#00e003'
+                                    : currentStep === 'error' ? '#FF10F0'
+                                    : Theme.textSecondary
+                            }}>
+                                {currentStep === 'signer' ? 'Setting up wallet signer...'
+                                    : currentStep === 'signing' ? 'Sign to authorize copy trading'
+                                    : currentStep === 'saving' ? 'Saving settings...'
+                                    : currentStep === 'done' ? 'Copy trading enabled!'
+                                    : 'Something went wrong'}
+                            </Text>
+                        </View>
+                    )}
 
                     <ScrollView>
                         {fetching ? (
