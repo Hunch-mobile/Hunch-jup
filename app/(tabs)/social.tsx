@@ -7,7 +7,7 @@ import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, followApi, marketsApi, polymarketApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
-import { User as BackendUser, CandleData, Event, ExternalTrade, Market } from "@/lib/types";
+import { User as BackendUser, CandleData, Event, FeedSignalItemResponse, ForYouFeedItem, Market, TopTraderTradeItem } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedSolanaWallet } from "@privy-io/expo";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,11 +15,11 @@ import { clusterApiUrl, Connection } from "@solana/web3.js";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, FlatList, Image, PanResponder, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Animated, Dimensions, FlatList, Image, Linking, PanResponder, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-interface ExternalFeedItem {
+interface TopTraderFeedItem {
     id: string;
     conditionId: string;
     marketTitle: string;
@@ -44,7 +44,9 @@ interface ExternalFeedItem {
     marketDetails?: Market;
 }
 
-const mapExternalTrade = (t: ExternalTrade): ExternalFeedItem => ({
+type SocialFeedItem = ForYouFeedItem;
+
+const mapTopTraderTrade = (t: TopTraderTradeItem): TopTraderFeedItem => ({
     id: t.id,
     conditionId: t.conditionId,
     marketTitle: t.marketTitle,
@@ -57,6 +59,12 @@ const mapExternalTrade = (t: ExternalTrade): ExternalFeedItem => ({
     timestamp: t.timestamp,
     transactionHash: t.transactionHash,
     trader: t.trader,
+});
+
+const normalizeFollowingSignal = (item: FeedSignalItemResponse): SocialFeedItem => ({
+    ...item,
+    kind: 'signal',
+    rankScore: item.score ?? 0,
 });
 
 type SearchMarketItem =
@@ -189,7 +197,7 @@ const formatHandle = (handle: string) => {
 };
 
 // Feed card component
-const FeedCard = ({
+const FeedCard = React.memo(({
     item,
     candles,
     onPress,
@@ -199,7 +207,7 @@ const FeedCard = ({
     isFollowInProgress,
     isLoadingTrade,
 }: {
-    item: ExternalFeedItem;
+    item: TopTraderFeedItem;
     candles?: CandleData[];
     onPress: () => void;
     onUserPress: () => void;
@@ -210,7 +218,6 @@ const FeedCard = ({
 }) => {
     const isYes = item.side === 'yes';
     const market = item.marketDetails;
-    const subtitle = isYes ? market?.yesSubTitle : market?.noSubTitle;
     const avatarUrl = item.trader.avatarUrl?.replace('_normal', '');
     const totalBought = item.usdcAmount;
     const rawName = item.trader.displayName?.trim();
@@ -260,17 +267,13 @@ const FeedCard = ({
     };
 
     const marketLabel = item.marketTitle || market?.title || `0x…${item.conditionId.slice(-6)}`;
-    const eventLabel = market?.subtitle || 'Polymarket';
+    const priceDisplay = `${Math.round(item.price * 100)}¢`;
 
     return (
-        <TouchableOpacity
-            className="mx-5 mb-5"
-            onPress={isLoadingTrade ? undefined : onChartPress}
-            activeOpacity={isLoadingTrade ? 1 : 0.9}
-        >
-            {/* Header */}
-            <View className="flex-row items-center mb-2">
-                <TouchableOpacity className="mr-3" onPress={(e) => { e.stopPropagation(); onUserPress(); }}>
+        <View className="mx-5 mb-4">
+            {/* Tweet-style header: avatar + content */}
+            <View className="flex-row items-start">
+                <TouchableOpacity className="mr-3" onPress={onUserPress} activeOpacity={0.7}>
                     <View className="w-[38px] h-[38px] rounded-full justify-center items-center bg-app-card border border-border overflow-hidden">
                         <Image
                             source={avatarUrl ? { uri: avatarUrl } : defaultProfileImage}
@@ -279,109 +282,318 @@ const FeedCard = ({
                     </View>
                 </TouchableOpacity>
                 <View className="flex-1">
-                    <View className="flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-1.5 flex-1 mr-2" style={{ flexWrap: 'wrap' }}>
-                            <Text className="text-txt-primary font-bold text-[14px]" numberOfLines={1}>
+                    {/* Name + action + follow + time */}
+                    <View className="flex-row items-center justify-between mb-1">
+                        <View className="flex-row items-center flex-1 mr-2">
+                            <Text className="text-[14px] font-bold text-[#111]" numberOfLines={1}>
                                 {handle}
                                 {item.trader.verifiedBadge ? ' ✓' : ''}
                             </Text>
-                            <Text style={{ color: isSell ? '#FF10F0' : '#32de12', fontWeight: '800', fontSize: 14 }}>
+                            <Text style={{ color: isSell ? '#FF10F0' : '#32de12', fontWeight: '800', fontSize: 13, marginLeft: 6 }}>
                                 {isSell ? 'sold' : 'bought'}
                             </Text>
                         </View>
                         <View className="flex-row items-center gap-2">
                             {onFollow && (
                                 <TouchableOpacity
-                                    className={`py-1 px-3 rounded-full border ${isFollowing ? 'border-txt-primary bg-transparent' : 'bg-txt-primary border-txt-primary'} ${isFollowInProgress ? 'opacity-60' : ''}`}
+                                    className={`py-1 px-3 rounded-full border ${isFollowing ? 'border-[#ccc] bg-transparent' : 'bg-[#111] border-[#111]'} ${isFollowInProgress ? 'opacity-60' : ''}`}
                                     onPress={(e) => { e.stopPropagation(); onFollow(); }}
                                     disabled={isFollowInProgress}
                                 >
                                     {isFollowInProgress ? (
-                                        <ActivityIndicator size="small" color={isFollowing ? Theme.textPrimary : Theme.bgMain} />
+                                        <ActivityIndicator size="small" color={isFollowing ? '#111' : '#fff'} />
                                     ) : (
-                                        <Text className={`text-[11px] font-semibold ${isFollowing ? 'text-txt-primary' : 'text-txt-inverse'}`}>
+                                        <Text className={`text-[11px] font-semibold ${isFollowing ? 'text-[#666]' : 'text-white'}`}>
                                             {isFollowing ? 'Following' : 'Follow'}
                                         </Text>
                                     )}
                                 </TouchableOpacity>
                             )}
-                            <Text className="text-txt-disabled text-[13px]">{getTimeAgo(item.timestamp)}</Text>
+                            <Text className="text-[12px] text-[#999]">{getTimeAgo(item.timestamp)}</Text>
                         </View>
                     </View>
-                </View>
-            </View>
 
-            {/* Market Card */}
-            <View className="bg-white rounded-[24px] p-3.5 border border-[#E8E8E8] shadow-sm" style={{ opacity: isLoadingTrade ? 0.6 : 1 }}>
-                {isLoadingTrade && (
-                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 24, justifyContent: 'center', alignItems: 'center', zIndex: 10, backgroundColor: 'rgba(255,255,255,0.5)' }}>
-                        <ActivityIndicator size="small" color="#6b7280" />
-                    </View>
-                )}
-                <View className="flex-row items-center gap-3 mb-3.5">
-                    <Text
-                        className={`font-black ${item.outcome === 'No' ? 'text-[#FF10F0]' : 'text-[#32de12]'}`}
-                        style={{ fontFamily: 'BBHSansHegarty', fontSize: item.outcome.length > 6 ? 18 : 32 }}
-                        numberOfLines={2}
-                    >
-                        {item.outcome === 'Yes' ? 'YES' : item.outcome === 'No' ? 'NO' : item.outcome.toUpperCase()}
+                    {/* Trade action text */}
+                    <Text className="text-[15px] text-[#1a1a1a] leading-[21px] mb-2">
+                        {isSell ? 'Sold' : 'Bought'}{' '}
+                        <Text style={{ fontWeight: '700', color: item.outcome === 'No' ? '#FF10F0' : '#32de12' }}>
+                            {item.outcome === 'Yes' ? 'YES' : item.outcome === 'No' ? 'NO' : item.outcome.toUpperCase()}
+                        </Text>
+                        {' '}at {priceDisplay} · ${formatValue(totalBought)}
                     </Text>
-                    <Text className="text-[14px] text-txt-disabled">on</Text>
-                    <View className="flex-1 border border-[#E6E6E6] rounded-xl px-2.5 py-2">
-                        <Text className="text-[15px] font-semibold text-[#111827]" numberOfLines={1}>
-                            {marketLabel}
-                        </Text>
-                        <Text className="text-[12px] text-[#6b7280]" numberOfLines={1}>
-                            {eventLabel}
-                        </Text>
-                    </View>
-                </View>
 
-                <TouchableOpacity
-                    className="h-[72px] rounded-xl overflow-hidden mb-4"
-                    activeOpacity={0.9}
-                    onPress={(event) => {
-                        event?.stopPropagation?.();
-                        onChartPress();
-                    }}
-                >
-                    {chartCandles && chartCandles.length > 0 ? (
-                        <LightChart
-                            candles={chartCandles}
-                            width={FEED_CARD_CHART_WIDTH}
-                            height={FEED_CARD_CHART_HEIGHT}
-                            colorByTrend={true}
-                            entryTimestamp={entryTimestamp}
-                            entryAvatarUri={avatarUrl || undefined}
-                        />
-                    ) : (
-                        <View className="flex-1 justify-center items-center gap-1.5">
-                            <Ionicons name="analytics-outline" size={16} color="#9ca3af" />
-                            <Text className="text-[10px] text-gray-400">No data available</Text>
+                    {/* Market card - tappable to trade */}
+                    <TouchableOpacity
+                        className="rounded-xl border border-[#E8E8E8] bg-white overflow-hidden"
+                        activeOpacity={isLoadingTrade ? 1 : 0.7}
+                        onPress={isLoadingTrade ? undefined : onChartPress}
+                        style={{ opacity: isLoadingTrade ? 0.6 : 1 }}
+                    >
+                        {isLoadingTrade && (
+                            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 12, justifyContent: 'center', alignItems: 'center', zIndex: 10, backgroundColor: 'rgba(255,255,255,0.5)' }}>
+                                <ActivityIndicator size="small" color="#6b7280" />
+                            </View>
+                        )}
+
+                        {/* Chart */}
+                        <View className="h-[72px] overflow-hidden">
+                            {chartCandles && chartCandles.length > 0 ? (
+                                <LightChart
+                                    candles={chartCandles}
+                                    width={FEED_CARD_CHART_WIDTH - 50}
+                                    height={FEED_CARD_CHART_HEIGHT}
+                                    colorByTrend={true}
+                                    entryTimestamp={entryTimestamp}
+                                    entryAvatarUri={avatarUrl || undefined}
+                                />
+                            ) : (
+                                <View className="flex-1 justify-center items-center">
+                                    <Ionicons name="analytics-outline" size={16} color="#ccc" />
+                                </View>
+                            )}
                         </View>
-                    )}
-                </TouchableOpacity>
 
-                <View className="flex-row items-center">
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-[#9ca3af] uppercase">Total Bought</Text>
-                        <Text className="text-[16px] font-semibold text-[#111827]">${formatValue(totalBought)}</Text>
-                    </View>
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-[#9ca3af] uppercase">PNL</Text>
-                        <Text className="text-[14px] font-semibold" style={{ color: pnlColor }}>{pnlText}</Text>
-                    </View>
-                    <View className="flex-1">
-                        <Text className="text-[11px] text-[#9ca3af] uppercase">Total Value</Text>
-                        <Text className="text-[16px] font-semibold text-[#111827]">${formatValue(totalValue)}</Text>
-                    </View>
+                        {/* Market info + stats row */}
+                        <View className="px-3 py-2.5 border-t border-[#F0F0F0]">
+                            <Text className="text-[13px] font-semibold text-[#111] mb-1.5" numberOfLines={2}>
+                                {marketLabel}
+                            </Text>
+                            <View className="flex-row items-center justify-between">
+                                <View className="flex-row items-center gap-3">
+                                    <View>
+                                        <Text className="text-[10px] text-[#999] uppercase">Bought</Text>
+                                        <Text className="text-[13px] font-semibold text-[#111]">${formatValue(totalBought)}</Text>
+                                    </View>
+                                    <View>
+                                        <Text className="text-[10px] text-[#999] uppercase">PnL</Text>
+                                        <Text className="text-[13px] font-semibold" style={{ color: pnlColor }}>{pnlText}</Text>
+                                    </View>
+                                    <View>
+                                        <Text className="text-[10px] text-[#999] uppercase">Value</Text>
+                                        <Text className="text-[13px] font-semibold text-[#111]">${formatValue(totalValue)}</Text>
+                                    </View>
+                                </View>
+                                <View className="bg-[#111] rounded-lg px-3 py-1.5">
+                                    <Text className="text-[11px] font-bold text-white">Trade</Text>
+                                </View>
+                            </View>
+                        </View>
+                    </TouchableOpacity>
                 </View>
             </View>
-        </TouchableOpacity>
+
+            {/* Separator */}
+            <View style={{ height: 1, backgroundColor: '#F0F0F0', marginLeft: 50, marginTop: 12 }} />
+        </View>
     );
+});
+
+const SignalCard = React.memo(({ item }: { item: FeedSignalItemResponse }) => {
+    const titleByType: Record<FeedSignalItemResponse['type'], string> = {
+        TRADE_MILESTONE: 'Trade milestone',
+        POSITION_CLOSED: 'Position closed',
+        NEWS: 'News signal',
+        LEADER_ACTIVITY: 'Leader activity',
+    };
+    const avatarUrl = item.user?.avatarUrl?.replace('_normal', '');
+    const displayName = item.user?.displayName || (item.user?.walletAddress ? formatHandle(item.user.walletAddress) : 'System');
+
+    return (
+        <View className="mx-5 mb-5 rounded-2xl border border-[#E8E8E8] bg-white p-4">
+            <View className="flex-row items-center justify-between mb-2">
+                <View className="flex-row items-center">
+                    <View className="w-9 h-9 rounded-full overflow-hidden bg-app-card border border-border mr-2.5">
+                        <Image
+                            source={avatarUrl ? { uri: avatarUrl } : defaultProfileImage}
+                            className="w-full h-full rounded-full"
+                        />
+                    </View>
+                    <Text className="text-[14px] font-semibold text-txt-primary">{displayName}</Text>
+                </View>
+                <Text className="text-[12px] text-txt-disabled">{new Date(item.createdAt).toLocaleDateString()}</Text>
+            </View>
+            <Text className="text-[13px] font-semibold text-txt-primary mb-1.5">{titleByType[item.type]}</Text>
+            {item.evidence?.headline ? (
+                <Text className="text-[14px] text-txt-primary leading-[20px]">{item.evidence.headline}</Text>
+            ) : (
+                <Text className="text-[14px] text-txt-secondary leading-[20px]">
+                    {item.marketTicker}
+                    {item.eventTicker ? ` • ${item.eventTicker}` : ''}
+                </Text>
+            )}
+        </View>
+    );
+});
+
+// Hardcoded avatar map for known tweet accounts
+const TWEET_AVATAR_MAP: Record<string, string> = {
+    Polymarket: 'https://pbs.twimg.com/profile_images/1654104878727127040/PlBJSj6Q_normal.jpg',
+    Reuters: 'https://pbs.twimg.com/profile_images/1194751949821939712/3VBu4_rH_normal.jpg',
+    zerohedge: 'https://pbs.twimg.com/profile_images/1164570825312858113/wvX14fqG_normal.jpg',
+    WatcherGuru: 'https://pbs.twimg.com/profile_images/1530986517462532097/JuaENRXX_normal.jpg',
+    unusual_whales: 'https://pbs.twimg.com/profile_images/1587915457003167745/ZwithJwz_normal.jpg',
+    solana: 'https://pbs.twimg.com/profile_images/1849973741498933248/KTKFP6I7_normal.jpg',
+    AutismCapital: 'https://pbs.twimg.com/profile_images/1587908633470214144/b03RrEe5_normal.jpg',
 };
 
+const formatTweetMetric = (n: number): string => {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+    return String(n);
+};
 
+const getTweetTimeAgo = (dateString: string): string => {
+    const diffMs = Date.now() - new Date(dateString).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'now';
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d`;
+};
+
+const stripTcoUrls = (text: string): string => text.replace(/https?:\/\/t\.co\/\w+/g, '').trim();
+
+const formatPrice = (price: number | null): string => {
+    if (price === null || price === undefined) return '—';
+    return `${Math.round(price * 100)}¢`;
+};
+
+const TweetCard = React.memo(({ item }: { item: Extract<SocialFeedItem, { kind: 'tweet' }> }) => {
+    const { tweet } = item;
+    const avatarUrl = TWEET_AVATAR_MAP[tweet.username]?.replace('_normal', '') ?? null;
+    const visibleEvents = tweet.matchedEvents.slice(0, 2);
+    const hasMedia = tweet.mediaUrls && tweet.mediaUrls.length > 0;
+
+    return (
+        <View className="mx-5 mb-4">
+            {/* Tweet header row */}
+            <View className="flex-row items-start mb-2.5">
+                <TouchableOpacity
+                    className="mr-3"
+                    onPress={() => Linking.openURL(`https://x.com/${tweet.username}`)}
+                    activeOpacity={0.7}
+                >
+                    <View className="w-[38px] h-[38px] rounded-full overflow-hidden bg-[#F0F0F0] justify-center items-center">
+                        {avatarUrl ? (
+                            <Image source={{ uri: avatarUrl }} className="w-full h-full rounded-full" />
+                        ) : (
+                            <Text style={{ fontSize: 15, fontWeight: '700', color: '#111' }}>{tweet.username.charAt(0).toUpperCase()}</Text>
+                        )}
+                    </View>
+                </TouchableOpacity>
+                <View className="flex-1">
+                    <View className="flex-row items-center justify-between">
+                        <View className="flex-row items-center flex-1 mr-2">
+                            <Text className="text-[14px] font-bold text-[#111]" numberOfLines={1}>
+                                @{tweet.username}
+                            </Text>
+                        </View>
+                        <Text className="text-[12px] text-[#999]">{getTweetTimeAgo(tweet.postedAt)}</Text>
+                    </View>
+
+                    {/* Tweet body */}
+                    <Text className="text-[15px] text-[#1a1a1a] leading-[21px] mt-1">
+                        {stripTcoUrls(tweet.content)}
+                    </Text>
+
+                    {/* Media images */}
+                    {hasMedia && (
+                        <View className="mt-2.5 rounded-xl overflow-hidden border border-[#EDEDED]">
+                            {tweet.mediaUrls.length === 1 ? (
+                                <Image
+                                    source={{ uri: tweet.mediaUrls[0] }}
+                                    style={{ width: '100%', height: 200 }}
+                                    resizeMode="cover"
+                                />
+                            ) : (
+                                <View className="flex-row flex-wrap">
+                                    {tweet.mediaUrls.slice(0, 4).map((url, i) => (
+                                        <Image
+                                            key={i}
+                                            source={{ uri: url }}
+                                            style={{ width: '50%', height: 120 }}
+                                            resizeMode="cover"
+                                        />
+                                    ))}
+                                </View>
+                            )}
+                        </View>
+                    )}
+
+                    {/* Matched event cards — trade-oriented */}
+                    {visibleEvents.length > 0 && (
+                        <View className="mt-2.5 rounded-xl border border-[#E8E8E8] overflow-hidden bg-white">
+                            {visibleEvents.map((ev, idx) => (
+                                <TouchableOpacity
+                                    key={ev.eventTicker}
+                                    className={`flex-row items-center py-3 px-3 ${idx > 0 ? 'border-t border-[#F0F0F0]' : ''}`}
+                                    activeOpacity={0.6}
+                                    onPress={() => router.push({ pathname: '/event/[ticker]', params: { ticker: ev.eventTicker } })}
+                                >
+                                    {ev.imageUrl && (
+                                        <View className="w-10 h-10 rounded-lg overflow-hidden bg-[#F5F5F5] mr-3">
+                                            <Image source={{ uri: ev.imageUrl }} className="w-full h-full" resizeMode="cover" />
+                                        </View>
+                                    )}
+                                    <View className="flex-1 mr-2">
+                                        <Text className="text-[13px] font-semibold text-[#111]" numberOfLines={2}>
+                                            {ev.eventTitle}
+                                        </Text>
+                                        {ev.yesPrice !== null && ev.yesPrice !== undefined ? (
+                                            <View className="flex-row items-center gap-2 mt-0.5">
+                                                <Text className="text-[11px] font-semibold text-[#22c55e]">Yes {formatPrice(ev.yesPrice)}</Text>
+                                                <Text className="text-[11px] font-semibold text-[#ef4444]">No {formatPrice(ev.noPrice)}</Text>
+                                            </View>
+                                        ) : (
+                                            <Text className="text-[11px] text-[#999] mt-0.5">Tap to trade</Text>
+                                        )}
+                                    </View>
+                                    <View className="bg-[#111] rounded-lg px-3 py-1.5">
+                                        <Text className="text-[11px] font-bold text-white">Trade</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    )}
+
+                    {/* Tweet metrics row */}
+                    <View className="flex-row items-center justify-between mt-2.5 pr-1">
+                        <View className="flex-row items-center gap-4">
+                            <View className="flex-row items-center gap-1">
+                                <Ionicons name="heart-outline" size={14} color="#999" />
+                                <Text className="text-[12px] text-[#999]">{formatTweetMetric(tweet.metrics.likeCount)}</Text>
+                            </View>
+                            <View className="flex-row items-center gap-1">
+                                <Ionicons name="repeat-outline" size={14} color="#999" />
+                                <Text className="text-[12px] text-[#999]">{formatTweetMetric(tweet.metrics.retweetCount)}</Text>
+                            </View>
+                            <View className="flex-row items-center gap-1">
+                                <Ionicons name="chatbubble-outline" size={14} color="#999" />
+                                <Text className="text-[12px] text-[#999]">{formatTweetMetric(tweet.metrics.replyCount)}</Text>
+                            </View>
+                            <View className="flex-row items-center gap-1">
+                                <Ionicons name="eye-outline" size={14} color="#999" />
+                                <Text className="text-[12px] text-[#999]">{formatTweetMetric(tweet.metrics.impressionCount)}</Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity
+                            onPress={() => Linking.openURL(`https://x.com/${tweet.username}/status/${tweet.tweetId}`)}
+                            activeOpacity={0.6}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                            <Text className="text-[12px] text-[#999] font-medium">X ↗</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+
+            {/* Separator line */}
+            <View style={{ height: 1, backgroundColor: '#F0F0F0', marginLeft: 50 }} />
+        </View>
+    );
+});
 
 export default function SocialScreen() {
     const { backendUser, deductBalance, addOptimisticPosition } = useUser();
@@ -411,7 +623,7 @@ export default function SocialScreen() {
         getProvider();
     }, [solanaWallet]);
 
-    const [feedItemsByMode, setFeedItemsByMode] = useState<{ global: ExternalFeedItem[]; following: ExternalFeedItem[] }>({
+    const [feedItemsByMode, setFeedItemsByMode] = useState<{ global: SocialFeedItem[]; following: SocialFeedItem[] }>({
         global: [],
         following: [],
     });
@@ -430,6 +642,10 @@ export default function SocialScreen() {
     });
     const [mode, setMode] = useState<'following' | 'global'>(backendUser ? 'following' : 'global');
     const [hasMoreByMode, setHasMoreByMode] = useState({ global: true, following: true });
+    const cursorByModeRef = useRef<{ global: string | null; following: string | null }>({
+        global: null,
+        following: null,
+    });
     const [showSearch, setShowSearch] = useState(false);
     const [candlesMap, setCandlesMap] = useState<Record<string, CandleData[]>>({});
     const [tabLayouts, setTabLayouts] = useState<{
@@ -445,7 +661,7 @@ export default function SocialScreen() {
     const modeRef = useRef<'following' | 'global'>(backendUser ? 'following' : 'global');
     const hasUserRef = useRef(!!backendUser);
     const [tradeSheetVisible, setTradeSheetVisible] = useState(false);
-    const [tradeSheetItem, setTradeSheetItem] = useState<ExternalFeedItem | null>(null);
+    const [tradeSheetItem, setTradeSheetItem] = useState<TopTraderFeedItem | null>(null);
     const [selectedSearchMarket, setSelectedSearchMarket] = useState<Market | null>(null);
     const [selectedSearchEvent, setSelectedSearchEvent] = useState<Event | undefined>(undefined);
     const [suggestedUsers, setSuggestedUsers] = useState<BackendUser[]>([]);
@@ -511,7 +727,7 @@ export default function SocialScreen() {
 
     const [loadingTradeForId, setLoadingTradeForId] = useState<string | null>(null);
 
-    const handleOpenTradeSheet = useCallback(async (item: ExternalFeedItem) => {
+    const handleOpenTradeSheet = useCallback(async (item: TopTraderFeedItem) => {
         setLoadingTradeForId(item.id);
         try {
             const jupiterMarket = await marketsApi.fetchMarketByConditionId(item.conditionId);
@@ -562,7 +778,7 @@ export default function SocialScreen() {
     };
 
     const HYDRATE_LIMIT = 8;
-    const hydrateCandles = useCallback((items: ExternalFeedItem[]) => {
+    const hydrateCandles = useCallback((items: TopTraderFeedItem[]) => {
         const toHydrate = items.slice(0, HYDRATE_LIMIT);
         if (toHydrate.length === 0) return;
         Promise.all(
@@ -595,6 +811,7 @@ export default function SocialScreen() {
             setIsLoadingMoreByMode(prev => ({ ...prev, following: false }));
             setRefreshingByMode(prev => ({ ...prev, following: false }));
             setHasMoreByMode(prev => ({ ...prev, following: false }));
+            cursorByModeRef.current.following = null;
             return;
         }
         if (reset) {
@@ -604,20 +821,45 @@ export default function SocialScreen() {
             setIsLoadingMoreByMode(prev => ({ ...prev, [targetMode]: true }));
         }
         try {
-            let rawTrades: ExternalTrade[];
+            const requestCursor = reset ? undefined : (cursorByModeRef.current[targetMode] ?? undefined);
+            let nextItems: SocialFeedItem[] = [];
+            let nextCursor: string | null = null;
             if (targetMode === 'following') {
-                rawTrades = await followApi.getFollowingExternalFeed({ limit: 50 });
+                const response = await api.getFollowingFeed({
+                    userId: backendUser!.id,
+                    limit: 20,
+                    cursor: requestCursor,
+                });
+                nextItems = response.items.map(normalizeFollowingSignal);
+                nextCursor = response.nextCursor;
             } else {
-                rawTrades = await followApi.getTopTraderFeed({ limit: 50, userId: backendUser?.id });
+                const response = await api.getForYouFeed({
+                    userId: backendUser?.id,
+                    limit: 20,
+                    cursor: requestCursor,
+                });
+                nextItems = response.items;
+                nextCursor = response.nextCursor;
             }
-            const items: ExternalFeedItem[] = rawTrades.map(mapExternalTrade);
-            setFeedItemsByMode(prev => ({
-                ...prev,
-                [targetMode]: reset ? items : [...prev[targetMode], ...items],
-            }));
-            hydrateCandles(items);
-            // No server-side pagination for these endpoints
-            setHasMoreByMode(prev => ({ ...prev, [targetMode]: false }));
+            const topTraderItems = nextItems
+                .filter((item): item is Extract<SocialFeedItem, { kind: 'top_trader_trade' }> => item.kind === 'top_trader_trade')
+                .map((item) => mapTopTraderTrade(item.trade));
+
+            hydrateCandles(topTraderItems);
+
+            setFeedItemsByMode(prev => {
+                const existing = reset ? [] : prev[targetMode];
+                const dedupe = new Map<string, SocialFeedItem>();
+                [...existing, ...nextItems].forEach((item) => {
+                    dedupe.set(`${item.kind}-${item.id}`, item);
+                });
+                return {
+                    ...prev,
+                    [targetMode]: Array.from(dedupe.values()),
+                };
+            });
+            setHasMoreByMode(prev => ({ ...prev, [targetMode]: Boolean(nextCursor) }));
+            cursorByModeRef.current[targetMode] = nextCursor;
         } catch (error) {
             const message = error instanceof Error
                 ? error.message
@@ -742,8 +984,8 @@ export default function SocialScreen() {
                 setFeedItemsByMode(prev => ({
                     ...prev,
                     global: prev.global.map(item =>
-                        item.trader.walletAddress === walletAddress
-                            ? { ...item, trader: { ...item.trader, isFollowing: false } }
+                        item.kind === 'top_trader_trade' && item.trade.trader.walletAddress === walletAddress
+                            ? { ...item, trade: { ...item.trade, trader: { ...item.trade.trader, isFollowing: false } } }
                             : item
                     ),
                 }));
@@ -753,8 +995,8 @@ export default function SocialScreen() {
                 setFeedItemsByMode(prev => ({
                     ...prev,
                     global: prev.global.map(item =>
-                        item.trader.walletAddress === walletAddress
-                            ? { ...item, trader: { ...item.trader, isFollowing: true } }
+                        item.kind === 'top_trader_trade' && item.trade.trader.walletAddress === walletAddress
+                            ? { ...item, trade: { ...item.trade, trader: { ...item.trade.trader, isFollowing: true } } }
                             : item
                     ),
                 }));
@@ -776,7 +1018,8 @@ export default function SocialScreen() {
             !isLoadingFeedByMode[targetMode] &&
             !isLoadingMoreByMode[targetMode] &&
             hasMoreByMode[targetMode] &&
-            feedItemsByMode[targetMode].length > 0
+            feedItemsByMode[targetMode].length > 0 &&
+            !!cursorByModeRef.current[targetMode]
         ) {
             loadFeed({ targetMode });
         }
@@ -1140,7 +1383,11 @@ export default function SocialScreen() {
                                     const isLoadingMore = isLoadingMoreByMode[pageMode];
                                     const refreshing = refreshingByMode[pageMode];
 
-                                    const mixedFeed = tradeItems;
+                                    const getItemTime = (item: SocialFeedItem): number => {
+                                        if ('createdAt' in item) return new Date(item.createdAt).getTime();
+                                        return 0;
+                                    };
+                                    const mixedFeed = [...tradeItems].sort((a, b) => getItemTime(b) - getItemTime(a));
 
                                     return (
                                         <View key={pageMode} style={styles.listPane}>
@@ -1149,19 +1396,28 @@ export default function SocialScreen() {
                                             ) : (
                                                 <FlatList
                                                     data={mixedFeed}
-                                                    keyExtractor={(entry) => `trade-${entry.id}`}
-                                                    renderItem={({ item: entry }) => (
-                                                        <FeedCard
-                                                            item={entry}
-                                                            candles={candlesMap[entry.conditionId]}
-                                                            onPress={() => handleOpenTradeSheet(entry)}
-                                                            onUserPress={() => router.push({ pathname: '/profile/[identifier]', params: { identifier: entry.trader.walletAddress } })}
-                                                            onChartPress={() => handleOpenTradeSheet(entry)}
-                                                            onFollow={pageMode === 'global' && backendUser ? () => handleFollowExternalTrader(entry.trader.walletAddress) : undefined}
-                                                            isFollowInProgress={followingExternalInProgress.has(entry.trader.walletAddress)}
-                                                            isLoadingTrade={loadingTradeForId === entry.id}
-                                                        />
-                                                    )}
+                                                    keyExtractor={(entry) => `${entry.kind}-${entry.id}`}
+                                                    renderItem={({ item: entry }) => {
+                                                        if (entry.kind === 'top_trader_trade') {
+                                                            const tradeItem = mapTopTraderTrade(entry.trade);
+                                                            return (
+                                                                <FeedCard
+                                                                    item={tradeItem}
+                                                                    candles={candlesMap[tradeItem.conditionId]}
+                                                                    onPress={() => handleOpenTradeSheet(tradeItem)}
+                                                                    onUserPress={() => router.push({ pathname: '/profile/[identifier]', params: { identifier: tradeItem.trader.walletAddress } })}
+                                                                    onChartPress={() => handleOpenTradeSheet(tradeItem)}
+                                                                    onFollow={pageMode === 'global' && backendUser ? () => handleFollowExternalTrader(tradeItem.trader.walletAddress) : undefined}
+                                                                    isFollowInProgress={followingExternalInProgress.has(tradeItem.trader.walletAddress)}
+                                                                    isLoadingTrade={loadingTradeForId === tradeItem.id}
+                                                                />
+                                                            );
+                                                        }
+                                                        if (entry.kind === 'tweet') {
+                                                            return <TweetCard item={entry} />;
+                                                        }
+                                                        return <SignalCard item={entry} />;
+                                                    }}
                                                     contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
                                                     showsVerticalScrollIndicator={false}
                                                     refreshing={refreshing}

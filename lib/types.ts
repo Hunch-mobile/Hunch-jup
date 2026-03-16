@@ -773,6 +773,122 @@ export interface FollowersResponse {
 }
 
 // ============================================
+// New Feed Types (For You + Following)
+// ============================================
+
+export interface FeedSignalEvidence {
+    id: string;
+    headline: string | null;
+    explanation: string | null;
+    classification: string;
+    highlightScore: number;
+    sourceUrls: string[];
+    sourceTitles: string[];
+}
+
+export interface FeedSignalUser {
+    id: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    walletAddress: string;
+}
+
+export interface FeedSignalItemResponse {
+    id: string;
+    type: 'TRADE_MILESTONE' | 'POSITION_CLOSED' | 'NEWS' | 'LEADER_ACTIVITY';
+    user: FeedSignalUser | null;
+    marketTicker: string;
+    eventTicker: string | null;
+    side: 'yes' | 'no' | null;
+    milestoneType: string | null;
+    milestoneValue: number | null;
+    finalPnL: number | null;
+    evidence: FeedSignalEvidence | null;
+    createdAt: string;
+    score: number;
+}
+
+export interface TopTraderTradeItem {
+    id: string;
+    trader: {
+        walletAddress: string;
+        displayName: string | null;
+        avatarUrl: string | null;
+        xUsername: string | null;
+        verifiedBadge: boolean;
+        followerCount: number;
+        cachedPnl: number | null;
+        isFollowing: boolean;
+    };
+    conditionId: string;
+    marketTitle: string;
+    outcome: string;
+    side: 'BUY' | 'SELL';
+    size: number;
+    price: number;
+    usdcAmount: number;
+    timestamp: string;
+    transactionHash: string | null;
+}
+
+export interface MatchedTweetEventMatch {
+    eventTicker: string;
+    eventTitle: string;
+    marketTicker: string;
+    marketTitle?: string;
+    conditionId: string | null;
+    imageUrl: string | null;
+    yesPrice: number | null;
+    noPrice: number | null;
+    volume: number;
+    liquidity: number;
+    relevanceScore: number;
+}
+
+export interface MatchedTweetMetrics {
+    likeCount: number;
+    quoteCount: number;
+    replyCount: number;
+    retweetCount: number;
+    bookmarkCount: number;
+    impressionCount: number;
+}
+
+export interface MatchedTweetItem {
+    id: string;
+    tweetId: string;
+    username: string;
+    accountId: string;
+    content: string;
+    mediaUrls: string[];
+    postedAt: string;
+    indexedAt: string | null;
+    metrics: MatchedTweetMetrics;
+    matchScore: number;
+    matchedEvents: MatchedTweetEventMatch[];
+}
+
+export type ForYouFeedItem =
+    | ({ kind: 'signal'; rankScore: number } & FeedSignalItemResponse)
+    | { kind: 'top_trader_trade'; id: string; createdAt: string; rankScore: number; trade: TopTraderTradeItem }
+    | { kind: 'tweet'; id: string; createdAt: string; rankScore: number; tweet: MatchedTweetItem };
+
+export interface ForYouFeedResponse {
+    items: ForYouFeedItem[];
+    nextCursor: string | null;
+    sourceStatus?: {
+        signals: boolean;
+        topTraders: boolean;
+        tweets: boolean;
+    };
+}
+
+export interface FollowingFeedResponse {
+    items: FeedSignalItemResponse[];
+    nextCursor: string | null;
+}
+
+// ============================================
 // External Trade Feed Types
 // ============================================
 

@@ -34,6 +34,9 @@
         "webcredentials:hunch.run"
       ],
       "infoPlist": {
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         },
@@ -45,6 +48,10 @@
         "foregroundImage": "./assets/hunch.jpg",
         "backgroundColor": "#FFE500"
       },
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "POST_NOTIFICATIONS"
+      ],
       "package": "com.hunch.run"
     },
     "extra": {

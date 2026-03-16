@@ -1,4 +1,4 @@
-import { AllLeadersResponse, AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreateExternalCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, ExternalCopySetting, ExternalFollowRelationship, ExternalTrade, ExternalTradeFeedResponse, Follow, FollowersResponse, FollowExternalRequest, FollowingResponse, LeaderboardParams, LeaderboardResponse, Market, OnboardingStep, PolymarketClosedPositionsParams, PolymarketClosedPositionsResponse, PolymarketPositionsParams, PolymarketPositionsResponse, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, UnifiedProfile, UnifiedProfileResponse, User, UsernameCheckResponse, UserPositionsResponse } from './types';
+import { AllLeadersResponse, AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreateExternalCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, ExternalCopySetting, ExternalFollowRelationship, ExternalTrade, ExternalTradeFeedResponse, Follow, FollowersResponse, FollowExternalRequest, FollowingFeedResponse, FollowingResponse, ForYouFeedResponse, LeaderboardParams, LeaderboardResponse, Market, OnboardingStep, PolymarketClosedPositionsParams, PolymarketClosedPositionsResponse, PolymarketPositionsParams, PolymarketPositionsResponse, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, UnifiedProfile, UnifiedProfileResponse, User, UsernameCheckResponse, UserPositionsResponse } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunchdotrun-roan.vercel.app';
 const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
@@ -320,37 +320,45 @@ export const api = {
         return result as Trade | null;
     },
 
-    // Feed endpoint
-    getFeed: async ({
+    // New feed endpoints
+    getForYouFeed: async ({
         userId,
-        mode = 'following',
-        limit = 50,
-        offset = 0,
+        limit = 20,
+        cursor,
     }: {
         userId?: string;
-        mode?: 'following' | 'global';
         limit?: number;
-        offset?: number;
-    }): Promise<Trade[]> => {
-        const params = new URLSearchParams({
-            limit: limit.toString(),
-            offset: offset.toString(),
-            mode,
-        });
-        if (userId && mode === 'following') {
+        cursor?: string;
+    }): Promise<ForYouFeedResponse> => {
+        const params = new URLSearchParams({ limit: String(limit) });
+        if (cursor) params.append('cursor', cursor);
+        if (userId) {
             params.append('userId', userId);
+            params.append('excludeUserId', userId);
         }
-        const url = `${API_BASE_URL}/api/feed?${params.toString()}`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 12000);
-        const response = await fetch(url, { signal: controller.signal }).finally(() => {
-            clearTimeout(timeoutId);
-        });
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to get feed');
+        const res = await fetch(`${API_BASE_URL}/api/feed/for-you?${params.toString()}`);
+        if (!res.ok) {
+            throw new Error((await safeJsonParse(res))?.error || 'Failed to load for-you feed');
         }
-        return response.json();
+        return (await safeJsonParse(res)) as ForYouFeedResponse;
+    },
+
+    getFollowingFeed: async ({
+        userId,
+        limit = 20,
+        cursor,
+    }: {
+        userId: string;
+        limit?: number;
+        cursor?: string;
+    }): Promise<FollowingFeedResponse> => {
+        const params = new URLSearchParams({ userId, limit: String(limit) });
+        if (cursor) params.append('cursor', cursor);
+        const res = await fetch(`${API_BASE_URL}/api/feed/following?${params.toString()}`);
+        if (!res.ok) {
+            throw new Error((await safeJsonParse(res))?.error || 'Failed to load following feed');
+        }
+        return (await safeJsonParse(res)) as FollowingFeedResponse;
     },
 
     // Fetch event evidence (news signals)
@@ -1031,14 +1039,19 @@ export const marketsApi = {
             return cached.data;
         }
 
-        // Use only /events endpoint (includeMarkets=true) for event+market data.
-        // Jupiter API hard-caps at 100 items — keep limit at or below 100.
-        const { events } = await marketsApi.fetchEvents(100, { includeMarkets: true });
-        const matchedEvent = events.find((event) => event.ticker === eventTicker);
-        if (!matchedEvent) {
+        // Use the direct single-event endpoint for an exact lookup
+        const url = `${JUPITER_PREDICTION_BASE_PATH}/events/${encodeURIComponent(eventTicker)}`;
+        const response = await fetch(url);
+        if (!response.ok) {
             throw new Error(`Failed to fetch event details: event not found for ${eventTicker}`);
         }
-        return matchedEvent;
+        const payload = await safeJsonParse(response);
+        if (!payload) {
+            throw new Error(`Failed to fetch event details: empty response for ${eventTicker}`);
+        }
+        const event = mapJupiterEventToEvent(payload);
+        eventCache.set(eventTicker, { data: event, timestamp: Date.now() });
+        return event;
     },
 
     fetchMarketByConditionId: async (conditionId: string): Promise<Market> => {

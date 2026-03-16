@@ -34,8 +34,6 @@ export default function LoginScreen() {
     const [isSyncing, setIsSyncing] = useState(false);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [walletPendingRetry, setWalletPendingRetry] = useState(false);
-    const [oauthTimeoutRetry, setOauthTimeoutRetry] = useState(false);
-    const [lastLoginProvider, setLastLoginProvider] = useState<"google" | "twitter" | "apple" | null>(null);
     const [showDevLogin, setShowDevLogin] = useState(false);
     const [devCode, setDevCode] = useState("");
     const syncLockRef = useRef(false);
@@ -114,13 +112,6 @@ export default function LoginScreen() {
                 cause: err.cause
             });
             setLoadingProvider(null);
-            const msg = String(err?.message || '').toLowerCase();
-            const isTimeout = msg.includes('ping reached timeout') || msg.includes('timeout');
-            if (isTimeout) {
-                setOauthTimeoutRetry(true);
-                setError("Login timed out while connecting wallet services. Please retry.");
-                return;
-            }
             if (err.message && !err.message.includes("cancelled")) {
                 if (err.message.includes("Unable to exchange oauth code for provider")) {
                     setError("Apple login is temporarily unavailable. Please retry, or continue with X.");
@@ -198,9 +189,7 @@ export default function LoginScreen() {
 
     useEffect(() => {
         const syncUser = async () => {
-            const hasSyncedUserForCurrentPrivy =
-                !!backendUser && backendUser.privyId === user?.id;
-            if (!isReady || !user || hasSyncedUserForCurrentPrivy || walletPendingRetry || syncLockRef.current) return;
+            if (!isReady || !user || backendUser || walletPendingRetry || syncLockRef.current) return;
 
             syncLockRef.current = true;
             setIsSyncing(true);
@@ -326,8 +315,6 @@ export default function LoginScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         setError("");
         setWalletPendingRetry(false);
-        setOauthTimeoutRetry(false);
-        setLastLoginProvider(provider);
         setDrawerOpen(false);
         setLoadingProvider(provider);
         console.log(`[Login] Starting ${provider} OAuth flow...`);
@@ -336,25 +323,13 @@ export default function LoginScreen() {
             scheme: 'hunch',
             privyAppId: 'cmiq91u0h006jl70cuyb6az3f'
         });
-        try {
-            oauth.login({ provider });
-        } catch (e: any) {
-            const msg = String(e?.message || '').toLowerCase();
-            const isTimeout = msg.includes('ping reached timeout') || msg.includes('timeout');
-            setLoadingProvider(null);
-            if (isTimeout) {
-                setOauthTimeoutRetry(true);
-                setError("Login timed out while connecting wallet services. Please retry.");
-                return;
-            }
-            setError("Login failed. Please retry.");
-        }
+        oauth.login({ provider });
     };
 
     const isRedirectingOrSyncing = loadingProvider !== null || isSyncing;
 
     // Never show drawer when redirecting, syncing, or authenticated
-    const shouldShowDrawer = drawerOpen && !isRedirectingOrSyncing;
+    const shouldShowDrawer = drawerOpen && !backendUser && !isRedirectingOrSyncing;
 
     return (
         <View style={styles.container}>
@@ -424,15 +399,6 @@ export default function LoginScreen() {
                                     activeOpacity={0.8}
                                 >
                                     <Text style={styles.retryButtonText}>Retry</Text>
-                                </TouchableOpacity>
-                            ) : null}
-                            {oauthTimeoutRetry && lastLoginProvider ? (
-                                <TouchableOpacity
-                                    onPress={() => handleLogin(lastLoginProvider)}
-                                    style={styles.retryButton}
-                                    activeOpacity={0.8}
-                                >
-                                    <Text style={styles.retryButtonText}>Retry Login</Text>
                                 </TouchableOpacity>
                             ) : null}
                         </View>

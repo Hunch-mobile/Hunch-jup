@@ -59,18 +59,18 @@ function isPhysicalDevice(): boolean {
  * Returns status without re-prompting if already denied/blocked.
  */
 export async function requestNotificationPermissions(): Promise<Notifications.PermissionStatus> {
-  if (!isPhysicalDevice()) {
-    return Notifications.PermissionStatus.UNDETERMINED;
-  }
-
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
 
   if (existingStatus === Notifications.PermissionStatus.GRANTED) {
     return existingStatus;
   }
 
-  if (existingStatus === Notifications.PermissionStatus.DENIED) {
-    // User previously denied - don't prompt again
+  // iOS: once denied, the system won't show the prompt again.
+  // Android: re-requesting can still show the prompt unless "Don't ask again" was selected.
+  if (
+    existingStatus === Notifications.PermissionStatus.DENIED &&
+    Platform.OS === 'ios'
+  ) {
     return existingStatus;
   }
 
@@ -127,6 +127,11 @@ export async function getExpoPushToken(): Promise<string | null> {
     });
     return token.data;
   } catch (error) {
+    if (Platform.OS === 'android') {
+      console.error(
+        '[Push] Android push token failed. This usually means FCM is not configured (missing google-services.json / EAS FCM credentials).'
+      );
+    }
     console.error('[Push] Failed to get Expo Push Token:', error);
     return null;
   }

@@ -8,6 +8,7 @@ node_modules/
 dist/
 web-build/
 expo-env.d.ts
+polyapp-479707-firebase-adminsdk-fbsvc-0ed6b2a1fa.json
 
 # Native
 .kotlin/
