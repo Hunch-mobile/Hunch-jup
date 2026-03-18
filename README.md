@@ -42,6 +42,28 @@ View top Polymarket traders ranked by PnL and volume. Filter by category and tim
 | Blockchain | Solana Web3.js |
 | Package Manager | pnpm |
 
+## About Solana Wallet Adapter
+
+Hunch is a React Native (Expo) app, so wallet connections use **Solana Mobile Wallet Adapter (MWA)** (not the browser-focused `@solana/wallet-adapter-*` packages).
+
+### What it’s used for in this app
+
+- **Connect external wallets** (Phantom, Solflare, etc.) from the mobile app
+- **Request signatures** for on-chain actions (e.g. funding the user’s Hunch account with USDC)
+- **Reauthorize sessions** when possible to reduce repeated connect prompts
+
+The current implementation uses:
+- `@solana-mobile/mobile-wallet-adapter-protocol`
+- `@solana-mobile/mobile-wallet-adapter-protocol-web3js`
+- `@solana/web3.js`
+
+You can see the connect + sign flow in `components/AddCashSheet.tsx` via `transact()` and `wallet.authorize()` / `wallet.reauthorize()` / `wallet.signTransactions()`.
+
+### RPC configuration
+
+Mainnet RPC is configurable via:
+- `EXPO_PUBLIC_SOLANA_RPC_URL`: optional HTTPS RPC endpoint (falls back to `clusterApiUrl("mainnet-beta")` if unset/invalid)
+
 ## Getting Started
 
 ### Prerequisites
